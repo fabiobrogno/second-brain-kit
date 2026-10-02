@@ -1,0 +1,17 @@
+#!/bin/sh
+# Brain pre-commit: prüft den gestagten Stand (nur neue Befunde blockieren). Installiert via .tools/install-git-hooks.mjs.
+# Node zuerst im PATH, sonst das private Node des Kits (~/.brain-kit/node). Ohne Node: Commit blockieren (fail closed) —
+# sonst liefe die Sicherheitsprüfung auf Passwörter und Schlüssel still nicht.
+[ -f .tools/commit-pruefung.mjs ] || exit 0
+NODE=""
+if command -v node >/dev/null 2>&1; then NODE=node
+else
+  for K in "$HOME/.brain-kit/node/bin/node" "$HOME/.brain-kit/node/node.exe" "$HOME/.brain-kit/node/bin/node.exe"; do
+    if [ -x "$K" ]; then NODE="$K"; break; fi
+  done
+fi
+if [ -z "$NODE" ]; then
+  echo "Brain-Commit blockiert: Node wurde nicht gefunden, darum kann die Sicherheitsprüfung nicht laufen — führe die Brain-Einrichtung erneut aus."
+  exit 1
+fi
+exec "$NODE" .tools/commit-pruefung.mjs "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

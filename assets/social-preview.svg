@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11132B"/>
+      <stop offset="1" stop-color="#0D1117"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4F46E5" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sh">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <circle cx="320" cy="320" r="300" fill="url(#halo)"/>
+  <g transform="translate(320 322) scale(5.0) translate(-51.5 -47.5)">
+    <path d="M19 58A10 10 0 0 1 14.5 42A10.3 10.3 0 0 1 22 26.5A10.8 10.8 0 0 1 37 16.5A10.9 10.9 0 0 1 55 13.5A10.5 10.5 0 0 1 72 17.5A9.8 9.8 0 0 1 84 28.5A9.6 9.6 0 0 1 88 44A8.1 8.1 0 0 1 84 56.5A6.4 6.4 0 0 0 76.5 60.5A9.9 9.9 0 0 1 66 72.5L65.5 80A3 3 0 0 1 59.5 80L59.5 71.5A21.7 21.7 0 0 1 31 66.5A4.7 4.7 0 0 1 27.5 59.5A10.4 10.4 0 0 0 19 58Z" fill="#6366F1" fill-opacity="0.14"/>
+    <path d="M27 33L41 23M41 23L56 21M56 21L70 26M70 26L79 39M27 33L49 35M41 23L49 35M56 21L49 35M56 21L64 37M70 26L64 37M79 39L64 37M64 37L49 35M49 35L35 44M27 33L35 44M27 33L22 47M35 44L22 47M35 44L48 47M49 35L48 47M48 47L63 50M64 37L63 50M63 50L76 51M79 39L76 51M64 37L76 51M76 51L70.5 65.5M63 50L70.5 65.5M40 63L52 61M52 61L63 50M52 61L70.5 65.5" fill="none" stroke="#818CF8" stroke-width="1" stroke-linecap="round"/>
+    <path d="M19 58A10 10 0 0 1 14.5 42A10.3 10.3 0 0 1 22 26.5A10.8 10.8 0 0 1 37 16.5A10.9 10.9 0 0 1 55 13.5A10.5 10.5 0 0 1 72 17.5A9.8 9.8 0 0 1 84 28.5A9.6 9.6 0 0 1 88 44A8.1 8.1 0 0 1 84 56.5A6.4 6.4 0 0 0 76.5 60.5A9.9 9.9 0 0 1 66 72.5L65.5 80A3 3 0 0 1 59.5 80L59.5 71.5A21.7 21.7 0 0 1 31 66.5A4.7 4.7 0 0 1 27.5 59.5A10.4 10.4 0 0 0 19 58Z" fill="none" stroke="#A5B4FC" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M27.5 59.5C38 55.5 47 53 57 52.5" fill="none" stroke="#A5B4FC" stroke-width="1.7" stroke-linecap="round"/>
+    <g fill="#E0E7FF"><circle cx="27" cy="33" r="1.8"/><circle cx="41" cy="23" r="1.8"/><circle cx="56" cy="21" r="1.8"/><circle cx="70" cy="26" r="1.8"/><circle cx="64" cy="37" r="1.8"/><circle cx="35" cy="44" r="1.8"/><circle cx="22" cy="47" r="1.8"/><circle cx="48" cy="47" r="1.8"/><circle cx="63" cy="50" r="1.8"/><circle cx="76" cy="51" r="1.8"/><circle cx="70.5" cy="65.5" r="1.8"/><circle cx="52" cy="61" r="1.8"/></g>
+    <g fill="url(#sh)"><circle cx="79" cy="39" r="7"/><circle cx="49" cy="35" r="7"/><circle cx="40" cy="63" r="7"/></g>
+    <g fill="#22D3EE"><circle cx="79" cy="39" r="2.5"/><circle cx="49" cy="35" r="2.5"/><circle cx="40" cy="63" r="2.5"/></g>
+  </g>
+  <text x="640" y="250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="-2" fill="#F0F3F6">Second Brain Kit</text>
+  <text font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="30" fill="#9BA6B5">
+    <tspan x="642" y="312">A local second brain that gives every AI</tspan>
+    <tspan x="642" y="352">the right knowledge <tspan fill="#22D3EE">— with proof.</tspan></tspan>
+  </text>
+  <g transform="translate(642 410)"><rect width="272" height="44" rx="22" fill="#FFFFFF" fill-opacity="0.06" stroke="#818CF8" stroke-opacity="0.45"/><text x="136" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#C7D2FE">macOS · Windows · Linux</text></g>
+  <g transform="translate(928 410)"><rect width="156" height="44" rx="22" fill="#FFFFFF" fill-opacity="0.06" stroke="#818CF8" stroke-opacity="0.45"/><text x="78" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#C7D2FE">100 % local</text></g>
+  <g transform="translate(642 468)"><rect width="360" height="44" rx="22" fill="#FFFFFF" fill-opacity="0.06" stroke="#818CF8" stroke-opacity="0.45"/><text x="180" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#C7D2FE">Claude · Codex · Gemini · Cursor</text></g>
+  <text x="642" y="572" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#6E7681">github.com/fbrogno/second-brain-kit</text>
+</svg>

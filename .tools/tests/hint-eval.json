@@ -1,0 +1,28 @@
+{
+  "ziel": {
+    "positiv": 4,
+    "still": 2,
+    "p95ms": 2000,
+    "kontrolle_still": 0,
+    "basis": {
+      "positivFehler": 1,
+      "stand": "2026-10-01",
+      "grund": "Platzhalter-Fragen gegen das Vault-Skelett (vorlage/) — ersetzen, sobald eigene Wiki-Seiten existieren."
+    }
+  },
+  "positiv": [
+    { "prompt": "was ist testthema alpha", "erwartet": ["thema_alpha.md"] },
+    { "prompt": "wo ist die notiz zu alpha verlinkt", "erwartet": ["thema_alpha.md"] },
+    { "prompt": "was steht im amazon ordner zu testthema beta", "erwartet": ["thema_beta.md"] },
+    { "prompt": "wer ist testentität gamma", "erwartet": ["entitaet_gamma.md"] },
+    { "prompt": "wie hängen beta und gamma zusammen", "erwartet": ["thema_beta.md", "entitaet_gamma.md"] },
+    { "prompt": "welcher tag steht in notiz a", "erwartet": ["thema_alpha.md"] }
+  ],
+  "negativ": [
+    "mach mir bitte einen commit",
+    "wie spät ist es gerade",
+    "was ist siebzehn mal dreiundzwanzig",
+    "schreib einen unit test für die login funktion"
+  ],
+  "kontrolle_negativ": []
+}

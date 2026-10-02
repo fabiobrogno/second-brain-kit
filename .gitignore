@@ -1,0 +1,16 @@
+# Generated inside a vault built from this kit — never commit. Anchored to the vault root (leading
+# "/") so these names don't also match same-named system/fixture files nested under .tools/** (e.g.
+# the AGENTS.md template at .tools/kit/AGENTS.md, which MUST stay tracked — it's the source skills-build.mjs
+# renders from on every session; an unanchored "AGENTS.md" pattern would silently untrack it).
+/INDEX.md
+/graph.json
+wiki/_index.md
+wiki/*/**/_*.md
+/AGENTS.md
+.logs/
+.qmd*
+/.agents/
+
+# OS / editor noise
+.DS_Store
+*.swp

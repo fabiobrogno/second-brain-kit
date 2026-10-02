@@ -1,0 +1,1 @@
+{ "vaultPath": ".", "clusters": [ { "id": "10_projekte", "name": "Projekte", "farbe": "blau" } ], "ordner": { "inbox": "inbox", "wiki": "wiki", "archiv": "archiv" }, "wiki": { "ordner": "wiki", "tokenBudget": 100000 }, "suche": { "engine": "qmd", "fallback": "bm25" }, "module": {}, "extraQuellen": [] }

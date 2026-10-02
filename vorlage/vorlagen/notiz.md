@@ -1,0 +1,6 @@
+---
+titel:
+datum:
+tags: []
+---
+# {titel}

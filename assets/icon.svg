@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Second Brain Kit">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#3730A3"/>
+    </linearGradient>
+    <radialGradient id="gh">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#g)"/>
+  <g transform="translate(50 50) scale(0.98) translate(-51.5 -47.5)">
+    <path d="M19 58A10 10 0 0 1 14.5 42A10.3 10.3 0 0 1 22 26.5A10.8 10.8 0 0 1 37 16.5A10.9 10.9 0 0 1 55 13.5A10.5 10.5 0 0 1 72 17.5A9.8 9.8 0 0 1 84 28.5A9.6 9.6 0 0 1 88 44A8.1 8.1 0 0 1 84 56.5A6.4 6.4 0 0 0 76.5 60.5A9.9 9.9 0 0 1 66 72.5L65.5 80A3 3 0 0 1 59.5 80L59.5 71.5A21.7 21.7 0 0 1 31 66.5A4.7 4.7 0 0 1 27.5 59.5A10.4 10.4 0 0 0 19 58Z" fill="#FFFFFF" fill-opacity="0.14"/>
+    <path d="M31 32L55 25M31 32L50 41M55 25L50 41M55 25L76 39M76 39L50 41M31 32L24 47M50 41L24 47M50 41L67 53M76 39L67 53M67 53L42 63M67 53L70.5 65.5M76 39L70.5 65.5" fill="none" stroke="#C7D2FE" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M19 58A10 10 0 0 1 14.5 42A10.3 10.3 0 0 1 22 26.5A10.8 10.8 0 0 1 37 16.5A10.9 10.9 0 0 1 55 13.5A10.5 10.5 0 0 1 72 17.5A9.8 9.8 0 0 1 84 28.5A9.6 9.6 0 0 1 88 44A8.1 8.1 0 0 1 84 56.5A6.4 6.4 0 0 0 76.5 60.5A9.9 9.9 0 0 1 66 72.5L65.5 80A3 3 0 0 1 59.5 80L59.5 71.5A21.7 21.7 0 0 1 31 66.5A4.7 4.7 0 0 1 27.5 59.5A10.4 10.4 0 0 0 19 58Z" fill="none" stroke="#FFFFFF" stroke-width="5.2" stroke-linejoin="round"/>
+    <path d="M27.5 59.5C38 55.5 47 53 57 52.5" fill="none" stroke="#FFFFFF" stroke-width="4.42" stroke-linecap="round"/>
+    <g fill="#FFFFFF"><circle cx="31" cy="32" r="3.6"/><circle cx="55" cy="25" r="3.6"/><circle cx="24" cy="47" r="3.6"/><circle cx="67" cy="53" r="3.6"/><circle cx="42" cy="63" r="3.6"/><circle cx="70.5" cy="65.5" r="3.6"/></g>
+    <g fill="url(#gh)"><circle cx="76" cy="39" r="12.879999999999999"/><circle cx="50" cy="41" r="12.879999999999999"/></g>
+    <g fill="#22D3EE"><circle cx="76" cy="39" r="4.6"/><circle cx="50" cy="41" r="4.6"/></g>
+  </g>
+</svg>

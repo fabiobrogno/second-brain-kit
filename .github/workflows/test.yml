@@ -1,0 +1,17 @@
+name: test
+on: [push, pull_request]
+jobs:
+  test:
+    strategy: { fail-fast: false, matrix: { os: [ubuntu-latest, macos-latest, windows-latest] } }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # Öffentliches CI: nur generische Regeln (PFAD/EMAIL/ARTIFACT/SECRET/INHALT), bewusst ohne --namen —
+      # eine Sperrnamen-Liste mit Firmen-/Personennamen gehört nicht ins öffentliche Kit-Repo.
+      - run: node .tools/kit/publish-check.mjs .
+      - run: node .tools/kit/publish-check.mjs . --historie
+      - run: bash .tools/tests/run-all.sh
+        shell: bash   # auf windows-latest = Git Bash

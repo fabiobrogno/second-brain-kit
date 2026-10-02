@@ -1,0 +1,12 @@
+{
+  "ordner": { "inbox": "inbox", "wiki": "wiki", "archiv": "archiv" },
+  "clusters": [
+    { "id": "notizen", "name": "Notizen", "farbe": "blau" }
+  ],
+  "suche": { "profil": "auto" },
+  "module": { "teamWissen": false, "claudeMemory": false, "youtubeIngest": false, "githubBackup": false },
+  "backup": { "art": "keins" },
+  "sprache": "de",
+  "systemVersion": "",
+  "extraQuellen": []
+}
