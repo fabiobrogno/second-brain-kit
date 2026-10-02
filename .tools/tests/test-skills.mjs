@@ -96,3 +96,17 @@ test("Gleichnamiger fremder Command ohne Marke: Backup .bak-<zeit> + ersetzt + M
   assert.equal(out2, "");
   assert.equal(readdirSync(z).filter(f => f.includes(".bak-")).length, 1);
 });
+test("Update-Skill Schritt 6 erzeugt AGENTS.md immer neu und die Codex-Skills, wenn .agents/skills existiert", () => {
+  const z = mkdtempSync(join(tmpdir(), "askills-u-"));
+  const v = mkdtempSync(join(tmpdir(), "v mit Leerzeichen ")); writeFileSync(join(v, "brain.config.json"), "{}");
+  execFileSync(process.execPath, [build, v, "--ziel", "agents-skills", z]);
+  const u = readFileSync(join(z, "update", "SKILL.md"), "utf8");
+  const vf = v.split("\\").join("/");
+  const schritt6 = u.slice(u.indexOf("6. **.tools ersetzen:**"), u.indexOf("7. **Aufräumen"));
+  assert.ok(schritt6.includes(`${nodeBefehl()} "${vf}/.tools/skills-build.mjs" "${vf}" --ziel agents "${vf}/AGENTS.md"`), schritt6);
+  assert.ok(schritt6.includes(`"${vf}/.tools/skills-build.mjs" "${vf}" --ziel agents-skills "${vf}/.agents/skills"`), schritt6);
+  assert.match(schritt6, /IMMER/);
+  assert.match(schritt6, /\.agents\/skills` \(/);
+  assert.ok(schritt6.includes(`${nodeBefehl()} "${vf}/.tools/adapters/claude-code/install.mjs" "${vf}"`), schritt6);
+  assert.match(schritt6, /brain-update\.md` mit der Marke/);
+});

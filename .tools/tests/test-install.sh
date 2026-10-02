@@ -16,7 +16,8 @@ V="$HOME/Mein Brain"
 OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 1: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 for p in inbox wiki/_schema.md AGENTS.md brain.config.json .tools/brain.mjs; do [ -e "$V/$p" ] || { echo "FAIL: fehlt $p"; exit 1; }; done
 [ "$(git -C "$V" config core.hooksPath)" = ".tools/git-hooks" ] || { echo "FAIL: pre-commit nicht aktiv"; exit 1; }
-[ "$(node -p "require('$V/brain.config.json').systemVersion")" = "0.1.0" ] || { echo "FAIL: systemVersion"; exit 1; }
+KV="$(tr -d '\r\n' < "$T/kit/.tools/VERSION")"
+[ "$(node -p "require('$V/brain.config.json').systemVersion")" = "$KV" ] || { echo "FAIL: systemVersion (erwartet $KV)"; exit 1; }
 echo "# meine notiz" > "$V/inbox/eigen.md"
 OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 2: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 [ "$(cat "$V/inbox/eigen.md")" = "# meine notiz" ] || { echo "FAIL: Notiz überschrieben"; exit 1; }

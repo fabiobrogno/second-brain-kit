@@ -19,6 +19,10 @@ if [ -d "$D/../kit/repo" ]; then
 else
   REPO="$(cd "$D/../.." && pwd)"   # schon ein exportiertes Kit: $D/../.. ist bereits die Kit-Wurzel
 fi
+# Standard-Version der Bootstrap-Skripte = .tools/VERSION (sonst installiert ein neues Release die alte Version)
+KV="v$(tr -d '\r\n' < "$D/../VERSION")"
+grep -qF "BRAIN_KIT_VERSION:-$KV}" "$REPO/bootstrap.sh" || { echo "FAIL: bootstrap.sh nutzt nicht $KV als Standard"; exit 1; }
+grep -qF "\$Version = \"$KV\"" "$REPO/bootstrap.ps1" || { echo "FAIL: bootstrap.ps1 nutzt nicht $KV als Standard"; exit 1; }
 cp "$REPO/bootstrap.sh" "$T/kit/bootstrap.sh"
 cp "$REPO/bootstrap.ps1" "$T/kit/bootstrap.ps1"
 cp "$REPO/lib/voraussetzungen.mjs" "$T/kit/lib/voraussetzungen.mjs"

@@ -32,7 +32,15 @@ Kein Code führt das Update selbst automatisch aus — nur der Agent, über dies
    mechanisch, mit Git-Commit davor.
 6. **.tools ersetzen:** Wie bei der Installation: `{{VAULT}}/.tools` per `rmSync`+`cpSync` aus
    `<kit-klon>/.tools` ersetzen (nie den restlichen Vault anfassen), danach `{{NODE}} "{{VAULT}}/.tools/install-git-hooks.mjs" "{{VAULT}}"`
-   erneut ausführen (idempotent).
+   erneut ausführen (idempotent). Danach IMMER die Agenten-Anleitung neu erzeugen (sie ist nicht committet und
+   wird sonst nur von der Installation bzw. beim Claude-Code-Sitzungsstart geschrieben — Codex, Gemini, Cursor
+   blieben auf dem alten Stand): `{{NODE}} "{{VAULT}}/.tools/skills-build.mjs" "{{VAULT}}" --ziel agents "{{VAULT}}/AGENTS.md"`.
+   Gibt es den Ordner `{{VAULT}}/.agents/skills` (so hält die Installation fest, dass Codex verbunden ist), zusätzlich
+   `{{NODE}} "{{VAULT}}/.tools/skills-build.mjs" "{{VAULT}}" --ziel agents-skills "{{VAULT}}/.agents/skills"`.
+   Ist der Claude-Code-Adapter installiert (Datei `brain-update.md` mit der Marke `brain-kit -->` im Ordner
+   `commands` unter `.claude` im Home-Verzeichnis), danach auch ihn erneut ausführen — die Commands dort sind
+   Kopien der Skills und veralten sonst (idempotent, ergänzt nur die eigenen Hooks, mit Backup):
+   `{{NODE}} "{{VAULT}}/.tools/adapters/claude-code/install.mjs" "{{VAULT}}"`.
 7. **Aufräumen (immer, auch wenn Schritt 2 schon "neueste Version" meldete):** `{{VAULT}}/.logs/update-bereit`
    und `{{VAULT}}/.logs/update-check` löschen, falls vorhanden. Sonst zeigt die Statuszeile weiter die
    alte Marke bzw. den alten Cache-Treffer, bis die 24h-Drosselung irgendwann von selbst neu prüft.

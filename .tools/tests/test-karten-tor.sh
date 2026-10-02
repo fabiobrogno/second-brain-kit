@@ -6,8 +6,10 @@ export BRAIN_VAULT="$T/fixture"; node ../brain-index.mjs "$BRAIN_VAULT" >/dev/nu
 E=$(mktemp); echo '{"negativ":["mach einen pull request auf"],"kontrolle_negativ":["erkläre mir diesen regex"]}' > "$E"; export BRAIN_EVAL_DATEI="$E"
 J=$(mktemp); export FAKE_JSON="$J" BRAIN_HINT_SEARCH_MODULE="$T/fake-search.mjs"
 # Windows (Git Bash) hat i. d. R. kein pkill (procps fehlt) — Aufräumen dort ohne Prozesskill (best effort).
-trap '[ "${OS:-}" = "Windows_NT" ] || pkill -f "suchdienst.mjs $BRAIN_VAULT" 2>/dev/null; rm -f "$E" "$J" "$BRAIN_VAULT/.logs/suchdienst.sock"; cp /tmp/kt-cfg.bak "$BRAIN_VAULT/brain.config.json" 2>/dev/null' EXIT
-cp "$BRAIN_VAULT/brain.config.json" /tmp/kt-cfg.bak
+# Sicherung der Fixture-Config in einer eigenen Temp-Datei (kein festes /tmp/…: parallele Suiten würden kollidieren)
+KB=$(mktemp)
+trap '[ "${OS:-}" = "Windows_NT" ] || pkill -f "suchdienst.mjs $BRAIN_VAULT" 2>/dev/null; rm -f "$E" "$J" "$BRAIN_VAULT/.logs/suchdienst.sock"; cp "$KB" "$BRAIN_VAULT/brain.config.json" 2>/dev/null; rm -f "$KB"' EXIT
+cp "$BRAIN_VAULT/brain.config.json" "$KB"
 # Vektor-Weg (Schalter aus)
 echo '[{"file":"qmd://brainkarten/thema-alpha.md","score":0.6}]' > "$J"
 node "$K" thema_alpha.md | grep -c 'KARTEN-TOR: thema_alpha.md schlägt an' | grep -q '^2$' || { echo "FAIL: Vektor-Weg meldet nicht beide Fragen: $(node "$K" thema_alpha.md)"; exit 1; }

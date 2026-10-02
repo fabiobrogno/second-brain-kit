@@ -87,15 +87,25 @@ else {
   else zeile("OK", "Suchprofil", `${profil || "leicht"} (${ramGB.toFixed(1)} GB Arbeitsspeicher)`);
 }
 
-// 9. AGENTS.md aktuell (Hash des frischen Renders == Datei auf der Platte)
+// 9. 3D-Ansicht vorhanden (`brain zeig` prüft dieselben zwei Dateien, Zeile für Zeile gleich — kein
+// Widerspruch zwischen doctor "OK" und einem scheiternden zeig) — fehlt sie, bleibt der Alltag
+// unverändert funktionsfähig, darum nur WARN.
+{
+  const daHtml = existsSync(join(vault, ".tools", "ansicht", "index.html"));
+  const daDaten = existsSync(join(vault, ".tools", "ansicht", "daten.mjs"));
+  if (daHtml && daDaten) zeile("OK", "3D-Ansicht", "vorhanden");
+  else zeile("WARN", "3D-Ansicht", "noch nicht installiert — „brain zeig“ funktioniert erst, sobald das Kit aktualisiert ist.");
+}
+
+// 10. AGENTS.md aktuell (Hash des frischen Renders == Datei auf der Platte)
 {
   const quelle = join(vault, ".tools", "kit", "AGENTS.md");
   const ziel = join(vault, "AGENTS.md");
-  if (!existsSync(quelle) || !existsSync(ziel)) zeile("WARN", "AGENTS.md", "fehlt — wird bei der nächsten Sitzung automatisch erzeugt.");
+  if (!existsSync(quelle) || !existsSync(ziel)) zeile("WARN", "AGENTS.md", "fehlt — sag „update mein Brain“ (erzeugt sie neu) bzw. starte eine neue Sitzung.");
   else {
     const render = renderVorlage(readFileSync(quelle, "utf8"), vault);
     if (render.replace(/\r\n/g, "\n") === readFileSync(ziel, "utf8").replace(/\r\n/g, "\n")) zeile("OK", "AGENTS.md", "aktuell");
-    else zeile("WARN", "AGENTS.md", "nicht mehr aktuell — wird bei der nächsten Sitzung automatisch neu erzeugt.");
+    else zeile("WARN", "AGENTS.md", "nicht mehr aktuell — sag „update mein Brain“ (erzeugt sie neu) bzw. starte eine neue Sitzung.");
   }
 }
 

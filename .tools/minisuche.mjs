@@ -10,13 +10,13 @@ const B = 0.75;
 const TOKEN_MUSTER = /[\p{L}\p{N}]+/gu;
 
 function tokenisiere(text) {
-  return String(text).toLowerCase().match(TOKEN_MUSTER) || [];
+  return String(text).normalize("NFC").toLowerCase().match(TOKEN_MUSTER) || [];  // NFC: wie .tools/ansicht/suche.js
 }
 
 // Frontmatter-Beschreibung dreifach gewichten: Rumpf (ohne Frontmatter) + description 3×
 // statt einmal natürlich im Rohtext.
 function dokumentText(full) {
-  const raw = readFileSync(full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
+  const raw = readFileSync(full, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n"); // BOM (PowerShell 5.1) weg wie daten.mjs; CRLF (Windows-Checkout) wie LF
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) return raw;
   const rumpf = raw.slice(m[0].length);

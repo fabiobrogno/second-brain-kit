@@ -4,6 +4,8 @@
 # Darum liefern pwd und mktemp hier die gemischte Form C:/…, die Bash UND Node verstehen.
 # Node liest das Home-Verzeichnis unter Windows aus USERPROFILE, nicht aus HOME — Tests mit eigenem
 # Home setzen deshalb beides. Auf macOS/Linux tut diese Datei nichts.
+# Tests legen eigene Temp-Repos an: geerbte GIT_*-Variablen (z. B. aus einem Hook) würden sie aufs echte Repo lenken.
+for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$_v"; done; unset _v
 TEST_WIN=0
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)

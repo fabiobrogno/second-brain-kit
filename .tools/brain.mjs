@@ -2,17 +2,18 @@
 // .tools/brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | version
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
-// Exit-Codes: 0 ok, 2 Befunde (lint), 3 Secrets (ingest-check), 64 falscher Aufruf.
-import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync } from "node:fs";
+// Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
+import { execFileSync, spawnSync, spawn } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { vaultPfad, ladeConfig } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { minisuche } from "./minisuche.mjs";
 import { qmdBefehl } from "./qmd-befehl.mjs";
 import { parseQmdDateien } from "./qmd-ausgabe.mjs";
+import { oeffnerAufruf } from "./oeffner.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
@@ -54,6 +55,69 @@ function suche(frage, n = "5") {
     });
   }
   [...rang].sort((a, b) => b[1] - a[1]).slice(0, Number(n)).forEach(([p, s]) => console.log(`${s.toFixed(4)},${p}`));
+  return 0;
+}
+
+// Öffnet eine Datei im Standardprogramm des Systems (Browser bei .html) — detached + unref, damit
+// brain.mjs sich nicht am geöffneten Programm festhält. Der Rückgabewert des Aufrufs selbst beweist noch
+// keinen Erfolg: ein fehlendes Öffner-Programm (z. B. xdg-open ohne Desktop-Umgebung) wirft NICHT synchron,
+// das ENOENT kommt ausschließlich asynchron über das "error"-Event — darum hier auf "spawn" (Erfolg) bzw.
+// "error" (Scheitern) warten, mit kurzem Timeout-Fallback als Kompromiss zwischen Robustheit und der
+// Forderung, den Prozess nicht unnötig am Leben zu halten (keins der beiden Events kommt rechtzeitig →
+// optimistisch true). BRAIN_OEFFNER: reiner Testhaken, ersetzt das Öffner-Programm (z. B. durch einen
+// garantiert nicht existierenden Pfad), damit Tests den Scheitern-Pfad auslösen können, ohne einen echten
+// Browser zu öffnen.
+// Welches Programm mit welchen Argumenten: .tools/oeffner.mjs (Windows über rundll32 statt explorer.exe).
+function oeffneDatei(datei, timeoutMs = 250) {
+  const { cmd, args } = oeffnerAufruf({ datei, url: pathToFileURL(datei).href }, process.platform, process.env.BRAIN_OEFFNER || "");
+  return new Promise((resolve) => {
+    let entschieden = false;
+    const entscheide = (ok) => { if (entschieden) return; entschieden = true; clearTimeout(timer); resolve(ok); };
+    let kind;
+    try { kind = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true }); }
+    catch { entscheide(false); return; }
+    kind.on("spawn", () => entscheide(true));
+    kind.on("error", () => entscheide(false));
+    const timer = setTimeout(() => entscheide(true), timeoutMs);
+    kind.unref();
+  });
+}
+
+// „brain zeig" — erzeugt die Daten für die 3D-Ansicht (Task 1: .tools/ansicht/daten.mjs) und öffnet
+// .tools/ansicht/index.html im Browser. --nur-daten: nur erzeugen, nichts öffnen, Seitenzahl drucken.
+// --nicht-oeffnen: erzeugen, Pfad drucken, aber nicht öffnen (für Tests/Skripte, ohne Browser-Fenster).
+async function zeig(...args) {
+  const bekannt = new Set(["--nur-daten", "--nicht-oeffnen"]);
+  const unbekannt = args.filter(a => !bekannt.has(a));
+  if (unbekannt.length) {
+    console.error(`Unbekannte Option: ${unbekannt.join(", ")} — erlaubt: --nur-daten, --nicht-oeffnen`);
+    return 2;
+  }
+  const nurDaten = args.includes("--nur-daten");
+  const nichtOeffnen = nurDaten || args.includes("--nicht-oeffnen");
+  if (!existsSync(vault)) { console.error(`Vault nicht gefunden: ${vault}`); return 1; }
+  // Ansicht des Ziel-Vaults (wie doctor): index.html lädt ../../.logs/ansicht/data.js relativ zu sich selbst —
+  // Daten und geöffnete Seite müssen also im selben Vault liegen, auch wenn BRAIN_VAULT auf einen anderen zeigt.
+  const modulPfad = join(vault, ".tools", "ansicht", "daten.mjs");
+  const indexPfad = join(vault, ".tools", "ansicht", "index.html");
+  if (!existsSync(modulPfad) || !existsSync(indexPfad)) {
+    console.error("Die 3D-Ansicht ist noch nicht installiert — aktualisiere das Kit (sag „update mein Brain“).");
+    return 1;
+  }
+  let erg;
+  try {
+    const { erzeugeAnsichtsDaten } = await import(pathToFileURL(modulPfad).href);
+    erg = erzeugeAnsichtsDaten(vault);
+  } catch (e) {
+    console.error(String(e?.message || e).split("\n")[0]);
+    return 1;
+  }
+  for (const w of erg.warnungen || []) console.error(`Warnung: ${w}`);
+  if (nurDaten) { console.log(`${erg.seiten} Seiten, ${erg.verbindungen} Verbindungen.`); return 0; }
+  const url = pathToFileURL(indexPfad).href;
+  if (nichtOeffnen) { console.log(`Öffne diese Datei im Browser: ${url}`); return 0; }
+  const ok = await oeffneDatei(indexPfad);
+  console.log(ok ? `Geöffnet im Browser: ${url}` : `Öffne diese Datei im Browser: ${url}`);
   return 0;
 }
 
@@ -126,6 +190,7 @@ const befehle = {
     return 3;
   },
   search: suche,
+  zeig,
   backup: async (unter, a, b) => {
     const m = await import("./backup.mjs");
     if (!unter) { console.log(m.sichern(vault)); return 0; }

@@ -103,7 +103,9 @@ try {
   // 4) Unit-Tests nur, wenn Werkzeug-Code gestagt ist (fremder .tools-Code blockiert keinen Ingest)
   if (gestagt.some(f => /^\.tools\/.*\.mjs$/.test(f)) && existsSync(join(S, ".tools", "tests"))) {
     const unit = readdirSync(join(S, ".tools", "tests")).filter(f => /^test-.*\.mjs$/.test(f)).map(f => join(S, ".tools", "tests", f));
-    try { execFileSync(process.execPath, ["--test", ...unit], { stdio: "ignore", timeout: 8000, windowsHide: true }); }
+    // Ohne GIT_*: im Hook setzt git GIT_DIR/GIT_INDEX_FILE — ein Test mit eigenem Temp-Repo träfe sonst dieses Repo.
+    const testEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));
+    try { execFileSync(process.execPath, ["--test", ...unit], { stdio: "ignore", timeout: 8000, windowsHide: true, env: testEnv }); }
     catch (e) { if (e.signal || e.code === "ETIMEDOUT") hinweise.push("Unit-Tests nicht in 8 s fertig — ungeprüft"); else blockiert.push("UNIT-TESTS: node --test .tools/tests/test-*.mjs schlägt fehl"); }
   }
 

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-4F46E5"></a>
-  <a href="CHANGELOG.md"><img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-4F46E5"></a>
+  <a href="CHANGELOG.md"><img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-4F46E5"></a>
   <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0E7490">
   <img alt="Claude · Codex · Gemini · Cursor" src="https://img.shields.io/badge/Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20Cursor-0E7490">
 </p>
@@ -21,8 +21,8 @@ came from. This kit sets up a folder of plain Markdown files on your own compute
 before it answers and writes to when you say "remember this". Every page names its sources, contradictions
 stay visible instead of being quietly overwritten, and nothing leaves your machine unless you want a backup.
 
-> **Status:** v0.1 — the first public release. It works and is tested on all three systems, but expect
-> rough edges. Feedback is very welcome.
+> **Status:** v0.2 — an early public release, now with a 3D view of your brain. It works and is tested on
+> all three systems, but expect rough edges. Feedback is very welcome.
 
 ## Quick start — for everyone
 
@@ -43,16 +43,27 @@ and whether you also want an online backup at GitHub (yes / no / later). Everyth
 by itself. You never have to open a terminal. It takes about 10–20 minutes, most of it a one-time
 download for the search (~300 MB, announced before it starts).
 
-When it's done, you only need three sentences:
+When it's done, you only need four sentences:
 
 - *"Remember this: …"* — saves something.
 - *"What do I know about …?"* — searches your brain and answers with the source.
+- *"Show me my brain."* — opens your brain in 3D.
 - *"Update my brain."* — installs a new version when one is out.
 
 **Which app?** Your AI needs to be able to run commands and read files on your computer. That means
 **Claude Code** (in the terminal, or in the **Code** or **Cowork** tab of the Claude Desktop app — both
 need a paid plan), the **Codex** app or CLI, **Gemini CLI**, or **Cursor**. The regular chat in Claude
 Desktop or in a browser can't install anything — use the Code or Cowork tab or the Codex app instead.
+
+## See your brain in 3D
+
+<p align="center"><img alt="The 3D brain view: every page is a point of light, an open page shows its sources and links" src="assets/gehirn-3d.png" width="880"></p>
+
+Say *"show me my brain"* to your AI (or run `node .tools/brain.mjs zeig` in your brain folder) and it opens in the browser:
+an anatomically shaped brain with every page as a point of light, grouped by your areas and connected by
+their links. Search flies to the best match, a click opens the page with its sources, conflicts and pages
+that need review light up, and a timeline replays how your brain grew. It's a local file — no server, no
+internet, nothing is changed. The picture above shows made-up example pages.
 
 ## Quick start — for developers
 
@@ -89,7 +100,7 @@ expected output. Options: `--agent claude-code|codex|keiner`, `--sprache de|en`,
 
 The brain itself is a folder with Markdown files, a small command-line tool and a git history. Your AI
 tools reach it through plain instructions (`AGENTS.md` plus skills), optional adapters for extra comfort,
-and — from v0.2 — a local MCP server.
+and — soon — a local MCP server.
 
 ```mermaid
 flowchart LR
@@ -101,7 +112,7 @@ flowchart LR
   end
   A["AGENTS.md + skills<br/>ingest · lint · review · update · backup"]
   D["Adapters (optional)<br/>Claude Code: hints, status line"]
-  M["brain-mcp<br/>(planned, v0.2)"]
+  M["brain-mcp<br/>(planned)"]
   core --> A & D & M
   A --> T1["Claude Code"] & T2["Codex"] & T3["Gemini CLI"] & T4["Cursor"]
   D --> T1
@@ -169,6 +180,7 @@ automatically at the start of each session (currently only there).
 | | Fast, local search on any machine. | Three profiles: `minimal` (plain text, no download), `leicht` (local embeddings, ~300 MB), `voll` (adds a reranker, ~2 GB, opt-in). The installer picks one once, based on what your computer can run; `brain doctor` checks it later and warns if it doesn't fit. |
 | | Hints without asking. | Claude Code adapter: a hint with the best page before each prompt, a status line and a short start-up summary. |
 | | Pick up where you left off. | `handoff` saves the state of a piece of work for the next session. |
+| | See what you know at a glance. | `brain zeig` builds a 3D view of all pages and links — search, sources, conflicts and a timeline, view only. |
 
 ## Privacy
 
@@ -184,7 +196,8 @@ automatically at the start of each session (currently only there).
   - **The backup you chose** (your own private GitHub repo) — nothing if you picked no backup or a folder.
   - **A version check** against the public release list, at most once a day, without an account. Turn it
     off with `"update": { "pruefen": false }` in `brain.config.json`.
-  Offline is fine — everything stays silent and the brain keeps working.
+  Offline is fine — everything stays silent and the brain keeps working. The 3D view needs no internet at
+  all: three.js, fonts and the brain model ship with the kit.
 - **Secrets are blocked** before they are written, not cleaned up afterwards.
 
 ## Updates
@@ -211,7 +224,7 @@ your AI tells you before it appears.
 **Which AI apps work?**
 Any app that can run commands and edit files on your computer: Claude Code (terminal, or the Code or
 Cowork tab in Claude Desktop), Codex, Gemini CLI and Cursor. Claude Code gets the extra adapter (hints, status line).
-Chat-only apps can't use it yet; the local MCP server in v0.2 brings Claude Desktop and other MCP apps in.
+Chat-only apps can't use it yet; the planned local MCP server will bring Claude Desktop and other MCP apps in.
 
 **What does it cost?**
 The kit is free and open source (MIT). You need an AI app you already use; some of them require a paid
@@ -241,14 +254,15 @@ Node.js copy, search engine, downloaded kit versions, install log) and in your b
 
 ## Roadmap
 
-- **v0.1 — now:** core, CLI, safety checks in git, `AGENTS.md` + skills, Claude Code adapter, beginner setup
+- **v0.1 — done:** core, CLI, safety checks in git, `AGENTS.md` + skills, Claude Code adapter, beginner setup
   with one sentence, backup with or without GitHub, update notices, CI on macOS, Windows and Linux.
-- **v0.2 — next:** `brain-mcp`, a local MCP server so every MCP-capable AI (including Claude Desktop) can
-  search your brain; adapters for Gemini CLI and Cursor; and a **3D brain viewer** — an anatomically shaped,
-  glowing brain with your pages as points of light, live search that flies to the best match, conflicts and
-  pages that need review highlighted. View only, 100 % local.
-- **v0.3 — later:** effortless capture (save from anywhere with less friction) and automatic freshness
-  checks that tell you which knowledge is getting old.
+- **v0.2 — now:** the **3D brain view** (`brain zeig`) — an anatomically shaped, glowing brain with your pages
+  as points of light, live search that flies to the best match, conflicts and pages that need review
+  highlighted, a timeline. View only, 100 % local.
+- **Next:** `brain-mcp`, a local MCP server so every MCP-capable AI (including Claude Desktop) can search your
+  brain; adapters for Gemini CLI and Cursor.
+- **Later:** effortless capture (save from anywhere with less friction) and automatic freshness checks that
+  tell you which knowledge is getting old.
 
 ## Contributing
 
@@ -257,4 +271,6 @@ Windows); CI runs them on all three systems plus a publish check that keeps pers
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The 3D view bundles three.js (MIT), the Geist fonts (SIL Open Font License 1.1) and a brain
+surface derived from the public-domain AOMIC-ID1000 MRI dataset (CC0) — details and full license texts in
+[`.tools/ansicht/DRITTANBIETER.md`](.tools/ansicht/DRITTANBIETER.md).

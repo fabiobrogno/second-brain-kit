@@ -18,6 +18,7 @@ Dieses Verzeichnis ist ein Second Brain. Gilt für jeden Agenten (Claude Code, C
 - „sichere mein Brain" → `{{NODE}} "{{VAULT}}/.tools/brain.mjs" backup`.
 - „richte mir eine Sicherung ein" → Skill **backup** (`{{VAULT}}/.tools/skills/backup/SKILL.md`).
 - „update mein Brain" → Skill **update** (`{{VAULT}}/.tools/skills/update/SKILL.md`).
+- „zeig mir mein Brain" / "show me my brain" → `{{NODE}} "{{VAULT}}/.tools/brain.mjs" zeig`.
 - „mach die Suche besser" (Vorschlag aus `brain doctor`) → qmd nachrüsten: `npm i -g --prefix ~/.brain-kit @tobilu/qmd`
   (dieselbe Logik wie `sorgeFuerQmd` in der Installation; lädt aus dem Internet), danach `suche.profil` in
   `brain.config.json` auf `leicht` setzen und `{{NODE}} "{{VAULT}}/.tools/brain.mjs" refresh` ausführen.

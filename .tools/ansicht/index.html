@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brain</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl" aria-label="3D-Ansicht des Brains"></canvas>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="loading"><span></span></div>
+
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2c-2.3 0-4 1.2-4.6 3-1.9.3-3.3 1.9-3.3 3.9 0 .9.3 1.7.8 2.4-.5.6-.8 1.4-.8 2.3 0 2.1 1.6 3.8 3.7 3.9.7 1.1 2 1.9 3.5 1.9.3 0 .5 0 .7-.1M12 3.2c2.3 0 4 1.2 4.6 3 1.9.3 3.3 1.9 3.3 3.9 0 .9-.3 1.7-.8 2.4.5.6.8 1.4.8 2.3 0 2.1-1.6 3.8-3.7 3.9-.7 1.1-2 1.9-3.5 1.9-.3 0-.5 0-.7-.1M12 3.2v17.4"/></svg>
+      <span class="name">Brain</span>
+      <span class="meta" id="stats"></span>
+    </div>
+
+    <div class="search" id="search">
+      <svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+      <input id="q" type="search" placeholder="Suchen" autocomplete="off" spellcheck="false" aria-label="Suchen">
+      <kbd id="qkbd">/</kbd>
+      <ul id="results" role="listbox"></ul>
+    </div>
+
+    <div class="tools">
+      <button id="btnFilter" class="icon-btn only-mobile" title="Filter" aria-label="Filter"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      <button id="btnCare" class="icon-btn" title="Pflege (P)" aria-label="Pflege"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg><i class="dot" id="careDot"></i></button>
+      <button id="btnReset" class="icon-btn" title="Ansicht zurücksetzen (R)" aria-label="Ansicht zurücksetzen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg></button>
+      <button id="btnTheme" class="icon-btn" title="Hell / Dunkel (T)" aria-label="Hell oder dunkel"><svg viewBox="0 0 24 24" class="moon"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg><svg viewBox="0 0 24 24" class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg></button>
+    </div>
+  </header>
+
+  <aside class="filters glass" id="filters">
+    <section><h3>Bereiche</h3><div class="chips" id="fArea"></div></section>
+    <section><h3>Seitentyp</h3><div class="chips" id="fType"></div></section>
+    <section><h3>Status</h3><div class="chips" id="fStatus"></div></section>
+  </aside>
+
+  <section class="care glass" id="care" hidden>
+    <header><h3>Pflege</h3></header>
+    <ul id="careList"></ul>
+    <p class="care-fresh" id="careFresh"></p>
+  </section>
+
+  <section class="panel glass" id="panel" hidden aria-live="polite">
+    <button class="close icon-btn" id="panelClose" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div id="panelBody"></div>
+  </section>
+
+  <footer class="timeline glass" id="timeline">
+    <button id="tlPlay" class="icon-btn" aria-label="Wachstum abspielen"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8 5v14M16 5v14"/></svg></button>
+    <div class="track">
+      <canvas id="tlHist"></canvas>
+      <input id="tl" type="range" min="0" max="1" step="1" value="1" aria-label="Zeitleiste">
+      <div class="ends"><span id="tlFirst"></span><span id="tlLast"></span></div>
+    </div>
+    <div class="tl-label"><b id="tlDate"></b><span id="tlCount"></span></div>
+  </footer>
+
+  <div class="empty-note" id="emptyNote" hidden>Noch keine Seiten</div>
+  <div class="hint" id="hint"><span>Ziehen</span> drehen <span>Scrollen</span> zoomen <span>Shift-Klick</span> Weg zwischen zwei Seiten</div>
+</div>
+
+<script src="vendor/three.bundle.js"></script>
+<script src="vendor/brain-mesh/brain-mesh.js"></script>
+<!-- Daten liegen nicht hier, sondern im Vault unter .logs/ansicht/ (gebaut von daten.mjs, nie getrackt) -->
+<script src="../../.logs/ansicht/data.js" onerror="window.BRAIN_DATA_FEHLT = true"></script>
+<script src="markdown.js"></script>
+<script src="suche.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

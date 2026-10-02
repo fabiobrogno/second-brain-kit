@@ -47,5 +47,14 @@ mechanically, with a git commit immediately before, so nothing is ever unrecover
   last ingest — notes/wiki are never touched by an update regardless, and this keeps the rollback itself
   from being the thing that touches them).
 
-See `migrations/0.1.0.md` for the one migration that exists in this release (it covers moving a pre-kit,
-hand-built brain onto the kit's structure — not relevant if you installed fresh).
+Migrations in this release:
+- `migrations/0.1.0.md` — moving a pre-kit, hand-built brain onto the kit's structure (not relevant if you
+  installed fresh).
+- `migrations/0.2.0.md` — notes, wiki and settings stay as they are; the 3D brain view (`brain zeig`) arrives
+  with the system files, and `AGENTS.md` (plus the Codex skills, if used) is generated again so every agent
+  knows "show me my brain".
+
+Placeholders in a migration (`<vault>`, `<kit-klon>`) are always filled in as absolute paths, without `~`.
+From 0.2.0 on, the **update** skill also regenerates `AGENTS.md` (and `.agents/skills/` for Codex) every time
+it replaces `.tools`, and re-runs the Claude Code adapter if it is installed, so the Claude Code commands
+(copies of the skills) never stay on an old version.
