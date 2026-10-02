@@ -94,7 +94,7 @@ else {
   if (!existsSync(quelle) || !existsSync(ziel)) zeile("WARN", "AGENTS.md", "fehlt — wird bei der nächsten Sitzung automatisch erzeugt.");
   else {
     const render = renderVorlage(readFileSync(quelle, "utf8"), vault);
-    if (render === readFileSync(ziel, "utf8")) zeile("OK", "AGENTS.md", "aktuell");
+    if (render.replace(/\r\n/g, "\n") === readFileSync(ziel, "utf8").replace(/\r\n/g, "\n")) zeile("OK", "AGENTS.md", "aktuell");
     else zeile("WARN", "AGENTS.md", "nicht mehr aktuell — wird bei der nächsten Sitzung automatisch neu erzeugt.");
   }
 }

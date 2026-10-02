@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # Suchdienst mit Fake-QMD: Socket als Lock (eine Instanz), Rechte 0600, Antwort mit rr, Leerlauf-Ende, Socket-Leiche.
 # Ruling: Suchdienst (suchdienst.mjs, Reranker, Profil "voll") wird unter Windows erst ab v0.3 unterstützt.
 [ "${OS:-}" = "Windows_NT" ] && { echo "SKIP test-suchdienst.sh (Suchdienst unter Windows erst ab v0.3)"; exit 0; }

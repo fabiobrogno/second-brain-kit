@@ -46,7 +46,8 @@ test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32
   assert.equal(gitAnzeige({ cfg: {}, plattform: "darwin", home }), "git");
   mkdirSync(join(home, ".brain-kit", "git", "cmd"), { recursive: true });
   writeFileSync(join(home, ".brain-kit", "git", "cmd", "git.exe"), "");
-  assert.equal(gitAnzeige({ cfg: {}, plattform: "win32", home }), `"${join(home, ".brain-kit", "git", "cmd", "git.exe")}"`);
+  // Anzeige-Strings tragen immer "/" (auch unter Windows), darum hier ebenso
+  assert.equal(gitAnzeige({ cfg: {}, plattform: "win32", home }), `"${join(home, ".brain-kit", "git", "cmd", "git.exe").split("\\").join("/")}"`);
   // Config geht auch hier vor
   assert.equal(gitAnzeige({ cfg: { werkzeuge: { git: "/x/git" } }, plattform: "win32", home }), `"/x/git"`);
 });

@@ -19,7 +19,8 @@ const unter = (pfad, ordnerPfad) => {
   return p.startsWith(o);
 };
 
-const V = vaultPfad();
+// resolve: BRAIN_VAULT darf unter Windows mit "/" kommen (C:/…) — Vergleiche unten laufen auf der nativen Form.
+const V = resolve(vaultPfad());
 let eingabe;
 try { eingabe = JSON.parse(leseStdin()); } catch { process.exit(0); }
 const F0 = eingabe?.tool_input?.file_path ?? eingabe?.tool_input?.notebook_path ?? "";

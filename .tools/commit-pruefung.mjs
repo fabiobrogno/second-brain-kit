@@ -70,7 +70,7 @@ try {
   for (const z of lint(S)) if (!alt.has(z)) blockiert.push(z.replace(/^- /, ""));
 
   // 2) REV: Body oder quellen/quellen_sha geändert, rev nicht erhöht (Umbenennung/auch/name/description frei)
-  const teile = (raw) => { const m = String(raw).match(/^---\n([\s\S]*?)\n---\n?/); const fm = m ? m[1] : "";
+  const teile = (roh) => { const raw = String(roh).replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const fm = m ? m[1] : "";
     const feld = (k) => (fm.match(new RegExp(`^${k}:\\s*(.*)$`, "m")) || [, ""])[1].trim();
     return { body: (m ? raw.slice(m[0].length) : raw).trim(), quellen: feld("quellen"), sha: feld("quellen_sha"), rev: Number(feld("rev")) || 0 }; };
   for (const s of status) {
@@ -85,7 +85,7 @@ try {
   // 3) _log.md nach Position: Bestand unverändert und in gleicher Reihenfolge, neue Einträge zusammenhängend oben
   const logPfad = `${wiki}/_log.md`;
   if (gestagt.includes(logPfad) && hatHead && existsSync(join(H, logPfad))) {
-    const eintraege = (raw) => { const bl = String(raw).split(/\n(?=## \d{4}-\d{2}-\d{2})/); bl.shift(); return bl.map(b => b.trim()); };
+    const eintraege = (raw) => { const bl = String(raw).replace(/\r\n/g, "\n").split(/\n(?=## \d{4}-\d{2}-\d{2})/); bl.shift(); return bl.map(b => b.trim()); };
     const a = eintraege(readFileSync(join(H, logPfad), "utf8")), n = eintraege(readFileSync(join(S, logPfad), "utf8"));
     const altSet = new Set(a);
     const neuIdx = n.map((b, i) => altSet.has(b) ? -1 : i).filter(i => i >= 0);

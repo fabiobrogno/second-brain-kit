@@ -10,7 +10,8 @@ const T = fileURLToPath(new URL("..", import.meta.url)), build = join(T, "skills
 
 test("jeder Skill hat name + description und erwähnt keine Claude-Slash-Commands", () => {
   for (const s of readdirSync(join(T, "skills"))) {
-    const raw = readFileSync(join(T, "skills", s, "SKILL.md"), "utf8");
+    // Quelle kann unter Windows mit CRLF ausgecheckt sein (core.autocrlf) — der Build liest sie CRLF-tolerant
+    const raw = readFileSync(join(T, "skills", s, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
     assert.match(raw, new RegExp(`^---\\nname: ${s}\\n`), s);
     assert.match(raw, /\ndescription: .{20,}\n/, s);
     assert.doesNotMatch(raw, /(^|\s)\/(ingest|brain-lint|handoff)\b/, `${s}: agent-neutral formulieren („Skill ingest“)`);

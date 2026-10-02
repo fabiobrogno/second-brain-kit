@@ -151,7 +151,7 @@ test("ersetzt die $HOME/brain-Schreibweise, wenn Vault == homedir()/brain", () =
   writeFileSync(join(h, "settings.json"), JSON.stringify({
     hooks: { SessionStart: [{ hooks: [{ type: "command", command: 'node "$HOME/brain/.tools/session-start.mjs"' }] }] },
   }));
-  execFileSync(process.execPath, [inst, v, "--claude-home", h], { encoding: "utf8", env: { ...process.env, HOME: H } });
+  execFileSync(process.execPath, [inst, v, "--claude-home", h], { encoding: "utf8", env: { ...process.env, HOME: H, USERPROFILE: H } }); // Windows: homedir() liest USERPROFILE
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   const cmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
   assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/")).length, 1, JSON.stringify(cmds));

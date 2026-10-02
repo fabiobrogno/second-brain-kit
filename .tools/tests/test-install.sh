@@ -1,6 +1,7 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-install.sh — frisches $HOME, Fake-qmd, zweimal installieren
-set -u; D="$(cd "$(dirname "$0")" && pwd)"; T="$(mktemp -d)"; export HOME="$T/home"; mkdir -p "$HOME/.claude"
+set -u; D="$(cd "$(dirname "$0")" && pwd)"; T="$(mktemp -d)"; export HOME="$T/home" USERPROFILE="$T/home"; mkdir -p "$HOME/.claude"
 if [ -f "$D/../kit/export.mjs" ]; then
   # Privates Monorepo: frisch exportieren, damit der Test isoliert gegen eine echte Export-Kopie läuft.
   node "$D/../kit/export.mjs" "$T/kit" >/dev/null || { echo "FAIL: Export"; exit 1; }
@@ -12,12 +13,12 @@ else
 fi
 mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$T/bin:$PATH"
 V="$HOME/Mein Brain"
-node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins >/dev/null || { echo "FAIL: install 1"; exit 1; }
+OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 1: $OUT"; exit 1; }
 for p in inbox wiki/_schema.md AGENTS.md brain.config.json .tools/brain.mjs; do [ -e "$V/$p" ] || { echo "FAIL: fehlt $p"; exit 1; }; done
 [ "$(git -C "$V" config core.hooksPath)" = ".tools/git-hooks" ] || { echo "FAIL: pre-commit nicht aktiv"; exit 1; }
 [ "$(node -p "require('$V/brain.config.json').systemVersion")" = "0.1.0" ] || { echo "FAIL: systemVersion"; exit 1; }
 echo "# meine notiz" > "$V/inbox/eigen.md"
-node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins >/dev/null || { echo "FAIL: install 2"; exit 1; }
+OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 2: $OUT"; exit 1; }
 [ "$(cat "$V/inbox/eigen.md")" = "# meine notiz" ] || { echo "FAIL: Notiz überschrieben"; exit 1; }
 [ "$(ls "$HOME/.claude" | grep -c 'settings.json.bak-')" -le 1 ] || { echo "FAIL: zweiter Lauf hat settings erneut geändert"; exit 1; }
 BRAIN_VAULT="$V" node "$V/.tools/brain.mjs" doctor | grep -q '^FEHLT' && { echo "FAIL: doctor meldet FEHLT"; exit 1; }

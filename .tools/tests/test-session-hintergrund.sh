@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # session-hintergrund.mjs muss bei jedem SessionStart AGENTS.md aus der Vorlage neu erzeugen (sie ist
 # nicht getrackt — maschinenlokaler, absoluter Vault-Pfad) und darf dabei nie hart fehlschlagen.
 set -u; cd "$(dirname "$0")"; H="$(pwd)/../adapters/claude-code/session-hintergrund.mjs"

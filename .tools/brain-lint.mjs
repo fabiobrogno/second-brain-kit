@@ -38,7 +38,7 @@ const linked = new Set(graph.edges.filter(e => !e.source.split(sep).pop().starts
   .map(e => e.target.split(sep).join("/")).filter(t => t.startsWith(wikiName + "/")).map(t => t.slice(wikiName.length + 1)));
 for (const p of pages) {
   const full = join(wikiDir, p);
-  const raw = readFileSync(full, "utf8");
+  const raw = readFileSync(full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
   const zeilen = raw.split("\n").length;
   if (zeilen > 150) findings.push(`LANG: ${p} hat ${zeilen} Zeilen (> 150) — Details in die Rohquelle`);
   const st = statSync(full);

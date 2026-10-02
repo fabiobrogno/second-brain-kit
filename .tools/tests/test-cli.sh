@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-cli.sh
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; B="$D/../brain.mjs"; T="$(mktemp -d)/Mein Brain"; cp -R "$D/fixture" "$T"
 [ "$(node "$B" version)" = "$(cat "$D/../VERSION")" ] || { echo "FAIL: version"; exit 1; }

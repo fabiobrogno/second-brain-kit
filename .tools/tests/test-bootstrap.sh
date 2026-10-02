@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-bootstrap.sh — Einsteiger-Weg mit lokalem Archiv statt Download, ohne node im PATH.
 #
 # Baut das Test-Kit-Archiv NICHT über kit/export.mjs: der echte Export läuft gegen die private
@@ -11,7 +12,7 @@
 # Der Bootstrap-Test geht dieser Prüfung trotzdem lieber ganz aus dem Weg: er baut sein Test-Kit
 # direkt aus bootstrap.sh/.ps1 + lib/ + einem install.mjs-Stub, ohne über kit/export.mjs und
 # publish-check.mjs zu laufen — siehe task-8b-bootstrap-report.md, Abschnitt "Bekannter Konflikt".
-set -u; D="$(cd "$(dirname "$0")" && pwd)"; T="$(mktemp -d)"; export HOME="$T/home"; mkdir -p "$HOME"
+set -u; D="$(cd "$(dirname "$0")" && pwd)"; T="$(mktemp -d)"; export HOME="$T/home" USERPROFILE="$T/home"; mkdir -p "$HOME"
 mkdir -p "$T/kit/lib"
 if [ -d "$D/../kit/repo" ]; then
   REPO="$D/../kit/repo"            # privates Monorepo
@@ -73,7 +74,7 @@ for (const f of ['--agent auto', '--profil auto', '--sprache auto', '--backup ke
 # macOS/Windows — Finder/Explorer zeigen ihn nur als "Dokumente" AN; "$HOME/Dokumente/Brain" wäre ein
 # zweiter, falscher Ordner). Eigenes $HOME, damit nichts mit dem Test oben kollidiert.
 HOME2="$T/home2"; mkdir -p "$HOME2"
-OUT3=$(HOME="$HOME2" PATH="/usr/bin:/bin" BRAIN_KIT_ARCHIV="$T/kit.tar.gz" BRAIN_KIT_NODE_QUELLE="$NODE_BIN" BRAIN_KIT_OHNE_QMD=1 \
+OUT3=$(HOME="$HOME2" USERPROFILE="$HOME2" PATH="/usr/bin:/bin" BRAIN_KIT_ARCHIV="$T/kit.tar.gz" BRAIN_KIT_NODE_QUELLE="$NODE_BIN" BRAIN_KIT_OHNE_QMD=1 \
   bash "$T/kit/bootstrap.sh" --backup keins 2>&1)
 RC3=$?
 [ "$RC3" = 0 ] || { echo "FAIL: bootstrap (Default-Ziel) rc=$RC3: $OUT3"; exit 1; }

@@ -9,7 +9,7 @@ const T = dirname(fileURLToPath(import.meta.url));
 const [vault, , art, ziel] = process.argv.slice(2);
 const render = (s) => renderVorlage(s, vault);
 const MARKER = "<!-- brain-kit -->";
-const fm = (raw) => { const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const f = Object.fromEntries((m?.[1] || "").split("\n").map(z => z.split(/:\s(.*)/s).slice(0, 2)));
+const fm = (roh) => { const raw = roh.replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const f = Object.fromEntries((m?.[1] || "").split("\n").map(z => z.split(/:\s(.*)/s).slice(0, 2)));
   return { f, kopf: m ? m[0] : "", body: m ? raw.slice(m[0].length) : raw }; };
 const stempel = () => new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 // Gleichnamige Datei ohne unsere Marke gehört der Person (eigener Command/Skill) → erst sichern, dann ersetzen.

@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # pre-commit über core.hooksPath: blockiert neuen toten Link, lässt sauberen Commit durch, < 10 s, Hook ist 100755.
 # Node-Suche des Hooks: PATH → $HOME/.brain-kit/node → sonst blockieren (fail closed).
 # Exportierbar: der Test-Vault entsteht aus fixture-neutral + dem aktuellen .tools (kein privates Layout nötig).
@@ -33,17 +34,27 @@ echo "$OUT" | grep -q 'SECRETS: .env' || { echo "FAIL: .env-Fundstelle fehlt: $O
 g reset -q -- .env; rm -f "$V/.env"
 
 # Node nicht im PATH, aber unter $HOME/.brain-kit/node → Hook findet es (Commit geht durch)
-NODEBIN="$(command -v node)"; H="$T/home"; mkdir -p "$H/.brain-kit/node/bin"; ln -s "$NODEBIN" "$H/.brain-kit/node/bin/node"
-# PATH nur mit git + sh (git findet seine Hilfsprogramme über die eigene exec-path)
-OHNE="$T/ohne-node"; mkdir -p "$OHNE"; for W in git sh; do ln -sf "$(command -v $W)" "$OHNE/$W"; done
-env -i HOME="$H" PATH="$OHNE" /bin/sh -c 'command -v node' >/dev/null 2>&1 && { echo "FAIL: node im Test-PATH"; exit 1; }
+H="$T/home"
+if [ "$TEST_WIN" = 1 ]; then
+  # Windows: privates Node liegt als node.exe direkt in ~/.brain-kit/node (Zip-Layout). Git bringt sh und seine
+  # Hilfsprogramme in /mingw64/bin + /usr/bin mit; Symlinks wären unter Git Bash nur Kopien ohne DLLs, und env -i
+  # nähme Windows-Programmen SYSTEMROOT & Co. — darum nur PATH und HOME ersetzen.
+  PRIV="$H/.brain-kit/node/node.exe"; mkdir -p "$(dirname "$PRIV")"; cp "$(node -p process.execPath)" "$PRIV"
+  ohne_node() { env HOME="$H" PATH="/mingw64/bin:/usr/bin" "$@"; }
+else
+  PRIV="$H/.brain-kit/node/bin/node"; mkdir -p "$(dirname "$PRIV")"; ln -s "$(command -v node)" "$PRIV"
+  # PATH nur mit git + sh (git findet seine Hilfsprogramme über die eigene exec-path)
+  OHNE="$T/ohne-node"; mkdir -p "$OHNE"; for W in git sh; do ln -sf "$(command -v $W)" "$OHNE/$W"; done
+  ohne_node() { env -i HOME="$H" PATH="$OHNE" "$@"; }
+fi
+ohne_node sh -c 'command -v node' >/dev/null 2>&1 && { echo "FAIL: node im Test-PATH"; exit 1; }
 echo "x" > "$V/inbox/probe2.md"; g add -- inbox/probe2.md
-OUT=$(env -i HOME="$H" PATH="$OHNE" "$OHNE/git" -C "$V" -c user.email=t@t -c user.name=t commit -qm privat-node 2>&1) || { echo "FAIL: Node unter ~/.brain-kit/node nicht gefunden: $OUT"; exit 1; }
+OUT=$(ohne_node git -C "$V" -c user.email=t@t -c user.name=t commit -qm privat-node 2>&1) || { echo "FAIL: Node unter ~/.brain-kit/node nicht gefunden: $OUT"; exit 1; }
 
 # Node nirgends → blockiert mit einem Satz (fail closed)
-rm -f "$H/.brain-kit/node/bin/node"
+rm -f "$PRIV"
 echo "y" > "$V/inbox/probe3.md"; g add -- inbox/probe3.md
-RC=0; OUT=$(env -i HOME="$H" PATH="$OHNE" "$OHNE/git" -C "$V" -c user.email=t@t -c user.name=t commit -qm ohne-node 2>&1) || RC=$?
+RC=0; OUT=$(ohne_node git -C "$V" -c user.email=t@t -c user.name=t commit -qm ohne-node 2>&1) || RC=$?
 [ $RC -ne 0 ] && echo "$OUT" | grep -q 'Node wurde nicht gefunden' || { echo "FAIL: ohne Node nicht blockiert (rc=$RC): $OUT"; exit 1; }
 g reset -q -- inbox/probe3.md; rm -f "$V/inbox/probe3.md"
 

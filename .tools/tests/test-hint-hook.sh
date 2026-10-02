@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 set -u; cd "$(dirname "$0")"; T=$(pwd); HOOK="$T/../adapters/claude-code/brain-hint.mjs"
 export BRAIN_VAULT="$T/fixture" BRAIN_HINT_SEARCH_MODULE="$T/fake-search.mjs"
 node ../brain-index.mjs "$BRAIN_VAULT" >/dev/null; rm -rf "$BRAIN_VAULT/.logs/hint-seen" "$BRAIN_VAULT/.logs/hint.log"

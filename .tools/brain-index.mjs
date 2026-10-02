@@ -16,7 +16,7 @@ const { inbox: inboxDir, wiki: wikiDir } = ordner(vault, cfg);
 const toSlash = (p) => p.split(sep).join("/");
 
 function parseFile(f) {
-  const raw = readFileSync(f.full, "utf8");
+  const raw = readFileSync(f.full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
   let fm = {}, body = raw;
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
   if (m) {
@@ -118,7 +118,7 @@ const karten = new Set();
 for (const p of wikiPages) {
   if (p.fm.typ === "ueberblick") continue;
   const name = p.id.split(sep).pop();
-  const body = readFileSync(join(vault, p.id), "utf8").replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const body = readFileSync(join(vault, p.id), "utf8").replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n?/, "");
   const heads = saubereAbschnitte([...body.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()));
   let bold = saubereBegriffe([...body.matchAll(/\*\*([^*]{2,60})\*\*/g)].map(m => m[1].trim())).slice(0, 40);
   // Dünne Karte (< 8 Begriffe, typ. Tabellen-/Listenseite) → Inhalte aus Tabellen und Listen ergänzen

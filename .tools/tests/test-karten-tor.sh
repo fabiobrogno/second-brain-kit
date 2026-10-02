@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # Karten-Tor: meldet, bei welchen Negativ-/Kontrollfragen eine neue Karte anschlagen würde (Dienst oder Vektor-Rückfall).
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; K="$T/../karten-tor.mjs"
 export BRAIN_VAULT="$T/fixture"; node ../brain-index.mjs "$BRAIN_VAULT" >/dev/null

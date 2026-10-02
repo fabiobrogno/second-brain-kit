@@ -1,10 +1,11 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-backup.sh — Sicherung ohne GitHub: Bundle in Ordner, Rotation, Wiederherstellen
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; B="$D/../brain.mjs"; T="$(mktemp -d)"; V="$T/Mein Brain"; Z="$T/USB Stick"
 cp -R "$D/fixture" "$V"; mkdir -p "$Z"; git -C "$V" init -q; git -C "$V" add . ; git -C "$V" -c user.email=t@example.com -c user.name=t commit -qm init
 BRAIN_VAULT="$V" node "$B" backup einrichten "ordner:$Z" >/dev/null || { echo "FAIL: einrichten"; exit 1; }
 [ "$(node -p "require('$V/brain.config.json').backup.art")" = "ordner" ] || { echo "FAIL: config"; exit 1; }
-for i in 1 2 3 4 5 6 7 8 9; do touch -t "202609${i}01200" "$Z/brain-2026-09-0$i.bundle"; done
+for i in 1 2 3 4 5 6 7 8 9; do touch -t "2026090${i}1200" "$Z/brain-2026-09-0$i.bundle"; done
 BRAIN_VAULT="$V" node "$B" backup >/dev/null || { echo "FAIL: backup"; exit 1; }
 [ "$(ls "$Z" | grep -c '\.bundle$')" = 7 ] || { echo "FAIL: Rotation ($(ls "$Z" | wc -l))"; exit 1; }
 [ -f "$Z/brain-$(date +%F).bundle" ] || { echo "FAIL: heutiges Bundle fehlt"; exit 1; }

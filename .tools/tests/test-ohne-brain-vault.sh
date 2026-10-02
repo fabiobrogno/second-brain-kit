@@ -1,16 +1,17 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-ohne-brain-vault.sh — ohne BRAIN_VAULT findet jedes Werkzeug den Vault über seinen eigenen Ort:
 # Kit nach $HOME/Documents/Brain installiert (frisches $HOME), dann brain search|lint|doctor|index,
 # session-start und wiki-guard ohne BRAIN_VAULT → richtiger Vault, nie ein ~/brain angelegt.
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-export HOME="$T/home"; mkdir -p "$HOME/.claude"; unset BRAIN_VAULT
+export HOME="$T/home" USERPROFILE="$T/home"; mkdir -p "$HOME/.claude"; unset BRAIN_VAULT
 if [ -f "$D/../kit/export.mjs" ]; then
   node "$D/../kit/export.mjs" "$T/kit" >/dev/null || { echo "FAIL: Export"; exit 1; }
 else
   mkdir -p "$T/kit"; (cd "$D/../.." && tar --exclude=./.git -cf - .) | (cd "$T/kit" && tar -xf -)
 fi
 V="$HOME/Documents/Brain"
-BRAIN_KIT_OHNE_QMD=1 node "$T/kit/install.mjs" "$V" --agent claude-code --profil minimal --backup keins >/dev/null || { echo "FAIL: install"; exit 1; }
+OUT=$(BRAIN_KIT_OHNE_QMD=1 node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil minimal --backup keins 2>&1) || { echo "FAIL: install: $OUT"; exit 1; }
 B="$V/.tools/brain.mjs"
 # Aus einem fremden Arbeitsordner aufrufen — der Vault darf nicht vom cwd abhängen
 cd "$T"

@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 set -e; cd "$(dirname "$0")/fixture"
 # Portable Ersatz für `sed -i '' '$d'` (BSD-spezifisch, bricht unter GNU/Windows): letzte Zeile löschen.
 # Unterschied zu sed: der abschließende Zeilenumbruch der Ausgabe richtet sich strikt danach, ob die Originaldatei mit \n endete — GNU/BSD sed können das bei '$d' leicht unterschiedlich handhaben.

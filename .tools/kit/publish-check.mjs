@@ -14,7 +14,7 @@
 //   publish-check.mjs <dir> [--namen <datei>] [--erlaubt <datei>]              — scannt ein Export-Verzeichnis
 //   publish-check.mjs --historie [<repo>] [--namen <datei>] [--erlaubt <datei>] — scannt JEDE Revision von `git rev-list --all`
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { SECRET_MUSTER } from "../secrets-muster.mjs";
 import { ladeConfig } from "../pfade.mjs";
@@ -107,7 +107,7 @@ function scanneVerzeichnis(dir, namen, erlaubt) {
   const befunde = [];
   const lauf = (d) => {
     for (const n of readdirSync(d)) {
-      const f = join(d, n), r = relative(dir, f);
+      const f = join(d, n), r = relative(dir, f).split(sep).join("/"); // Windows: "\\" → "/", sonst griffe die vorlage/-Regel nie
       if (n === ".git") continue;
       if (statSync(f).isDirectory()) { lauf(f); continue; }
       // Vault-Skelett: unter vorlage/ nur .gitkeep, _schema.md, _log.md, ueberblick.md, vorlagen/*, brain.config.json

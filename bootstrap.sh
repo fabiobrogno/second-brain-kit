@@ -5,11 +5,13 @@
 set -eu
 # Echter Ordnername auf macOS/Windows ist "Documents" — Finder/Explorer zeigen ihn nur lokalisiert als
 # "Dokumente" AN; "$HOME/Dokumente" wäre ein zweiter, falscher Ordner. Linux-Desktops mit eigenem
-# lokalisierten Pfad (z. B. ~/Dokumente) lösen wir über xdg-user-dir auf, wenn vorhanden.
+# lokalisierten Pfad (z. B. ~/Dokumente) lösen wir über xdg-user-dir auf, wenn vorhanden. Ist dort kein
+# Dokumente-Ordner eingetragen, antwortet xdg-user-dir mit dem Home selbst — dann bleibt es bei Documents
+# (sonst läge das Brain lose als ~/Brain direkt im Home).
 DOKUMENTE="$HOME/Documents"
 if command -v xdg-user-dir >/dev/null 2>&1; then
   X=$(xdg-user-dir DOCUMENTS 2>/dev/null || true)
-  [ -n "$X" ] && DOKUMENTE="$X"
+  [ -n "$X" ] && [ "${X%/}" != "${HOME%/}" ] && DOKUMENTE="$X"
 fi
 ZIEL="$DOKUMENTE/Brain"; BACKUP="keins"; V="${BRAIN_KIT_VERSION:-v0.1.0}"
 while [ $# -gt 0 ]; do case "$1" in --ziel) ZIEL="$2"; shift 2;; --backup) BACKUP="$2"; shift 2;; --version) V="$2"; shift 2;; *) shift;; esac; done

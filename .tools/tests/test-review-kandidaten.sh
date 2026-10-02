@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # review-kandidaten: geänderte Seiten seit Marker (sonst 30 Tage), Nachbarn aus graph.json, Feedback, Zahl verpasster Hinweise.
 set -u; cd "$(dirname "$0")"; K="$(pwd)/../review-kandidaten.mjs"
 V=$(mktemp -d /tmp/rkXXXX); trap 'rm -rf "$V"' EXIT

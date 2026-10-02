@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # Pflege-Signale: VERFALL (git-Datum), LOG-LANG, REVIEW/FEEDBACK im Lint; SessionStart-Sammelzeile (nur Status-Modus, kein Push).
 set -u; cd "$(dirname "$0")"; T="$(pwd)"
 V=$(mktemp -d /tmp/pfXXXX); trap 'rm -rf "$V"' EXIT

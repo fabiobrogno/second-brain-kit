@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # Commit-Prüfung auf Schnappschüssen (gestagt vs. HEAD): nur neue Befunde blockieren, REV, LOG nach Position.
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; C="$T/../commit-pruefung.mjs"
 V=$(mktemp -d /tmp/cpXXXX); trap 'rm -rf "$V"' EXIT

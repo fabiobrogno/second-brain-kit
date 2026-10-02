@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-publish-check.sh — generische Regeln von publish-check.mjs (PFAD/EMAIL/ARTIFACT/SECRET/
 # INHALT), die Namensliste über --namen, und --historie. Exportiert: läuft ohne privaten Vault, ohne Firmen-
 # oder Personennamen im eigenen Quelltext (die würden sich sonst beim eigenen Export selbst melden).

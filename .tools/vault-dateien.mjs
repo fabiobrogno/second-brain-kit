@@ -11,9 +11,11 @@ export function ignorierListe(vault) {
   return existsSync(f) ? readFileSync(f, "utf8").split("\n").map(s => s.trim()).filter(Boolean) : [];
 }
 export function walk(vault, { wikiDir = ordner(vault).wiki, ignore = ignorierListe(vault) } = {}) {
-  const skip = (rel) => rel.startsWith(".") || rel === "INDEX.md" || rel === "AGENTS.md" || rel === "CLAUDE.md"
-    || istGeneriert(rel.split(sep).join("/"), wikiDir)
-    || ignore.some(p => rel === p || rel.startsWith(p + sep) || rel.startsWith(p));
+  // .brainignore-Einträge stehen mit "/" — unter Windows liefert relative() "\\", darum vorher angleichen.
+  const skip = (relNativ) => { const rel = relNativ.split(sep).join("/");
+    return rel.startsWith(".") || rel === "INDEX.md" || rel === "AGENTS.md" || rel === "CLAUDE.md"
+      || istGeneriert(rel, wikiDir)
+      || ignore.some(p => rel === p || rel.startsWith(p + "/") || rel.startsWith(p)); };
   const out = [];
   const lauf = (dir) => {
     for (const name of readdirSync(dir).sort()) {

@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # brain.config.json kaputt (ungültiges JSON): ladeConfig() liefert dafür still {} (Defaults) — das muss
 # dem User trotzdem gemeldet werden. lint meldet CONFIG und blockiert (auch --struktur → pre-commit),
 # session-start informiert klartextlich (bleibt Exit 0, kein Abbruch), wiki-guard crasht auf einem

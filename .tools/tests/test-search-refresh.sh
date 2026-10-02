@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 # search-refresh.mjs läuft nur, wenn sich seit dem letzten erfolgreichen Refresh eine Notiz geändert hat
 # (sonst konkurriert der SessionStart-Refresh mit dem Hinweis-Hook um CPU/DB → Timeouts).
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; R="$T/../search-refresh.mjs"

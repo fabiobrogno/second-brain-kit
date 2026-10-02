@@ -1,4 +1,5 @@
 #!/bin/bash
+. "$(dirname "$0")/plattform.sh"
 set -u; cd "$(dirname "$0")"; F="$(pwd)/../feedback.mjs"; V=$(mktemp -d); export BRAIN_VAULT="$V"
 node "$F" falsch thema_x.md "passte gar nicht" >/dev/null || { echo "FAIL: gültiger Aufruf"; exit 1; }
 grep -q 'art=falsch seite=thema_x.md notiz=passte gar nicht' "$V/.logs/feedback.log" || { echo "FAIL: Zeile falsch: $(cat "$V/.logs/feedback.log")"; exit 1; }

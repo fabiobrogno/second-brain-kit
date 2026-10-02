@@ -16,7 +16,7 @@ function tokenisiere(text) {
 // Frontmatter-Beschreibung dreifach gewichten: Rumpf (ohne Frontmatter) + description 3×
 // statt einmal natürlich im Rohtext.
 function dokumentText(full) {
-  const raw = readFileSync(full, "utf8");
+  const raw = readFileSync(full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) return raw;
   const rumpf = raw.slice(m[0].length);
