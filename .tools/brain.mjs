@@ -14,6 +14,7 @@ import { minisuche } from "./minisuche.mjs";
 import { qmdBefehl } from "./qmd-befehl.mjs";
 import { parseQmdDateien } from "./qmd-ausgabe.mjs";
 import { oeffnerAufruf } from "./oeffner.mjs";
+import { merkeLuecke } from "./analyse.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
@@ -33,7 +34,9 @@ function suche(frage, n = "5") {
     profil = "minimal";
   }
   if (profil === "minimal") {
-    minisuche(vault, frage, Number(n)).forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    const treffer = minisuche(vault, frage, Number(n));
+    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
   const lauf = (art) => {
@@ -44,7 +47,9 @@ function suche(frage, n = "5") {
     } catch { return ""; }
   };
   if (profil === "voll") {
-    parseQmdDateien(lauf("query")).slice(0, Number(n)).forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    const treffer = parseQmdDateien(lauf("query")).slice(0, Number(n));
+    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
   // leicht: BM25 + Vektor, per Reciprocal Rank Fusion gemischt, ohne LLM-Reranker.
@@ -54,7 +59,9 @@ function suche(frage, n = "5") {
       rang.set(t.pfad, (rang.get(t.pfad) || 0) + 1 / (60 + i));
     });
   }
-  [...rang].sort((a, b) => b[1] - a[1]).slice(0, Number(n)).forEach(([p, s]) => console.log(`${s.toFixed(4)},${p}`));
+  const sortiert = [...rang].sort((a, b) => b[1] - a[1]).slice(0, Number(n));
+  sortiert.forEach(([p, s]) => console.log(`${s.toFixed(4)},${p}`));
+  if (!sortiert.length) merkeLuecke(vault, "search", frage);
   return 0;
 }
 
@@ -68,8 +75,9 @@ function suche(frage, n = "5") {
 // garantiert nicht existierenden Pfad), damit Tests den Scheitern-Pfad auslösen können, ohne einen echten
 // Browser zu öffnen.
 // Welches Programm mit welchen Argumenten: .tools/oeffner.mjs (Windows über rundll32 statt explorer.exe).
-function oeffneDatei(datei, timeoutMs = 250) {
-  const { cmd, args } = oeffnerAufruf({ datei, url: pathToFileURL(datei).href }, process.platform, process.env.BRAIN_OEFFNER || "");
+// Für den Ansicht-Dienst wird statt einer Datei eine http-Adresse geöffnet: dann ist `datei` die Adresse selbst.
+function oeffneDatei(datei, timeoutMs = 250, url = pathToFileURL(datei).href) {
+  const { cmd, args } = oeffnerAufruf({ datei, url }, process.platform, process.env.BRAIN_OEFFNER || "");
   return new Promise((resolve) => {
     let entschieden = false;
     const entscheide = (ok) => { if (entschieden) return; entschieden = true; clearTimeout(timer); resolve(ok); };
@@ -83,21 +91,32 @@ function oeffneDatei(datei, timeoutMs = 250) {
   });
 }
 
-// „brain zeig" — erzeugt die Daten für die 3D-Ansicht (Task 1: .tools/ansicht/daten.mjs) und öffnet
-// .tools/ansicht/index.html im Browser. --nur-daten: nur erzeugen, nichts öffnen, Seitenzahl drucken.
-// --nicht-oeffnen: erzeugen, Pfad drucken, aber nicht öffnen (für Tests/Skripte, ohne Browser-Fenster).
+// „brain zeig" — erzeugt die Daten für die 3D-Ansicht (.tools/ansicht/daten.mjs) und öffnet sie im Browser:
+// über den lokalen Ansicht-Dienst (.tools/ansicht/dienst-start.mjs, http://127.0.0.1:<port>, Token nur im
+// URL-Fragment), sonst — Start gescheitert — wie bisher .tools/ansicht/index.html als file://-Ansicht.
+// --nur-daten: nur erzeugen, nichts öffnen, Seitenzahl drucken.
+// --nicht-oeffnen: erzeugen, file://-Pfad drucken, aber nicht öffnen und keinen Dienst starten (Tests/Skripte).
+// --stopp: laufenden Ansicht-Dienst dieses Vaults beenden.
 async function zeig(...args) {
-  const bekannt = new Set(["--nur-daten", "--nicht-oeffnen"]);
+  const bekannt = new Set(["--nur-daten", "--nicht-oeffnen", "--stopp"]);
   const unbekannt = args.filter(a => !bekannt.has(a));
   if (unbekannt.length) {
-    console.error(`Unbekannte Option: ${unbekannt.join(", ")} — erlaubt: --nur-daten, --nicht-oeffnen`);
+    console.error(`Unbekannte Option: ${unbekannt.join(", ")} — erlaubt: --nur-daten, --nicht-oeffnen, --stopp`);
     return 2;
   }
   const nurDaten = args.includes("--nur-daten");
   const nichtOeffnen = nurDaten || args.includes("--nicht-oeffnen");
   if (!existsSync(vault)) { console.error(`Vault nicht gefunden: ${vault}`); return 1; }
-  // Ansicht des Ziel-Vaults (wie doctor): index.html lädt ../../.logs/ansicht/data.js relativ zu sich selbst —
-  // Daten und geöffnete Seite müssen also im selben Vault liegen, auch wenn BRAIN_VAULT auf einen anderen zeigt.
+  const startModul = join(vault, ".tools", "ansicht", "dienst-start.mjs");
+  if (args.includes("--stopp")) {
+    let gestoppt = false;
+    try { if (existsSync(startModul)) gestoppt = await (await import(pathToFileURL(startModul).href)).stoppe(vault); }
+    catch { /* nichts zu stoppen */ }
+    console.log(gestoppt ? "Ansicht-Dienst beendet." : "Es lief kein Ansicht-Dienst.");
+    return 0;
+  }
+  // Ansicht des Ziel-Vaults (wie doctor): über den Dienst holt die Seite ihre Daten per /api/daten, im file://-Rückfall
+  // lädt index.html ../../.logs/ansicht/data.js — Daten und Seite müssen also im selben Vault liegen (auch bei BRAIN_VAULT).
   const modulPfad = join(vault, ".tools", "ansicht", "daten.mjs");
   const indexPfad = join(vault, ".tools", "ansicht", "index.html");
   if (!existsSync(modulPfad) || !existsSync(indexPfad)) {
@@ -116,6 +135,20 @@ async function zeig(...args) {
   if (nurDaten) { console.log(`${erg.seiten} Seiten, ${erg.verbindungen} Verbindungen.`); return 0; }
   const url = pathToFileURL(indexPfad).href;
   if (nichtOeffnen) { console.log(`Öffne diese Datei im Browser: ${url}`); return 0; }
+  // Ansicht-Dienst: läuft einer für diesen Vault, wird er wiederverwendet, sonst gestartet. Der Token steht nur
+  // in der geöffneten Adresse (Fragment) — in der Ausgabe (landet bei der KI/im Terminal) nur ohne ihn.
+  let dienst = null;
+  try { if (existsSync(startModul)) dienst = await (await import(pathToFileURL(startModul).href)).starteOderFinde(vault); }
+  catch { dienst = null; }
+  if (dienst) {
+    const ohneSchluessel = dienst.url.replace(/#.*$/, "");
+    const ok = await oeffneDatei(dienst.url, 250, dienst.url);
+    // Auch wenn das Öffnen scheitert: den Schlüssel nie ausgeben (die Ausgabe landet im KI-Verlauf).
+    console.log(ok ? `Geöffnet im Browser: ${ohneSchluessel}`
+      : `Öffne diese Adresse im Browser: ${ohneSchluessel} — den Schlüssel dafür (#t=…) findest du in .logs/ansicht/dienst.json.`);
+    return 0;
+  }
+  console.error("Hinweis: Der Ansicht-Dienst ließ sich nicht starten — ich öffne die einfache Ansicht (Ansehen geht, Einstellungen ändern nicht).");
   const ok = await oeffneDatei(indexPfad);
   console.log(ok ? `Geöffnet im Browser: ${url}` : `Öffne diese Datei im Browser: ${url}`);
   return 0;
@@ -128,6 +161,24 @@ function jetzt(d = new Date()) {
 }
 const lockPfad = () => join(vault, ".logs", "ingest.lock");
 const LOCK_MIN = 30;
+
+// Roh-Text (aus "schluessel=wert") in den Typ wandeln, den einstellungen.mjs#SCHEMA für diesen Schlüssel
+// erwartet — "null" löscht IMMER (Rückfall auf Standard), ein unbekannter Schlüssel kommt unverändert durch
+// (schreibeAutomatik meldet das gleich selbst in Alltagssprache). Ungültige Werte (z. B. "vielleicht" bei
+// einem boolean) kommen ebenfalls unverändert durch — auch das meldet schreibeAutomatik verständlich.
+function parseEinstellungsWert(schema, roh) {
+  if (roh === "null") return null;
+  if (!schema) return roh;
+  if (schema.typ === "boolean") return roh === "true" ? true : roh === "false" ? false : roh;
+  // Pfadliste (Final-Review #7): Pfade dürfen Kommas enthalten („C:\\Users\\Müller, Anna\\Firma") — darum
+  // getrennt durch ";" oder Zeilenumbruch, oder als JSON-Liste '["…", "…"]'. Anhängen: ernteNichtIn+=<pfad>.
+  if (schema.typ === "pfadliste") {
+    if (roh.trim().startsWith("[")) { try { const l = JSON.parse(roh); if (Array.isArray(l)) return l; } catch {} return roh; }
+    return roh.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean);
+  }
+  if (schema.werte && schema.werte.every(w => typeof w === "number")) return Number(roh);
+  return roh;
+}
 
 const befehle = {
   jetzt: () => (console.log(jetzt()), 0),
@@ -191,6 +242,43 @@ const befehle = {
   },
   search: suche,
   zeig,
+  // „brain analyse [--json]" — delegiert ans Analyse-Werkzeug (Task 5): gleiche Kennzahlen/Text wie
+  // `node .tools/analyse.mjs`, nur über den gewohnten Einstiegspunkt aufrufbar (auch für KIs ohne Ansicht).
+  analyse: (...a) => node("analyse.mjs", vault, ...a),
+  // „brain import <ordner|zip> [--name x] [--ja]" — delegiert ans Import-Werkzeug (Task 7); fehlt die Quelle,
+  // meldet brain.mjs selbst die vertraute Nutzung statt des Skript-internen Aufrufs.
+  import: (quelle, ...a) => {
+    if (!quelle) { console.error("Nutzung: brain import <ordner|zip> [--name x] [--ja]"); return 64; }
+    return node(join("import", "import.mjs"), quelle, vault, ...a);
+  },
+  // „brain einstellungen [schluessel=wert …]" — dasselbe Schema wie die Maske (Task 0: SCHEMA/leseAutomatik/
+  // schreibeAutomatik), nur als Zeile für KIs ohne Ansicht. Ohne Argumente: aktuelle Werte auflisten.
+  // "<schluessel>=null" löscht den Schlüssel (Rückfall auf Standard). Ungültige/unbekannte Schlüssel und
+  // Schreibkonflikte (409) wirft schreibeAutomatik bereits mit einer Alltags-Fehlermeldung — die fängt der
+  // äußere catch (ganz unten in dieser Datei) ab und druckt sie unverändert.
+  einstellungen: async (...args) => {
+    const { SCHEMA, leseAutomatik, schreibeAutomatik, rendereAgentsDatei } = await import("./einstellungen.mjs");
+    const { werte, stand } = leseAutomatik(vault);
+    if (!args.length) {
+      for (const [k, v] of Object.entries(werte)) console.log(`${k}=${JSON.stringify(v)}`);
+      return 0;
+    }
+    const neu = {};
+    for (const stueck of args) {
+      const i = stueck.indexOf("=");
+      if (i < 0) { console.error(`Nutzung: brain einstellungen schluessel=wert … (ungültig: "${stueck}")`); return 64; }
+      let k = stueck.slice(0, i);
+      const anhaengen = k.endsWith("+") && SCHEMA[k.slice(0, -1)]?.typ === "pfadliste";
+      if (anhaengen) k = k.slice(0, -1);
+      const w = parseEinstellungsWert(SCHEMA[k], stueck.slice(i + 1));
+      neu[k] = anhaengen && Array.isArray(w) ? [...(Array.isArray(neu[k]) ? neu[k] : werte[k] || []), ...w] : w;
+    }
+    schreibeAutomatik(vault, neu, stand);
+    // Ich-Karte geändert → AGENTS.md im Vault neu rendern (Final-Review #1), damit Codex/Gemini/Cursor es sofort sehen.
+    if (leseAutomatik(vault).werte.ichKarte !== werte.ichKarte) await rendereAgentsDatei(vault);
+    console.log("Einstellungen gespeichert.");
+    return 0;
+  },
   backup: async (unter, a, b) => {
     const m = await import("./backup.mjs");
     if (!unter) { console.log(m.sichern(vault)); return 0; }

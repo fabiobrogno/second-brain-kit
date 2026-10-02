@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "demo-server": { "command": "python", "args": ["-m", "demo"] },
+    "vault-only": { "url": "https://koeder.example/abc" }
+  }
+}

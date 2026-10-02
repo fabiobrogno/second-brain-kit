@@ -161,6 +161,45 @@ test("markdown: Code bleibt wörtlich und escaped, Struktur stimmt", () => {
   assert.match(html, /<div class="callout konflikt"><b>Konflikt<\/b> a vs b<\/div>/);
   ohneGefahr(html);
 });
+// Tags müssen sauber verschachtelt sein: jeder Schluss-Tag schließt den zuletzt geöffneten.
+const sauberVerschachtelt = (html) => {
+  const stapel = [];
+  for (const m of html.matchAll(/<(\/?)(strong|em|del)>/g)) {
+    if (!m[1]) stapel.push(m[2]);
+    else assert.equal(stapel.pop(), m[2], "falsch verschachtelt: " + html);
+  }
+  assert.equal(stapel.length, 0, "offener Tag: " + html);
+};
+test("markdown: **a *b** c* wird sauber verschachtelt", () => {
+  const html = BrainMarkdown.render("**a *b** c*", ziel);
+  sauberVerschachtelt(html);
+  assert.equal(html, "<p><strong>a <em>b</em></strong> c*</p>");
+});
+test("markdown: Hervorhebungen — Grenzfälle bleiben gültiges HTML", () => {
+  const faelle = {
+    "**fett** und *kursiv*": "<p><strong>fett</strong> und <em>kursiv</em></p>",
+    "***beides***": "<p><strong><em>beides</em></strong></p>",
+    "*a **b** c*": "<p><em>a <strong>b</strong> c</em></p>",
+    "**a *b* c**": "<p><strong>a <em>b</em> c</strong></p>",
+    "2 * 3 * 4": "<p>2 * 3 * 4</p>",
+    "**offen": "<p>**offen</p>",
+    "*offen **auch": "<p>*offen **auch</p>",
+    "a**b**c": "<p>a<strong>b</strong>c</p>",
+    "* *": "<ul><li class=\"l0\">*</li></ul>",
+    "****": "<hr>",
+    "x ***** y": "<p>x ***** y</p>",
+  };
+  for (const [md, soll] of Object.entries(faelle)) {
+    const html = BrainMarkdown.render(md, ziel);
+    sauberVerschachtelt(html);
+    assert.equal(html, soll, md);
+  }
+  for (const md of ["**a *b** c*", "*a **b* c**", "***a* b**", "**a* b*", "*a** b**", "_a *b_ c*", "**`*`**", "*[[seite]]*"]) {
+    const html = BrainMarkdown.render(md, ziel);
+    sauberVerschachtelt(html);
+    ohneGefahr(html);
+  }
+});
 test("markdown: leere/fehlende Eingabe → leerer String", () => {
   assert.equal(BrainMarkdown.render("", ziel), "");
   assert.equal(BrainMarkdown.render(undefined, ziel), "");

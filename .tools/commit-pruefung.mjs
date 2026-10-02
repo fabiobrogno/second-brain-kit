@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, readdirSync }
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { istWikiSeite } from "./wiki-pfade.mjs";
-import { ladeConfig, ordner } from "./pfade.mjs";
+import { ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 
@@ -70,7 +70,7 @@ try {
   for (const z of lint(S)) if (!alt.has(z)) blockiert.push(z.replace(/^- /, ""));
 
   // 2) REV: Body oder quellen/quellen_sha geändert, rev nicht erhöht (Umbenennung/auch/name/description frei)
-  const teile = (roh) => { const raw = String(roh).replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const fm = m ? m[1] : "";
+  const teile = (roh) => { const raw = entferneBom(String(roh)).replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const fm = m ? m[1] : "";
     const feld = (k) => (fm.match(new RegExp(`^${k}:\\s*(.*)$`, "m")) || [, ""])[1].trim();
     return { body: (m ? raw.slice(m[0].length) : raw).trim(), quellen: feld("quellen"), sha: feld("quellen_sha"), rev: Number(feld("rev")) || 0 }; };
   for (const s of status) {
@@ -100,13 +100,14 @@ try {
       if (m) { const t = new Date(`${m[1]}T${m[2] || "00:00"}:00`).getTime(); if (Math.abs(Date.now() - t) > 30 * 60000) hinweise.push(`LOG-ZEIT: „${n[i].split("\n")[0]}" weicht > 30 min von jetzt ab — Zeit per \`brain jetzt\``); } }
   }
 
-  // 4) Unit-Tests nur, wenn Werkzeug-Code gestagt ist (fremder .tools-Code blockiert keinen Ingest)
+  // 4) Unit-Tests nur, wenn Werkzeug-Code gestagt ist (fremder .tools-Code blockiert keinen Ingest). 45 s: seit v0.3
+  //    warten einige Tests auf losgelöste Prozesse (~8 s gesamt); ein Ingest-Commit ohne .tools-Code wartet nie.
   if (gestagt.some(f => /^\.tools\/.*\.mjs$/.test(f)) && existsSync(join(S, ".tools", "tests"))) {
     const unit = readdirSync(join(S, ".tools", "tests")).filter(f => /^test-.*\.mjs$/.test(f)).map(f => join(S, ".tools", "tests", f));
     // Ohne GIT_*: im Hook setzt git GIT_DIR/GIT_INDEX_FILE — ein Test mit eigenem Temp-Repo träfe sonst dieses Repo.
     const testEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));
-    try { execFileSync(process.execPath, ["--test", ...unit], { stdio: "ignore", timeout: 8000, windowsHide: true, env: testEnv }); }
-    catch (e) { if (e.signal || e.code === "ETIMEDOUT") hinweise.push("Unit-Tests nicht in 8 s fertig — ungeprüft"); else blockiert.push("UNIT-TESTS: node --test .tools/tests/test-*.mjs schlägt fehl"); }
+    try { execFileSync(process.execPath, ["--test", ...unit], { stdio: "ignore", timeout: 45000, windowsHide: true, env: testEnv }); }
+    catch (e) { if (e.signal || e.code === "ETIMEDOUT") hinweise.push("Unit-Tests nicht in 45 s fertig — ungeprüft"); else blockiert.push("UNIT-TESTS: node --test .tools/tests/test-*.mjs schlägt fehl"); }
   }
 
   hinweise.forEach(h => console.log("Hinweis: " + h));

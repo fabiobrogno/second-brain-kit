@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "desktop-only": {
+      "command": "node",
+      "args": ["d.js"],
+      "env": { "TOKEN": "KOEDER-geheim-123" }
+    }
+  }
+}

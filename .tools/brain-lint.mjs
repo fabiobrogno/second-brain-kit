@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { istWikiSeite, resolveLink, wikilinks, doppelteNamen } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
-import { vaultPfad, ladeConfig, ordner, configFehler } from "./pfade.mjs";
+import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
@@ -38,7 +38,7 @@ const linked = new Set(graph.edges.filter(e => !e.source.split(sep).pop().starts
   .map(e => e.target.split(sep).join("/")).filter(t => t.startsWith(wikiName + "/")).map(t => t.slice(wikiName.length + 1)));
 for (const p of pages) {
   const full = join(wikiDir, p);
-  const raw = readFileSync(full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
+  const raw = entferneBom(readFileSync(full, "utf8")).replace(/\r\n/g, "\n"); // BOM weg, CRLF (Windows-Checkout) wie LF behandeln
   const zeilen = raw.split("\n").length;
   if (zeilen > 150) findings.push(`LANG: ${p} hat ${zeilen} Zeilen (> 150) — Details in die Rohquelle`);
   const st = statSync(full);
@@ -90,6 +90,13 @@ if (struktur) {
   b.forEach(f => console.log("- " + f));
   process.exit(b.length ? 2 : 0);
 }
+// Ich-Karte: zu lang verdünnt das Wesentliche, sobald sie bei jedem Prompt mitgegeben wird (Warnung, kein Blocker)
+const ichKartePfad = join(wikiDir, "ich.md");
+if (existsSync(ichKartePfad)) {
+  const n = entferneBom(readFileSync(ichKartePfad, "utf8")).replace(/\r\n/g, "\n").length;
+  if (n > 1500) findings.push(`ICH-KARTE zu lang (${n} Zeichen, höchstens 1500)`);
+}
+
 // Pflege-Signale (informativ): langes Protokoll, fälliger Review, offene Rückmeldungen
 const logDatei = join(wikiDir, "_log.md");
 if (existsSync(logDatei)) { const n = readFileSync(logDatei, "utf8").split("\n").length;
@@ -102,7 +109,7 @@ const fbDatei = join(vault, ".logs", "feedback.log");
 if (existsSync(fbDatei)) { const offen = readFileSync(fbDatei, "utf8").split("\n").filter(z => z && new Date(z.slice(0, 19)).getTime() > reviewMs).length;
   if (offen) findings.push(`FEEDBACK: ${offen} offene Rückmeldung(en) seit dem letzten Review — /brain-review`); }
 const inboxDir = join(vault, inboxName);
-const inbox = existsSync(inboxDir) ? readdirSync(inboxDir).filter(f => !f.startsWith(".")) : [];
+const inbox = existsSync(inboxDir) ? readdirSync(inboxDir).filter(f => !f.startsWith(".") && f !== "_vorschlaege" && f !== "_import") : [];
 if (inbox.length) findings.push(`INBOX: ${inbox.length} Datei(en) warten auf /ingest`);
 
 // Memory-Routing-Wächter: fette project_*.md im Claude-Memory = Fakten-Wissen am falschen Ort

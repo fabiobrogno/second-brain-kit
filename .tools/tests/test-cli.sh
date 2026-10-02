@@ -54,6 +54,41 @@ cp "$T/brain.config.json" "$T/cfg.bak"
 node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));c.update={pruefen:false};require("fs").writeFileSync(f,JSON.stringify(c))' "$T/brain.config.json"
 OUT=$(BRAIN_UPDATE_QUELLE="$T/gibtsnicht.json" BRAIN_VAULT="$T" node "$B" update-check); echo "$OUT" | grep -q 'ausgeschaltet' || { echo "FAIL: update.pruefen=false: $OUT"; exit 1; }
 cp "$T/cfg.bak" "$T/brain.config.json"
+# brain analyse (Task 12): --json liefert gültiges JSON, ohne Flag einen kurzen Alltagstext.
+# analyse zählt nicht lesbare MCP-Configs im Home — darum eigenes leeres Home (nie die echten Configs lesen).
+mkdir -p "$T/.home-analyse"
+OUT=$(HOME="$T/.home-analyse" USERPROFILE="$T/.home-analyse" BRAIN_VAULT="$T" node "$B" analyse --json) || { echo "FAIL: analyse --json rc=$?"; exit 1; }
+echo "$OUT" | grep -q '"zeitraumTage"' || { echo "FAIL: analyse --json Inhalt: $OUT"; exit 1; }
+OUT=$(HOME="$T/.home-analyse" USERPROFILE="$T/.home-analyse" BRAIN_VAULT="$T" node "$B" analyse) || { echo "FAIL: analyse rc=$?"; exit 1; }
+echo "$OUT" | grep -q '^Zeitraum:' || { echo "FAIL: analyse Text: $OUT"; exit 1; }
+# brain einstellungen (Task 12): ohne Argumente listet die aktuellen Werte, schluessel=wert schreibt,
+# unbekannter Schlüssel meldet Alltagssprache statt eines Stacktrace
+OUT=$(BRAIN_VAULT="$T" node "$B" einstellungen) || { echo "FAIL: einstellungen listen rc=$?"; exit 1; }
+echo "$OUT" | grep -q '^ichKarte=false$' || { echo "FAIL: einstellungen Ausgangswert: $OUT"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen ichKarte=true >/dev/null || { echo "FAIL: einstellungen schreiben"; exit 1; }
+node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(c.automatik&&c.automatik.ichKarte===true?0:1)' "$T/brain.config.json" || { echo "FAIL: ichKarte nicht gespeichert"; exit 1; }
+# Final-Review #1: ichKarte geändert → AGENTS.md im Vault neu gerendert (Satz da bzw. weg)
+grep -q 'Lies zuerst `09_wiki/ich.md`' "$T/AGENTS.md" 2>/dev/null || { echo "FAIL: AGENTS.md ohne Ich-Karten-Satz nach ichKarte=true"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen ichKarte=false >/dev/null || { echo "FAIL: einstellungen ichKarte=false"; exit 1; }
+grep -q 'Lies zuerst' "$T/AGENTS.md" && { echo "FAIL: Ich-Karten-Satz nach ichKarte=false noch da"; exit 1; }
+# Final-Review #7: Pfade mit Komma bleiben ein Eintrag; ";" trennt, "+=" hängt an, JSON-Liste geht auch
+nicht_in() { node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).automatik.ernteNichtIn))' "$T/brain.config.json"; }
+BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=C:\Users\Müller, Anna\Firma' >/dev/null || { echo "FAIL: ernteNichtIn Komma-Pfad"; exit 1; }
+[ "$(nicht_in)" = '["C:\\Users\\Müller, Anna\\Firma"]' ] || { echo "FAIL: Komma-Pfad zerlegt: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn+=/kunden/a, b' >/dev/null || { echo "FAIL: ernteNichtIn+="; exit 1; }
+[ "$(nicht_in)" = '["C:\\Users\\Müller, Anna\\Firma","/kunden/a, b"]' ] || { echo "FAIL: += hängt nicht an: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=/x, y;/z' >/dev/null && [ "$(nicht_in)" = '["/x, y","/z"]' ] || { echo "FAIL: ; trennt nicht: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=["/j, k","/l"]' >/dev/null && [ "$(nicht_in)" = '["/j, k","/l"]' ] || { echo "FAIL: JSON-Liste: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" node "$B" einstellungen ernteNichtIn=null >/dev/null || { echo "FAIL: ernteNichtIn=null"; exit 1; }
+RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" einstellungen gibtsnicht=1 2>&1) || RC=$?
+[ "$RC" != 0 ] && echo "$OUT" | grep -q 'Einstellungs-Schlüssel' || { echo "FAIL: einstellungen unbekannter Schlüssel rc=$RC: $OUT"; exit 1; }
+# brain import (Task 12): Ordner mit einer Notiz landet unverändert unter 00_inbox/_import/<name>/
+mkdir -p "$T/quelle-alt"; printf '# Testnotiz\n\nInhalt einer alten Notiz.\n' > "$T/quelle-alt/notiz.md"
+OUT=$(BRAIN_VAULT="$T" node "$B" import "$T/quelle-alt" --name probe) || { echo "FAIL: import rc=$?: $OUT"; exit 1; }
+[ -f "$T/00_inbox/_import/probe/notiz.md" ] || { echo "FAIL: import hat nichts kopiert"; exit 1; }
+[ -f "$T/00_inbox/_import/probe/_bericht.md" ] || { echo "FAIL: import-Bericht fehlt"; exit 1; }
+RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" import 2>&1) || RC=$?
+[ "$RC" = 64 ] && echo "$OUT" | grep -q 'Nutzung' || { echo "FAIL: import ohne Quelle rc=$RC: $OUT"; exit 1; }
 # Quell-Vault (Entwicklung): doctor meldet OK statt FEHLT bei fehlender systemVersion
 mkdir -p "$T/.tools/kit"; : > "$T/.tools/kit/export.mjs"
 OUT=$(BRAIN_VAULT="$T" node "$B" doctor 2>&1); echo "$OUT" | grep -q '^OK Quell-Vault (Entwicklung) — systemVersion nicht nötig$' || { echo "FAIL: doctor Quell-Vault: $OUT"; exit 1; }

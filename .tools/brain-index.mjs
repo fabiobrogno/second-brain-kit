@@ -4,11 +4,12 @@
 // KEINE Zeitstempel im Output (Determinismus). Exit 0 ok / 1 Fehler.
 import { readFileSync, writeFileSync, renameSync, readdirSync, statSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { qmdPath } from "./qmd-pfad.mjs";
 import { saubereBegriffe, saubereAbschnitte, inhaltsBegriffe } from "./karten.mjs";
 import { istGeneriert, istWikiSeite, resolveLink as loese } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
-import { vaultPfad, ladeConfig, ordner } from "./pfade.mjs";
+import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 
 const vault = vaultPfad();
 const cfg = ladeConfig(vault);
@@ -16,7 +17,7 @@ const { inbox: inboxDir, wiki: wikiDir } = ordner(vault, cfg);
 const toSlash = (p) => p.split(sep).join("/");
 
 function parseFile(f) {
-  const raw = readFileSync(f.full, "utf8").replace(/\r\n/g, "\n"); // CRLF (Windows-Checkout) wie LF behandeln
+  const raw = entferneBom(readFileSync(f.full, "utf8")).replace(/\r\n/g, "\n"); // BOM weg, CRLF (Windows-Checkout) wie LF behandeln
   let fm = {}, body = raw;
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
   if (m) {
@@ -130,7 +131,7 @@ const karten = new Set();
 for (const p of wikiPages) {
   if (p.fm.typ === "ueberblick") continue;
   const name = p.id.split(sep).pop();
-  const body = readFileSync(join(vault, p.id), "utf8").replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const body = entferneBom(readFileSync(join(vault, p.id), "utf8")).replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n?/, "");
   const heads = saubereAbschnitte([...body.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()));
   let bold = saubereBegriffe([...body.matchAll(/\*\*([^*]{2,60})\*\*/g)].map(m => m[1].trim())).slice(0, 40);
   // Dünne Karte (< 8 Begriffe, typ. Tabellen-/Listenseite) → Inhalte aus Tabellen und Listen ergänzen
@@ -140,6 +141,30 @@ for (const p of wikiPages) {
   atomic(ziel, karte);
   karten.add(name);
   wikiMap.paths[qmdPath(name)] = p.id.split(sep).join("/");
+}
+// Import-Karten: noch nicht eingearbeitete Notizen unter <inbox>/_import/<name>/ (ohne den Bericht _bericht.md)
+// bekommen ebenfalls eine Karte, damit der Hinweis sie findet — lokal, 0 Tokens. Gekennzeichnet als
+// „(Import, ungeprüft)“ werden sie im Hinweis-Hook. Notizen, die eine Wiki-Seite schon als Quelle führt, sind
+// eingearbeitet und kommen über die Wiki-Seite. Kartenname aus dem Pfad-Hash: eindeutig, nie gleich einer Wiki-Karte.
+const importPraefix = `${inboxDir}/_import/`;
+const tiefeBericht = importPraefix.split("/").length + 1;
+for (const f of files) {
+  const rel = toSlash(f.id);
+  if (!rel.startsWith(importPraefix) || wikiMap.bySource[rel]) continue;
+  const teile = rel.split("/");
+  if (teile.length === tiefeBericht && teile[teile.length - 1] === "_bericht.md") continue;
+  const roh = entferneBom(readFileSync(join(vault, f.id), "utf8")).replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const heads = saubereAbschnitte([...roh.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()));
+  let bold = saubereBegriffe([...roh.matchAll(/\*\*([^*]{2,60})\*\*/g)].map(m => m[1].trim())).slice(0, 40);
+  if (bold.length < 8) bold = [...new Set([...bold, ...inhaltsBegriffe(roh)])].slice(0, 40);
+  // Kurzbeschreibung: der Anfang des Fließtexts (ohne Überschriften und Markdown-Zeichen), höchstens 300 Zeichen.
+  const anfang = roh.split("\n").filter(z => z.trim() && !/^#{1,6}\s/.test(z)).join(" ")
+    .replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/!?\[\[([^\]]+)\]\]/g, "$1").replace(/[*_`>#|]/g, " ")
+    .replace(/\s+/g, " ").trim().slice(0, 300);
+  const name = `import-${createHash("sha1").update(rel).digest("hex").slice(0, 12)}.md`;
+  atomic(join(kartenDir, name), `# ${f.title}\n\n${anfang}\n\nAbschnitte: ${heads.join(" · ")}\n\nBegriffe: ${bold.join(" · ")}\n`);
+  karten.add(name);
+  wikiMap.paths[qmdPath(name)] = rel;
 }
 // Parallele Läufe (zweite Session, Lint) löschen dieselbe Waise → ENOENT ist hier kein Fehler; unter Windows
 // meldet ein gerade laufendes fremdes Löschen EPERM/EBUSY — die Waise verschwindet dann ohnehin.

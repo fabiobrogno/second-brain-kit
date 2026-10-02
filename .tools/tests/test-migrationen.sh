@@ -6,7 +6,8 @@
 # C:\…\kit\v0.2.0, wo ein Pfad im Literal zum Vertical Tab würde; Skripte selbst lädt Node unter POSIX aus
 # einem Ordner mit Backslash im Namen gar nicht, darum nur dort). Prüft außerdem, dass Migration 0.2.0 AGENTS.md und die Codex-Skills neu
 # erzeugt (Fund 1 der Gesamtprüfung), bei installiertem Claude-Code-Adapter auch dessen Commands (nur im
-# Temp-Home) und kein Pfad mehr in einem JS-Literal steckt (Fund 2).
+# Temp-Home) und kein Pfad mehr in einem JS-Literal steckt (Fund 2). Migration 0.3.0: AGENTS.md neu, ich.md nur
+# anlegen (nie überschreiben), Adapter registriert werkzeug-protokoll.mjs (eigenes Temp-Home).
 set -u; D="$(cd "$(dirname "$0")" && pwd)"
 if [ -d "$D/../kit/repo" ]; then
   REPO="$D/../kit/repo"; KIT="$(cd "$D/../.." && pwd)"   # privates Monorepo: Kit-Inhalt = dieser Vault
@@ -127,5 +128,85 @@ RC=0; eval "${B[1]}" || RC=$?
 RC=0; eval "${B[2]}" || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: 0.1.0 Done rc=$RC"; exit 1; }
 grep -q '"systemVersion": "0.1.0"' "$V1/brain.config.json" || { echo "FAIL: 0.1.0 Done hat systemVersion nicht gesetzt"; exit 1; }
+
+# 4) Migration 0.3.0, Block für Block in der Reihenfolge der Datei — eigenes Temp-Home (0.2-Stand der
+# settings.json ohne werkzeug-protokoll.mjs), eigener Vault mit alter AGENTS.md und ohne ich.md.
+M3="$REPO/migrations/0.3.0.md"
+[ -f "$M3" ] || { echo "FAIL: migrations/0.3.0.md fehlt"; exit 1; }
+if [ -d "$D/../kit/vorlage" ]; then VORL="$D/../kit/vorlage"; else VORL="$KIT/vorlage"; fi
+mkdir -p "$KK/vorlage/wiki"; cp "$VORL/wiki/ich.md" "$KK/vorlage/wiki/ich.md"
+H3="$T/home3"; mkdir -p "$H3"; export HOME="$H3" USERPROFILE="$H3"
+V3="$T/Carla's Brain, neu"
+cp -R "$D/fixture" "$V3"; printf 'alte AGENTS.md (0.2.0)\n' > "$V3/AGENTS.md"
+B=(); while IFS= read -r -d '' b; do B+=("$b"); done < <(bloecke "$M3" "$V3" "$KK" "node"; printf '\0')
+[ "${#B[@]}" = 10 ] || { echo "FAIL: 0.3.0.md hat ${#B[@]} node-Blöcke statt 10 (Step 1, Step 2 ×2 + Prüfung, Step 3 + Prüfung, Step 4 Erkennung + Adapter + Prüfung, Done)"; exit 1; }
+
+# Step 1: Kit vollständig / Kit fehlt / Kit-Ordner mit Backslash
+RC=0; eval "${B[0]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 1 Prüfung scheitert bei vorhandenem Kit (rc=$RC): ${B[0]}"; exit 1; }
+RC=0; eval "${B[0]//"$KK"/$T/gibt-es-nicht}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.3.0 Step 1 Prüfung meldet fehlendes Kit nicht (rc=$RC)"; exit 1; }
+if [ "$TEST_WIN" != 1 ]; then
+  KB3="$T/kit3\\v0.3.0"
+  for f in .tools/ansicht/dienst.mjs .tools/ansicht/steuer.js .tools/import/import.mjs vorlage/wiki/ich.md; do
+    mkdir -p "$(dirname "$KB3/$f")"; cp "$KK/$f" "$KB3/$f"
+  done
+  IFS= read -r -d '' B1 < <(bloecke "$M3" "$V3" "$KB3" "node -e"; printf '\0')
+  RC=0; eval "$B1" || RC=$?
+  [ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 1 Prüfung scheitert bei Kit-Ordner mit Backslash (rc=$RC): $B1"; exit 1; }
+fi
+
+# Step 2: AGENTS.md neu rendern
+RC=0; eval "${B[3]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.3.0 Step-2-Prüfung erkennt die alte AGENTS.md nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[1]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 2 (AGENTS.md rendern) rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[3]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step-2-Prüfung nach dem Rendern rc=$RC"; exit 1; }
+grep -q 'brain\.mjs" import' "$V3/AGENTS.md" || { echo "FAIL: AGENTS.md kennt import nicht"; exit 1; }
+
+# Step 3: ich.md fehlt → angelegt (Wiki-Ordner aus der Config); vorhandene wird nie überschrieben
+RC=0; eval "${B[5]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.3.0 Step-3-Prüfung meldet fehlende ich.md nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[4]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 3 (ich.md anlegen) rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[5]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step-3-Prüfung nach dem Anlegen rc=$RC"; exit 1; }
+cmp -s "$VORL/wiki/ich.md" "$V3/09_wiki/ich.md" || { echo "FAIL: ich.md nicht aus der Vorlage im Wiki-Ordner der Config angelegt"; exit 1; }
+printf 'meine eigene Ich-Karte\n' > "$V3/09_wiki/ich.md"
+RC=0; OUT=$(eval "${B[4]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 3 zweiter Lauf rc=$RC: $OUT"; exit 1; }
+[ "$(cat "$V3/09_wiki/ich.md")" = "meine eigene Ich-Karte" ] || { echo "FAIL: vorhandene ich.md wurde überschrieben"; exit 1; }
+
+# Step 4: ohne Adapter (andere KI) → Erkennung 1, Schritt samt Prüfung entfällt
+RC=0; eval "${B[6]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.3.0 Step 4 erkennt einen Adapter, obwohl keiner installiert ist (rc=$RC)"; exit 1; }
+# 0.2-Stand: Adapter-Command mit Marke, settings.json ohne werkzeug-protokoll, fremder Hook muss bleiben
+mkdir -p "$H3/.claude/commands"
+printf -- '---\ndescription: alt\n---\n<!-- brain-kit -->\nUpdate-Skill 0.2\n' > "$H3/.claude/commands/brain-update.md"
+printf '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "echo fremd" } ] } ] } }\n' > "$H3/.claude/settings.json"
+RC=0; eval "${B[6]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 4 erkennt den installierten Adapter nicht (rc=$RC)"; exit 1; }
+RC=0; eval "${B[8]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.3.0 Step-4-Prüfung erkennt die fehlenden v0.3-Hooks nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[7]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 4 (Adapter aus <kit-klon>) rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[8]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step-4-Prüfung nach dem Adapter-Lauf rc=$RC"; exit 1; }
+grep -qF "echo fremd" "$H3/.claude/settings.json" || { echo "FAIL: 0.3.0 fremder Hook in settings.json verloren"; exit 1; }
+grep -qF "ernte-ausloeser.mjs" "$H3/.claude/settings.json" || { echo "FAIL: 0.3.0 Ernte-Auslöser nicht registriert"; exit 1; }
+V3F="$(printf '%s' "$V3" | tr '\\' '/')"
+grep -qF "$V3F/.tools/adapters/claude-code/werkzeug-protokoll.mjs" "$H3/.claude/settings.json" || { echo "FAIL: werkzeug-protokoll zeigt nicht auf <vault>/.tools"; exit 1; }
+grep -qF "$KK" "$H3/.claude/settings.json" && { echo "FAIL: 0.3.0 settings.json verweist auf den Kit-Klon"; exit 1; }
+RC=0; OUT=$(eval "${B[7]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Step 4 zweiter Lauf rc=$RC: $OUT"; exit 1; }
+N=$(grep -o 'werkzeug-protokoll.mjs' "$H3/.claude/settings.json" | wc -l | tr -d ' ')
+[ "$N" = 1 ] || { echo "FAIL: werkzeug-protokoll nach zweitem Lauf $N-mal statt 1-mal"; exit 1; }
+
+# Done: .tools ersetzt → Einstellungen lesbar
+kopiere_tools "$KK" "$V3"
+RC=0; OUT=$(eval "${B[9]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Done-Prüfung (einstellungen) rc=$RC: $OUT"; exit 1; }
+echo "$OUT" | grep -q '^liveAufleuchten=true' || { echo "FAIL: 0.3.0 Done-Prüfung ohne liveAufleuchten: $OUT"; exit 1; }
 
 echo "OK test-migrationen"

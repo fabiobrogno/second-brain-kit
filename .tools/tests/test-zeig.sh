@@ -34,7 +34,9 @@ RC=0; OUT=$(BRAIN_VAULT="$LEER" node "$B" zeig --nicht-oeffnen) || RC=$?
 # Testhaken (siehe oeffneDatei() in brain.mjs) und ersetzt das Öffner-Programm durch einen garantiert nicht
 # existierenden Pfad — kein echter Browser geht auf, spawn() liefert asynchron "error", kein Absturz,
 # Scheitern-Satz, Exit 0 (Fund 1 aus dem Review).
-RC=0; OUT=$(BRAIN_OEFFNER="$T/gibt-es-nicht/kein-programm" BRAIN_VAULT="$V" node "$B" zeig) || RC=$?
+# BRAIN_DIENST_AUS=1: Ansicht-Dienst-Start gilt als gescheitert → genau der file://-Rückfall wird geprüft
+# (der Dienst selbst: test-dienst.sh) — und es bleibt kein Dienst-Prozess übrig.
+RC=0; OUT=$(BRAIN_DIENST_AUS=1 BRAIN_OEFFNER="$T/gibt-es-nicht/kein-programm" BRAIN_VAULT="$V" node "$B" zeig) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig mit scheiterndem Öffner rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -qF "Öffne diese Datei im Browser:" || { echo "FAIL: Scheitern-Satz fehlt: $OUT"; exit 1; }
 echo "$OUT" | grep -q 'file://' || { echo "FAIL: Scheitern-Satz ohne file://-URL: $OUT"; exit 1; }
@@ -43,7 +45,7 @@ echo "$OUT" | grep -q 'file://' || { echo "FAIL: Scheitern-Satz ohne file://-URL
 # (node selbst) — der Kindprozess startet wirklich (spawn()-Event), auch wenn er danach an der .html-Datei
 # scheitert; das genügt für den Erfolgs-Satz.
 # Nativer Pfad direkt von Node (C:\… unter Windows) — hängt nicht an der MSYS-Umgebungskonvertierung (Fund 6).
-RC=0; OUT=$(BRAIN_OEFFNER="$(node -p process.execPath)" BRAIN_VAULT="$V" node "$B" zeig) || RC=$?
+RC=0; OUT=$(BRAIN_DIENST_AUS=1 BRAIN_OEFFNER="$(node -p process.execPath)" BRAIN_VAULT="$V" node "$B" zeig) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig mit echtem Öffner rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -qF "Geöffnet im Browser:" || { echo "FAIL: Erfolgs-Satz fehlt: $OUT"; exit 1; }
 
@@ -55,7 +57,7 @@ echo "$OUT" | grep -qiE 'ENOENT|at .*\(|stack' && { echo "FAIL: Rohtext/Stacktra
 
 # Unbekannte Option: Exit 2 mit Hinweis statt den Browser zu öffnen (BRAIN_OEFFNER zur Sicherheit gesetzt,
 # falls die Prüfung je regrediert — dann soll trotzdem kein echter Browser aufgehen, siehe Hinweis im Review)
-RC=0; OUT=$(BRAIN_OEFFNER="$T/gibt-es-nicht/kein-programm" BRAIN_VAULT="$V" node "$B" zeig --quatsch 2>&1) || RC=$?
+RC=0; OUT=$(BRAIN_DIENST_AUS=1 BRAIN_OEFFNER="$T/gibt-es-nicht/kein-programm" BRAIN_VAULT="$V" node "$B" zeig --quatsch 2>&1) || RC=$?
 [ "$RC" = 2 ] || { echo "FAIL: zeig mit unbekannter Option rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -qF -- "--quatsch" || { echo "FAIL: Hinweis nennt die unbekannte Option nicht: $OUT"; exit 1; }
 

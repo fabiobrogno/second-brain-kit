@@ -2,7 +2,8 @@
 // PreToolUse-Riegel (Harness-Grenze): <wiki> nur während /ingest (frisches Lock < 30 min),
 // generierte Dateien nie. Exit 2 = blockiert (Begründung auf stderr), sonst Exit 0.
 // Deckt Edit/Write/MultiEdit/NotebookEdit ab; Bash-Schreibzugriffe bleiben Regelwerk-Sache.
-// Liest das Hook-JSON von stdin.
+// Liest das Hook-JSON von stdin. BRAIN_ERNTE=1 (Selbstaufruf der Ernte) → nichts tun (Exit 0).
+if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { readFileSync, existsSync, statSync, utimesSync, realpathSync } from "node:fs";
 import { resolve, join, sep, basename, dirname } from "node:path";
 import { vaultPfad, ladeConfig, ordner } from "../../pfade.mjs";

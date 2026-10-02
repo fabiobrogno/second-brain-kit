@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { vaultPfad, ordner, renderVorlage, istQuellVault, nodeBefehl, nodePfad, gitAnzeige } from "../pfade.mjs";
+import { vaultPfad, ordner, renderVorlage, istQuellVault, nodeBefehl, nodePfad, gitAnzeige, ladeConfig, configFehler, liesConfigRoh, entferneBom } from "../pfade.mjs";
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
@@ -55,4 +56,36 @@ test("istQuellVault: nur mit .tools/kit/export.mjs", () => {
   const v = neu(); assert.equal(istQuellVault(v), false);
   mkdirSync(join(v, ".tools", "kit"), { recursive: true }); writeFileSync(join(v, ".tools", "kit", "export.mjs"), "");
   assert.equal(istQuellVault(v), true);
+});
+
+test("Review-Fund 7 (BOM in brain.config.json): ladeConfig/configFehler tolerieren ein UTF-8-BOM", () => {
+  const v = neu();
+  writeFileSync(join(v, "brain.config.json"), "﻿" + JSON.stringify({ zebra: 1 }));
+  assert.deepEqual(ladeConfig(v), { zebra: 1 });
+  assert.equal(configFehler(v), null);
+});
+
+test("liesConfigRoh: fehlende Datei → stand '0', text null, cfg {}, kein Fehler", () => {
+  const v = neu();
+  assert.deepEqual(liesConfigRoh(v), { stand: "0", text: null, cfg: {}, fehler: null });
+});
+
+test("liesConfigRoh: stand ist SHA-256 der rohen Bytes (BOM inklusive, vor der Bereinigung), text/cfg sind BOM-frei", () => {
+  const v = neu();
+  const roh = "﻿" + JSON.stringify({ zebra: 1 }, null, 2) + "\n";
+  writeFileSync(join(v, "brain.config.json"), roh);
+  const r = liesConfigRoh(v);
+  assert.equal(r.stand, createHash("sha256").update(Buffer.from(roh, "utf8")).digest("hex"));
+  assert.equal(r.text, entferneBom(roh));
+  assert.deepEqual(r.cfg, { zebra: 1 });
+  assert.equal(r.fehler, null);
+});
+
+test("liesConfigRoh: kaputtes JSON → fehler gesetzt, cfg null, stand trotzdem berechnet (optimistisches Sperren bleibt möglich)", () => {
+  const v = neu();
+  writeFileSync(join(v, "brain.config.json"), "{ kaputt");
+  const r = liesConfigRoh(v);
+  assert.ok(r.fehler);
+  assert.equal(r.cfg, null);
+  assert.match(r.stand, /^[0-9a-f]{64}$/);
 });

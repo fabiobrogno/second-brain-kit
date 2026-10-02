@@ -30,7 +30,7 @@ else if (art === "claude-commands") {
   mkdirSync(ziel, { recursive: true });
   // Claude-Code-Commandnamen: allgemeine Wörter (update, backup, lint …) bekommen das Präfix brain-, damit sie
   // nicht mit fremden Commands kollidieren; die Skills selbst behalten ihre kurzen Namen.
-  const cmdName = { lint: "brain-lint", review: "brain-review", feedback: "brain-feedback", update: "brain-update", backup: "brain-backup" };
+  const cmdName = { lint: "brain-lint", review: "brain-review", feedback: "brain-feedback", update: "brain-update", backup: "brain-backup", import: "brain-import" };
   for (const s of readdirSync(join(T, "skills"))) {
     const { f, body } = fm(readFileSync(join(T, "skills", s, "SKILL.md"), "utf8"));
     const kopf = `---\ndescription: ${f.description}\n${f["argument-hint"] ? `argument-hint: ${f["argument-hint"]}\n` : ""}---\n${MARKER}\n`;

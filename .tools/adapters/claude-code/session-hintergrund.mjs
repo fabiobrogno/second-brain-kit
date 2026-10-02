@@ -2,14 +2,19 @@
 // Hintergrund-Teil von SessionStart (läuft als eigener, losgelöster Prozess — session-start.mjs wartet nicht
 // darauf). Reihenfolge wie bisher: AGENTS.md, Index, Refresh, Suchdienst (falls eingeschaltet), Lint-Cache,
 // Push, Memory-Sync (nur wenn module.claudeMemory). Fehler landen im Log, blockieren aber nie.
+// Schalter (automatik): sicherungTaeglich=false → keine Sicherung; updateHinweis=false → kein Update-Check.
+// BRAIN_ERNTE=1 (Selbstaufruf der Ernte) → nichts tun.
+if (process.env.BRAIN_ERNTE === "1") process.exit(0);
+// Kit-Module erst nach dieser Prüfung laden (dynamisches import) — statische Importe würden vorher ausgewertet.
 import { appendFileSync, existsSync, statSync, readdirSync, renameSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { vaultPfad, ladeConfig } from "../../pfade.mjs";
-import { gitBefehl } from "../../werkzeug.mjs";
-import { pruefeUpdate, schreibeBereitMarke } from "../../update-check.mjs";
+const { vaultPfad, ladeConfig } = await import("../../pfade.mjs");
+const { gitBefehl } = await import("../../werkzeug.mjs");
+const { pruefeUpdate, schreibeBereitMarke } = await import("../../update-check.mjs");
+const { leseAutomatik } = await import("../../einstellungen.mjs");
 
 const T = dirname(fileURLToPath(import.meta.url));
 const TOOLS = join(T, "..", "..");
@@ -18,6 +23,7 @@ const LOG = join(V, ".logs", "hooks.log");
 // EIN git-Pfad für die ganze Datei — gilt auch für die Aufrufe gegen ~/.claude unten (dort geht es nur um
 // den WERKZEUG-Ort, nicht um das Zielrepo).
 const GIT = gitBefehl({ cfg: ladeConfig(V) });
+const AUTOMATIK = leseAutomatik(V).werte;
 
 function log(text) {
   if (!text) return;
@@ -63,7 +69,7 @@ try {
 // fehlt backup in der Config, aber es ist bereits ein Git-Remote eingerichtet, pushen wir wie bisher
 // (altes Verhalten vor dieser Sicherung-Funktion bleibt für bestehende Vaults unverändert).
 // Ordner-Sicherung höchstens 1x/Tag: sonst würde bei jedem SessionStart ein neues Bundle geschrieben.
-try {
+if (AUTOMATIK.sicherungTaeglich !== false) try {
   const cfg = ladeConfig(V);
   if (!cfg.backup) {
     const remote = spawnSync(GIT, ["-C", V, "remote"], { encoding: "utf8", windowsHide: true });
@@ -111,7 +117,7 @@ try {
 // Update-Hinweis (Spec §3.9): höchstens 1x/24h geprüft (pruefeUpdate cached selbst), nie blockierend.
 // update.auto:true → nur die Marke schreiben, NICHTS automatisch ausführen — das macht der Agent über
 // den Skill "update" (kein Code führt fremden Release-Inhalt selbst aus).
-try {
+if (AUTOMATIK.updateHinweis !== false) try {
   const erg = await pruefeUpdate(V);
   log(`Update-Check: ${JSON.stringify(erg)}`);
   const cfg = ladeConfig(V);

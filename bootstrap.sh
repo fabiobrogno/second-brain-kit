@@ -13,7 +13,7 @@ if command -v xdg-user-dir >/dev/null 2>&1; then
   X=$(xdg-user-dir DOCUMENTS 2>/dev/null || true)
   [ -n "$X" ] && [ "${X%/}" != "${HOME%/}" ] && DOKUMENTE="$X"
 fi
-ZIEL="$DOKUMENTE/Brain"; BACKUP="keins"; V="${BRAIN_KIT_VERSION:-v0.2.0}"
+ZIEL="$DOKUMENTE/Brain"; BACKUP="keins"; V="${BRAIN_KIT_VERSION:-v0.3.0}"
 while [ $# -gt 0 ]; do case "$1" in --ziel) ZIEL="$2"; shift 2;; --backup) BACKUP="$2"; shift 2;; --version) V="$2"; shift 2;; *) shift;; esac; done
 HEIM="${BRAIN_KIT_HOME:-$HOME/.brain-kit}"
 LOG="$HEIM/install.log"

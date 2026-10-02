@@ -11,6 +11,15 @@ import { erzeugeAnsichtsDaten } from "../ansicht/daten.mjs";
 import { minisuche } from "../minisuche.mjs";
 import { resolveLink } from "../wiki-pfade.mjs";
 
+// Harte Sicherheitsregel (global.md): erzeugeAnsichtsDaten() bindet seit Task 3 das MCP-Inventar ein, das
+// ohne Überschreibung die ECHTEN Client-Configs des Testrechners läse (~/.claude.json usw.) — das würde hier
+// zusätzliche, nicht erfundene Knoten in `nodes` mischen und die Suchgewichte/-Parität verfälschen. Klammer-
+// Zugriff statt Punktnotation auf process.env, damit test-plattform.mjs (verbietet den lesenden Zugriff per
+// Punktnotation in Laufzeitcode) nicht anschlägt — hier wird HOME nur für die Testisolation umgelegt.
+const LEERES_HOME = mkdtempSync(join(tmpdir(), "paritaet-leeres-home "));
+process.env["HOME"] = LEERES_HOME;
+process.env["USERPROFILE"] = LEERES_HOME;
+
 const T = fileURLToPath(new URL("..", import.meta.url));
 
 function ladeSuche() {

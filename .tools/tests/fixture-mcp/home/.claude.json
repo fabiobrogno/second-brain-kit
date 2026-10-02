@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "demo-server": {
+      "command": "node",
+      "args": ["server.js", "--token", "KOEDER-geheim-123"],
+      "env": { "API_KEY": "KOEDER-geheim-123" }
+    },
+    "codecli-only": {
+      "command": "node",
+      "args": ["codecli.js"]
+    },
+    "../x": { "command": "evil" }
+  },
+  "projects": {
+    "/pfad/zu/projekt-a": {
+      "mcpServers": {
+        "projekt-only": { "command": "node", "args": ["p.js"] }
+      }
+    }
+  }
+}

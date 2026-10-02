@@ -1,12 +1,24 @@
 // .tools/tests/test-ansicht-daten.mjs — Daten der 3D-Ansicht: Bereiche aus der Config, Ausgabe nur nach .logs/ansicht/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, utimesSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { erzeugeAnsichtsDaten } from "../ansicht/daten.mjs";
+import { erzeugeAnsichtsDaten, baueAnsichtsDaten, datenSchluessel } from "../ansicht/daten.mjs";
+
+// Harte Sicherheitsregel (global.md): JEDER Test, der Home-Konfigurationen liest (hier: das MCP-Inventar
+// in daten.mjs), setzt HOME/USERPROFILE auf ein leeres Temp-Verzeichnis — die echten ~/.claude.json,
+// ~/.cursor/mcp.json usw. werden in diesem Prozess NIE gelesen. Seit daten.mjs MCP-Server einbindet, gilt
+// das für JEDEN Aufruf von erzeugeAnsichtsDaten/baueAnsichtsDaten in dieser Datei (node --test startet pro
+// Testdatei einen eigenen Prozess — diese Überschreibung wirkt nur hier, nicht auf andere Testdateien).
+// Klammer-Zugriff statt Punktnotation auf process.env — test-plattform.mjs verbietet repoweit den lesenden
+// Zugriff per Punktnotation in Laufzeitcode (soll os.homedir() nutzen); hier wird HOME für den Testprozess
+// bewusst umgelegt, damit os.homedir() selbst das leere Temp-Verzeichnis liefert.
+const LEERES_HOME = mkdtempSync(join(tmpdir(), "ansicht-leeres-home "));
+process.env["HOME"] = LEERES_HOME;
+process.env["USERPROFILE"] = LEERES_HOME;
 
 const T = fileURLToPath(new URL("..", import.meta.url));
 const lies = (pfad) => {
@@ -170,4 +182,136 @@ test("Vault als Unterordner eines git-Repos → Zeitleiste trotzdem gefüllt", {
   g("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--no-gpg-sign", "-m", "x");
   const { data } = lies(erzeugeAnsichtsDaten(v).pfad);
   assert.match(String(data.nodes[0].added), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("baueAnsichtsDaten(vault) liefert dasselbe Datenobjekt wie data.js, ohne zu schreiben", () => {
+  const v = tempVault();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "notizen"));
+  writeFileSync(join(v, "notizen", "a.md"), "# A\n");
+  const d = baueAnsichtsDaten(v);
+  assert.equal(existsSync(join(v, ".logs", "ansicht", "data.js")), false, "baueAnsichtsDaten darf nie schreiben");
+  assert.equal(d.nodes.length, 1);
+  assert.equal(d.nodes[0].id, "notizen/a.md");
+  const { data } = lies(erzeugeAnsichtsDaten(v).pfad);
+  assert.deepEqual(data.nodes.map((n) => n.id), d.nodes.map((n) => n.id));
+});
+
+test("ohne MCP-Server: kein Bereich 'werkzeuge', keine Knoten vom Typ 'mcp'", () => {
+  const v = tempVault();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "notizen"));
+  writeFileSync(join(v, "notizen", "a.md"), "# A\n");
+  const d = baueAnsichtsDaten(v);
+  assert.ok(!d.areas.some((a) => a.id === "werkzeuge"));
+  assert.ok(!d.nodes.some((n) => n.type === "mcp"));
+  assert.deepEqual(d.mcp, []);
+});
+
+test("MCP-Server aus <vault>/.mcp.json: Bereich 'werkzeuge' (Region hirnstamm, Farbe tuerkis), Knoten mcp:demo-server, Kante über Frontmatter mcp: [..]", () => {
+  const v = tempVault();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  writeFileSync(join(v, ".mcp.json"), JSON.stringify({ mcpServers: { "demo-server": { command: "node", env: { X: "KOEDER-geheim-123" } } } }));
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "seite-x.md"), "---\nmcp: [demo-server]\n---\n# Seite X\n");
+  const d = baueAnsichtsDaten(v);
+  const werkzeuge = d.areas.find((a) => a.id === "werkzeuge");
+  assert.ok(werkzeuge, "Bereich werkzeuge fehlt");
+  assert.equal(werkzeuge.region, "hirnstamm");
+  assert.equal(werkzeuge.farbe, "tuerkis");
+  assert.deepEqual(d.mcp.map((s) => s.name), ["demo-server"]);
+  assert.deepEqual(d.mcp[0].quellen, ["Vault"]);
+  const mcpNode = d.nodes.find((n) => n.id === "mcp:demo-server");
+  assert.ok(mcpNode, "Knoten mcp:demo-server fehlt");
+  assert.equal(mcpNode.area, "werkzeuge");
+  assert.equal(mcpNode.type, "mcp");
+  const kante = d.edges.find((e) => (e.s === "wiki/seite-x.md" && e.t === "mcp:demo-server") || (e.t === "wiki/seite-x.md" && e.s === "mcp:demo-server"));
+  assert.ok(kante, "Kante Seite ↔ mcp:demo-server fehlt");
+  assert.equal(kante.kind, "mcp");
+  assert.ok(!JSON.stringify(d).includes("KOEDER"), "kein Köderwert in den Ansichtsdaten");
+});
+
+test("Namensgleichheit (normalisierter Servername Teil des normalisierten Seitennamens, ab 4 Zeichen) erzeugt ebenfalls eine Kante", () => {
+  const v = tempVault();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  writeFileSync(join(v, ".mcp.json"), JSON.stringify({ mcpServers: { "alpha-notes": {} } }));
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "alpha-notes-dashboard.md"), "# Dashboard\n");
+  const d = baueAnsichtsDaten(v);
+  const kante = d.edges.find((e) => e.kind === "mcp");
+  assert.ok(kante, "Namensgleichheits-Kante fehlt");
+  assert.ok([kante.s, kante.t].includes("mcp:alpha-notes"));
+  assert.ok([kante.s, kante.t].includes("wiki/alpha-notes-dashboard.md"));
+});
+
+test("cfg.ansicht.mcp === false schaltet MCP-Knoten und Bereich 'werkzeuge' ab", () => {
+  const v = tempVault();
+  const cfg = JSON.parse(kitConfig()); cfg.ansicht = { mcp: false };
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify(cfg));
+  writeFileSync(join(v, ".mcp.json"), JSON.stringify({ mcpServers: { "demo-server": {} } }));
+  const d = baueAnsichtsDaten(v);
+  assert.ok(!d.areas.some((a) => a.id === "werkzeuge"));
+  assert.ok(!d.nodes.some((n) => n.type === "mcp"));
+});
+
+test("datenSchluessel(vault): ändert sich bei einer geänderten Wiki-Datei, bleibt sonst gleich", () => {
+  const v = tempVault();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "a.md"), "# A\n");
+  const k1 = datenSchluessel(v);
+  const k1b = datenSchluessel(v);
+  assert.equal(k1, k1b, "ohne Änderung muss der Schlüssel stabil bleiben");
+  writeFileSync(join(v, "wiki", "a.md"), "# A geändert\n");
+  // mtime bewusst weit in die Zukunft setzen — manche Dateisysteme runden auf ganze Sekunden, zwei
+  // Schreibvorgänge kurz hintereinander dürften sonst dieselbe mtime bekommen (flaky).
+  utimesSync(join(v, "wiki", "a.md"), new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
+  const k2 = datenSchluessel(v);
+  assert.notEqual(k1, k2, "nach einer Änderung muss der Schlüssel sich ändern");
+});
+
+test("datenSchluessel: Umbenennen, Löschen, Verschieben, Config, Archiv- und Cluster-Ordner ändern den Schlüssel", () => {
+  const v = tempVault("ansicht schluessel ");
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  for (const d of ["wiki", "inbox", "archiv", "notizen"]) mkdirSync(join(v, d), { recursive: true });
+  writeFileSync(join(v, "wiki", "a.md"), "# A\n");
+  writeFileSync(join(v, "inbox", "b.md"), "# B\n");
+  const gesehen = new Set([datenSchluessel(v)]);
+  const schritt = (name, fn) => {
+    fn();
+    const k = datenSchluessel(v);
+    assert.ok(!gesehen.has(k), `${name} muss den Schlüssel ändern`);
+    gesehen.add(k);
+  };
+  // rename behält die mtime der Datei — auch das muss erkannt werden
+  schritt("Umbenennen im Wiki", () => renameSync(join(v, "wiki", "a.md"), join(v, "wiki", "a neu.md")));
+  schritt("Verschieben Inbox → Archiv", () => renameSync(join(v, "inbox", "b.md"), join(v, "archiv", "b.md")));
+  schritt("Löschen", () => rmSync(join(v, "archiv", "b.md")));
+  schritt("neue Datei im Archiv", () => writeFileSync(join(v, "archiv", "c.md"), "# C\n"));
+  schritt("neue Datei im Cluster-Ordner", () => writeFileSync(join(v, "notizen", "d.md"), "# D\n"));
+  schritt("Config geändert (ansicht.mcp: false)", () => writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ...KIT_AUSZUG, ansicht: { mcp: false } })));
+  // Ohne Änderung bleibt er stabil; .logs außer werkzeug.log/lint-cache zählt nicht
+  const k = datenSchluessel(v);
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "hint.log"), "x\n");
+  assert.equal(datenSchluessel(v), k);
+  schritt("Lint-Cache", () => writeFileSync(join(v, ".logs", "lint-cache.txt"), "- VERWAIST: x.md — keine eingehenden Links\n"));
+});
+
+test("D.sprache aus cfg.ansicht.sprache (nur de/en), Seite mit BOM, Lint-Pfade mit Leerzeichen", () => {
+  const v = tempVault("ansicht sprache ");
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "thema b c.md"), "---\ndescription: x\n---\n# B C\n");
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "lint-cache.txt"), "- PRÜFBEDÜRFTIG: thema b c.md — Quelle inbox/x y.md geändert seit Einarbeitung\r\n");
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ...KIT_AUSZUG, ansicht: { sprache: "en" } }));
+  writeFileSync(join(v, "wiki", "mit-bom.md"), "\uFEFF---\r\ndescription: Beschreibung mit BOM\r\n---\r\n# Mit BOM\r\n");
+  const d = baueAnsichtsDaten(v);
+  assert.equal(d.sprache, "en");
+  assert.equal(d.nodes.find((n) => n.id === "wiki/mit-bom.md")?.beschreibung, "Beschreibung mit BOM");
+  assert.equal(d.nodes.find((n) => n.id === "wiki/thema b c.md")?.status, "pruef");
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ...KIT_AUSZUG, ansicht: { sprache: "fr" } }));
+  assert.equal("sprache" in baueAnsichtsDaten(v), false);
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify(KIT_AUSZUG));
+  assert.equal("sprache" in baueAnsichtsDaten(v), false);
 });

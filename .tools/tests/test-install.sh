@@ -14,7 +14,7 @@ fi
 mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$(posixpfad "$T/bin"):$PATH"
 V="$HOME/Mein Brain"
 OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 1: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
-for p in inbox wiki/_schema.md AGENTS.md brain.config.json .tools/brain.mjs; do [ -e "$V/$p" ] || { echo "FAIL: fehlt $p"; exit 1; }; done
+for p in inbox wiki/_schema.md wiki/ich.md AGENTS.md brain.config.json .tools/brain.mjs; do [ -e "$V/$p" ] || { echo "FAIL: fehlt $p"; exit 1; }; done
 [ "$(git -C "$V" config core.hooksPath)" = ".tools/git-hooks" ] || { echo "FAIL: pre-commit nicht aktiv"; exit 1; }
 KV="$(tr -d '\r\n' < "$T/kit/.tools/VERSION")"
 [ "$(node -p "require('$V/brain.config.json').systemVersion")" = "$KV" ] || { echo "FAIL: systemVersion (erwartet $KV)"; exit 1; }

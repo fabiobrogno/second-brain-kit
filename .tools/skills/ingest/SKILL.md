@@ -11,6 +11,12 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    einzufügen): `yt-dlp --skip-download --write-auto-subs --sub-langs "de" --sub-format vtt -o "{{VAULT}}/.logs/ing_%(id)s" "<url>"`,
    VTT zu Text bereinigen (Zeitstempel/Tags/Duplikate raus), als Markdown mit Titel-H1 + Quell-URL
    nach {{VAULT}}/{{INBOX}}/.
+1b. **Quelle liegt unter `{{INBOX}}/_import/<name>/` (Skill import hat sie dorthin kopiert):** ZUERST
+   `_import/<name>/_bericht.md` lesen (Duplikate, Fast-Duplikat-Gruppen, Widersprüche, Pakete), dann NUR das
+   gewählte Paket einarbeiten (nie den ganzen Import auf einmal). Je Fast-Duplikat-Gruppe entsteht GENAU EINE
+   Wiki-Seite (nicht eine je Datei). Widerspruchs-Kandidaten aus dem Bericht nie still entscheiden: als
+   [!KONFLIKT]-Kasten mit BEIDEN Belegen setzen, die laut Bericht NEUERE Quelle zuerst nennen — erst die Person
+   entscheidet. Beweisbindung wie immer: `quellen`/`quellen_sha` zeigen auf die Dateien unter `_import/<name>/`.
 2. **Secrets-Riegel (VOR allem anderen):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" ingest-check <datei>`.
    Exit 3 → ABBRUCH: Fundstellen nennen, NICHTS schreiben, User fragen. Exit 0 → weiter.
 2b. **Lock setzen (Parallel-Sicherheit):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" lock`. Exit 1 (eine andere Sitzung arbeitet

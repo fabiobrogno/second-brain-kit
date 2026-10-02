@@ -32,6 +32,13 @@ rev: 1
 ---
 (optional nach Save in eine Team-Wissensbasis: team_id, saved_at)
 
+## Optionale Frontmatter (einzelne Seiten)
+- `mcp: ["<servername>", ...]` — verknüpft die Seite in der 3D-Ansicht mit einem MCP-Server gleichen Namens
+  (sonst reicht Namensgleichheit ab 4 Zeichen).
+- `repo: ["<repo-name>", ...]` / `pfade: ["<ordnername>", ...]` — macht die Seite zur „Projektseite": trifft der
+  Ordnername von `cwd` bzw. der Git-Repo-Name darauf zu, nennt der Sitzungsstart genau diese Seite.
+- Beide sind rein additiv — ohne sie funktioniert die Seite wie bisher.
+
 ## Beweisbindung
 quellen_sha bindet die Seite an den eingearbeiteten Quellenstand. Ändert sich die Quelle
 später, meldet /brain-lint die Seite als PRÜFBEDÜRFTIG — dann Re-Ingest nach User-Freigabe.

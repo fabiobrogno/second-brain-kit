@@ -60,12 +60,21 @@ const pfad = (f) => `"${vault.split("\\").join("/")}/.tools/adapters/claude-code
 // Absoluter Node-Pfad (der, mit dem gerade installiert wird): ein frisch eingerichteter Rechner hat das
 // private Node (~/.brain-kit/node) oft nicht im PATH, den Claude Code an Hooks weitergibt.
 const NODE = nodeBefehl();
-const soll = {
-  SessionStart: `${NODE} ${pfad("session-start.mjs")}`,
-  UserPromptSubmit: `${NODE} ${pfad("brain-hint.mjs")}`,
-  PreToolUse: `${NODE} ${pfad("wiki-guard.mjs")}`,
-  PreCompact: `echo 'Kontext-Kompression steht bevor: offenen Arbeitsstand sichern (Skill handoff).'`,
-};
+// Ein Eintrag je Brain-Hook. PreToolUse hat ZWEI eigene Einträge (wiki-guard, werkzeug-protokoll), damit der
+// wiki-guard-Matcher unverändert bleibt; PreCompact hat den echo-Hinweis UND den Ernte-Auslöser.
+// Ruling v0.3: alle Hooks bleiben immer registriert und beenden sich selbst, wenn ihr Schalter aus ist —
+// eine Klick-Änderung in der Maske schreibt settings.json nie um.
+const WIKI_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
+const ERNTE_FAKT = `${NODE} ${pfad("ernte-ausloeser.mjs")} --art fakt`;
+const soll = [
+  { ev: "SessionStart", cmd: `${NODE} ${pfad("session-start.mjs")}` },
+  { ev: "UserPromptSubmit", cmd: `${NODE} ${pfad("brain-hint.mjs")}` },
+  { ev: "PreToolUse", cmd: `${NODE} ${pfad("wiki-guard.mjs")}`, matcher: WIKI_MATCHER, altFassung: true },
+  { ev: "PreToolUse", cmd: `${NODE} ${pfad("werkzeug-protokoll.mjs")}`, matcher: "Read|mcp__.*" },
+  { ev: "PreCompact", cmd: `echo 'Kontext-Kompression steht bevor: offenen Arbeitsstand sichern (Skill handoff).'` },
+  { ev: "PreCompact", cmd: ERNTE_FAKT },
+  { ev: "SessionEnd", cmd: ERNTE_FAKT },
+];
 
 // Ältere Brain-Einträge derselben Vault erkennen (vor dem Umzug nach .tools/adapters/claude-code/):
 // <vault>/.tools/<basis>.<ext> — nicht unter .tools/adapters/ — mit oder ohne Anführungszeichen, auch die
@@ -89,8 +98,9 @@ const alteStatusMuster = altMuster("statusline", ["sh", "mjs"]);
 
 s.hooks ||= {};
 const MARKER = "/.tools/adapters/claude-code/";
-for (const [ev, cmd] of Object.entries(soll)) {
+for (const { ev, cmd, matcher, altFassung } of soll) {
   const liste = (s.hooks[ev] ||= []);
+  // Erkennungsmerkmal des eigenen Eintrags: Dateiname samt Argumenten (z. B. 'ernte-ausloeser.mjs" --art fakt').
   const datei2 = cmd.split("/").pop();
   // h.command fehlt bei fremden Hook-Formen ohne Kommandozeile (z. B. { type:"prompt", prompt:"…" } —
   // Claude Code kennt auch nicht-command-basierte Hooks). Solche Einträge sind fremd und bleiben
@@ -104,7 +114,8 @@ for (const [ev, cmd] of Object.entries(soll)) {
     }
   }
   let aktuellVorhanden = liste.some(x => x.hooks?.some(istAktuell));
-  const alt = alteMuster[ev];
+  // Alte Fassungen (vor dem Umzug) gab es nur für SessionStart/UserPromptSubmit und den wiki-guard.
+  const alt = ev === "PreToolUse" ? (altFassung ? alteMuster.PreToolUse : null) : alteMuster[ev];
   let ersetzt = false, matcherAngepasst = false, entfernt = false;
   if (alt) {
     // Erster Treffer ohne aktuellen Eintrag wird in Ort und Stelle ersetzt (einer je Event genügt);
@@ -119,10 +130,7 @@ for (const [ev, cmd] of Object.entries(soll)) {
           h.command = cmd;
           ersetzt = true;
           aktuellVorhanden = true;
-          if (ev === "PreToolUse") {
-            const ziel = "Edit|Write|MultiEdit|NotebookEdit";
-            if (eintrag.matcher !== ziel) { eintrag.matcher = ziel; matcherAngepasst = true; }
-          }
+          if (matcher && eintrag.matcher !== matcher) { eintrag.matcher = matcher; matcherAngepasst = true; }
         } else {
           eintrag.hooks.splice(i, 1);
           entfernt = true;
@@ -136,8 +144,8 @@ for (const [ev, cmd] of Object.entries(soll)) {
   if (ersetzt) console.log(`~ Hook ${ev} ersetzt (alte Fassung${matcherAngepasst ? ", matcher angepasst" : ""})`);
   if (entfernt) console.log(`- Hook ${ev} entfernt (alte Fassung)`);
   if (!aktuellVorhanden) {
-    liste.push(ev === "PreToolUse" ? { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: cmd }] } : { hooks: [{ type: "command", command: cmd }] });
-    console.log(`+ Hook ${ev}`);
+    liste.push(matcher ? { matcher, hooks: [{ type: "command", command: cmd }] } : { hooks: [{ type: "command", command: cmd }] });
+    console.log(`+ Hook ${ev}${matcher && !altFassung ? ` (${matcher})` : ""}`);
   }
 }
 if (!args.includes("--ohne-statusline")) {

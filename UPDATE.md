@@ -53,6 +53,10 @@ Migrations in this release:
 - `migrations/0.2.0.md` — notes, wiki and settings stay as they are; the 3D brain view (`brain zeig`) arrives
   with the system files, and `AGENTS.md` (plus the Codex skills, if used) is generated again so every agent
   knows "show me my brain".
+- `migrations/0.3.0.md` — notes, wiki and settings stay as they are; the control center, the importer and the
+  background harvest arrive with the system files (all AI-based extras off by default). `AGENTS.md` is
+  generated again, the "me" card template `ich.md` is added only if it is missing, and the Claude Code
+  adapter (if installed) is re-run so it registers the new hooks.
 
 Placeholders in a migration (`<vault>`, `<kit-klon>`) are always filled in as absolute paths, without `~`.
 From 0.2.0 on, the **update** skill also regenerates `AGENTS.md` (and `.agents/skills/` for Codex) every time

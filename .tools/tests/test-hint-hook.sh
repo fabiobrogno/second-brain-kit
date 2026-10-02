@@ -144,4 +144,38 @@ else
   run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"d6"}' >/dev/null; tail -1 "$BRAIN_VAULT/.logs/hint.log" | grep -q 'weg=vektor' || { echo "FAIL: ohne rerankSchwelle trotzdem Dienst"; exit 1; }
   dstop; unset BRAIN_DIENST_LIB FAKE_DIENST_JSON; rm -f "$F" "$CB"
 fi
+# ---------- v0.3: Hinweis-Stufen, zeichen=, Import-Treffer, Lücken (eigene Temp-Kopie, Temp-HOME) ----------
+TV=$(mktemp -d); V3="$TV/v drei, Jo's"; cp -R "$T/fixture" "$V3"; rm -rf "$V3/.logs"
+TH=$(mktemp -d); mkdir -p "$V3/00_inbox/_import/obs"; printf '# Gartenplan alt\nBeete im Frühling.\n' > "$V3/00_inbox/_import/obs/Garten Plan, alt.md"
+node ../brain-index.mjs "$V3" >/dev/null
+auto(){ node -e "const f=process.argv[1],c=JSON.parse(require('fs').readFileSync(f,'utf8'));c.automatik=JSON.parse(process.argv[2]);require('fs').writeFileSync(f,JSON.stringify(c))" "$V3/brain.config.json" "$1"; }
+run3(){ printf '%s' "$1" | HOME="$TH" USERPROFILE="$TH" BRAIN_VAULT="$V3" node "$HOOK"; }
+F3='{"prompt":"wie funktioniert das thema alpha genau","session_id":"STUFE"}'
+# (a) hinweise: aus → nichts, auch bei klarem Treffer
+echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.9}]' > "$J"; auto '{"hinweise":"aus"}'
+[ -z "$(run3 "${F3/STUFE/aus1}")" ] || { echo "FAIL: hinweise aus gibt trotzdem aus"; exit 1; }
+# (b) Stufen sind Deltas auf die Standard-Schwelle 0.45 (Ruling): niedrig=+0.08 (0.53, strenger),
+# hoch=-0.06 (0.39, lockerer). Score 0.42 liegt unter mittel (0.45) und niedrig (0.53), aber über hoch (0.39)
+# — zeigt also: hoch lockert, niedrig ist NIE lockerer als mittel.
+echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.42}]' > "$J"
+auto '{"hinweise":"mittel"}'; [ -z "$(run3 "${F3/STUFE/mittel1}")" ] || { echo "FAIL: mittel meldet 0.42"; exit 1; }
+auto '{"hinweise":"niedrig"}'; [ -z "$(run3 "${F3/STUFE/niedrig1}")" ] || { echo "FAIL: niedrig zeigt bei 0.42 mehr als mittel (muss strenger sein)"; exit 1; }
+auto '{"hinweise":"hoch"}'; OUT=$(run3 "${F3/STUFE/hoch1}"); echo "$OUT" | grep -q thema_alpha || { echo "FAIL: hoch senkt die Schwelle nicht: [$OUT]"; exit 1; }
+# (c) zeichen= ist die Länge des ausgegebenen Texts (inkl. Zeilenende), 0 ohne Treffer
+N=$(printf '%s\n' "$OUT" | node -e "let d='';process.stdin.setEncoding('utf8').on('data',c=>d+=c).on('end',()=>console.log(d.length))"); grep 'sid=hoch1' "$V3/.logs/hint.log" | grep -q " zeichen=$N " || { echo "FAIL: zeichen=$N fehlt: $(grep 'sid=hoch1' "$V3/.logs/hint.log")"; exit 1; }
+grep 'sid=mittel1' "$V3/.logs/hint.log" | grep -q ' zeichen=0 ' || { echo "FAIL: zeichen=0 fehlt"; exit 1; }
+# (d) Treffer unter <inbox>/_import/ → Zusatz „(Import, ungeprüft)"; Pfad mit Leerzeichen/Komma sprengt das Log nicht
+IMP=$(node -e "const m=require(process.argv[1]); console.log(Object.keys(m.paths).find(k=>m.paths[k].includes('_import/')))" "$V3/.logs/wiki-map.json")
+echo "[{\"file\":\"qmd://brain/$IMP\",\"score\":0.8}]" > "$J"; auto '{}'
+OUT=$(run3 "${F3/STUFE/imp1}"); echo "$OUT" | grep -q '00_inbox/_import/obs/Garten Plan, alt.md — (Import, ungeprüft) Garten Plan, alt' || { echo "FAIL: Import-Treffer ohne Zusatz: [$OUT]"; exit 1; }
+# hits= ist jetzt EIN encodeURIComponent-Token (Review-Fund 2): auch "/" wird kodiert (wie bei ziel= im
+# werkzeug.log), nicht nur Leerzeichen/Komma.
+grep 'sid=imp1' "$V3/.logs/hint.log" | grep -q 'hits=00_inbox%2F_import%2Fobs%2FGarten%20Plan%2C%20alt.md unterdrueckt=' || { echo "FAIL: Import-Pfad im Log nicht geschützt: $(grep 'sid=imp1' "$V3/.logs/hint.log")"; exit 1; }
+# (e) Lücke: Wissensfrage ohne Treffer → luecken.log nur mit Schalter, nur Stichwörter (Ruling 3); Kurzantwort nie
+echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.1}]' > "$J"
+run3 "${F3/STUFE/l1}" >/dev/null; [ ! -e "$V3/.logs/luecken.log" ] || { echo "FAIL: Lücke ohne Schalter gemerkt"; exit 1; }
+auto '{"luecken":true}'; run3 "${F3/STUFE/l2}" >/dev/null
+grep -q 'quelle=hint text=funktioniert thema alpha genau$' "$V3/.logs/luecken.log" 2>/dev/null || { echo "FAIL: Lücke nicht gemerkt"; exit 1; }
+run3 '{"prompt":"ok passt, weiter","session_id":"l3"}' >/dev/null; [ "$(wc -l < "$V3/.logs/luecken.log" | tr -d ' ')" = 1 ] || { echo "FAIL: Kurzantwort als Lücke gemerkt"; exit 1; }
+rm -rf "$TV" "$TH"
 rm -rf "$BRAIN_VAULT/.logs"; rm -f "$J"; echo "PASS"

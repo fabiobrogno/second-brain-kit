@@ -18,6 +18,7 @@
   --c-rot: #f27c8c;
   --c-lila: #b8a4ff;
   --c-grau: #9aa3b5;
+  --c-tuerkis: #3fd6e8;
   --c-neutral: #dfe6ff;
   --konflikt: #ff4f61;
   --pruef: #ffd03d;
@@ -44,6 +45,7 @@
   --c-rot: #c93d55;
   --c-lila: #6e55d8;
   --c-grau: #6b7487;
+  --c-tuerkis: #0e8fa3;
   --c-neutral: #3a4260;
   --konflikt: #e02a40;
   --pruef: #c79300;
@@ -285,3 +287,14 @@ body.bare .top, body.bare .filters, body.bare .timeline, body.bare .hint, body.b
 .muted { color: var(--fg-3); }
 @media (max-width: 720px) { .panel { max-height: 62vh; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- v0.3: Werkzeuge (MCP), Aufleuchten, Dienst-Hinweis ---------- */
+.md a.wl.f-tuerkis { --c: var(--c-tuerkis); }
+.hint i { font-style: normal; }
+.lbl.glow { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+.links .chips { margin-top: 2px; }
+.chip.mcp-q { cursor: default; height: 24px; font-size: 12px; }
+.links ul.mcp-wz li { grid-template-columns: 1fr; cursor: default; font-family: var(--mono); font-size: 12px; }
+.banner { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 6; max-width: min(560px, calc(100% - 28px)); padding: 11px 16px; font-size: 13px; line-height: 1.45; color: var(--fg); border-color: color-mix(in srgb, var(--pruef) 45%, transparent); }
+.load-fail { color: var(--fg-2); font: 14px var(--font); max-width: 520px; padding: 0 20px; text-align: center; line-height: 1.5; }
+@media (max-width: 720px) { .banner { top: 120px; } }

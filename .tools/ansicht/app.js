@@ -1,82 +1,145 @@
-/* Brain 3D — Ansicht des Second Brain. Liest nur window.BRAIN_DATA (<vault>/.logs/ansicht/data.js, gebaut von
-   daten.mjs), schreibt nie. three.js kommt lokal aus vendor/three.bundle.js (window.THREE), kein CDN zur Laufzeit.
-   Bereiche, Farben und Hirnregionen kommen aus BRAIN_DATA.areas (config-gesteuert), nicht aus festen Namen. */
+/* Brain 3D — Ansicht des Second Brain. Daten kommen über den lokalen Dienst (BrainApi → /api/daten); ohne Dienst
+   (file://) aus window.BRAIN_DATA (<vault>/.logs/ansicht/data.js, gebaut von daten.mjs). Schreibt nie.
+   three.js kommt lokal aus vendor/three.bundle.js (window.THREE), kein CDN zur Laufzeit. Bereiche, Farben und
+   Hirnregionen kommen aus den Daten (config-gesteuert), nicht aus festen Namen. Keine Inline-Skripte/-Handler (CSP).
+   Für steuer.js: window.BrainApp = { neuLaden(), waehle(id) }. Texte über window.BrainTexte.t (Rückfall: Deutsch). */
 (function () {
   "use strict";
+
+  // ================================================================== Texte (Rückfall, solange texte.js fehlt)
+  const STANDARD = {
+    ansicht3d: "3D-Ansicht des Brains", suchen: "Suchen", filter: "Filter",
+    pflege: "Pflege", pflegeTitel: "Pflege (P)", zuruecksetzen: "Ansicht zurücksetzen", zuruecksetzenTitel: "Ansicht zurücksetzen (R)",
+    hellDunkel: "Hell oder dunkel", hellDunkelTitel: "Hell / Dunkel (T)", schliessen: "Schließen",
+    bereiche: "Bereiche", seitentyp: "Seitentyp", status: "Status",
+    wachstumAbspielen: "Wachstum abspielen", zeitleiste: "Zeitleiste", keineSeiten: "Noch keine Seiten",
+    hinweisZiehen: "Ziehen", hinweisDrehen: "drehen", hinweisScrollen: "Scrollen", hinweisZoomen: "zoomen",
+    hinweisShiftKlick: "Shift-Klick", hinweisWeg: "Weg zwischen zwei Seiten",
+    keineDaten: "Noch keine Daten — sag ‚zeig mir mein Brain‘", datenFehler: "Die Daten konnten nicht geladen werden — sag ‚zeig mir mein Brain‘",
+    startFehler: "3D-Ansicht konnte nicht starten: {grund}.", fehltThree: "three.js oder das Gehirn-Modell fehlt", fehltSkripte: "markdown.js oder suche.js fehlt",
+    neuOeffnen: "Die Ansicht ist nicht mehr verbunden — sag ‚zeig mir mein Brain‘, um sie neu zu öffnen.",
+    typThema: "Thema", typEntitaet: "Steckbrief", typQuelle: "Quelle", typSynthese: "Synthese", typUeberblick: "Überblick", typNotiz: "Notiz", typMcp: "MCP-Server",
+    bereichZentrum: "Überblick", bereichArchiv: "Archiv", bereichInbox: "Inbox", bereichWerkzeuge: "Werkzeuge",
+    leer: "leer", keine: "keine", frisch: "frisch", offenerKonflikt: "Offener Konflikt", pruefbeduerftig: "Prüfbedürftig",
+    stand: "Stand", seit: "Seit", geaendert: "Geändert", fokus: "Fokus", tabSeite: "Seite", tabVerbindungen: "Verbindungen",
+    quellen: "Quellen", rohquelle: "Rohquelle", eingearbeitetIn: "Eingearbeitet in", verweistAuf: "Verweist auf", verlinktVon: "Verlinkt von",
+    mcpServer: "MCP-Server", fussWeg: "Klick: Weg zu einer zweiten Seite", fussZurueck: "zurück",
+    weg: "Weg", schritte: "{n} Schritte", keineVerbindung: "keine Verbindung",
+    wegText: "Kürzeste Verbindung über Links und Quellen.", wegKeiner: "Zwischen diesen Seiten gibt es im sichtbaren Bereich keine Verbindung.",
+    weitereTreffer: "{n} weitere leuchten im Brain", keinTreffer: "Kein Treffer",
+    statusKonflikt: "Konflikt", statusPruef: "Prüfbedürftig", statusOk: "In Ordnung",
+    konfliktOffen: "Konflikt offen", pruefKlein: "prüfbedürftig", keineBefunde: "Keine offenen Befunde",
+    frischText: "{n} Seiten in den letzten 2 Tagen eingearbeitet — sie pulsieren.",
+    vonSeiten: "{n} von {gesamt} Seiten", statistik: "{seiten} Seiten · {verbindungen} Verbindungen",
+    mcpWerkzeuge: "Werkzeuge", mcpBenutzt: "Benutzt", mcpZuletzt: "Zuletzt", mcpMal: "{n}×", mcpNie: "nie",
+    mcpKeineWerkzeuge: "Noch kein Werkzeug benutzt", mcpSeiten: "Verknüpfte Seiten",
+    mcpKeineSeite: "Noch keine Brain-Seite zu diesem Werkzeug", mcpGenutzt: "genutzt",
+  };
+
+  // ================================================================== reine Hilfen (ohne DOM; test-ansicht-app.mjs)
+  // Platzhalter {name} durch werte.name ersetzen
+  const fuelle = (text, werte) => (werte ? String(text).replace(/\{(\w+)\}/g, (m, k) => (k in werte ? String(werte[k]) : m)) : String(text));
+  // BrainTexte.t, wenn vorhanden und es den Schlüssel kennt (liefert etwas anderes als den Schlüssel) — sonst Deutsch
+  function text(bt, schluessel, werte) {
+    if (bt && typeof bt.t === "function") {
+      try { const r = bt.t(schluessel, werte); if (typeof r === "string" && r && r !== schluessel) return r; } catch {}
+    }
+    return fuelle(schluessel in STANDARD ? STANDARD[schluessel] : schluessel, werte);
+  }
+  // Antwort von /api/gelesen (neueste zuerst, {zeit, sid, art, ziel}) → noch nicht gesehene Seiten-IDs.
+  // gesehen: Set der schon verarbeiteten Zeilen (der Dienst liefert ab `seit` inklusive — Sekunden-Auflösung).
+  // Rückgabe { ids, seit }: seit = jüngster Zeitstempel in ms (für die nächste Abfrage), sonst der alte Wert.
+  function neueGelesene(eintraege, gesehen, seit) {
+    const ids = [], schon = new Set();
+    let neu = seit || 0;
+    if (!Array.isArray(eintraege)) return { ids, seit: neu };
+    for (const e of eintraege) {
+      if (!e || e.art !== "lesen" || typeof e.ziel !== "string" || !e.ziel) continue;
+      const k = e.zeit + "|" + e.sid + "|" + e.ziel;
+      const ms = Date.parse(String(e.zeit) + "Z");
+      if (Number.isFinite(ms) && ms > neu) neu = ms;
+      if (gesehen.has(k)) continue;
+      gesehen.add(k);
+      let id; try { id = decodeURIComponent(e.ziel); } catch { continue; }
+      if (!schon.has(id)) { schon.add(id); ids.push(id); }
+    }
+    if (gesehen.size > 4000) { const rest = [...gesehen].slice(-1000); gesehen.clear(); rest.forEach((k) => gesehen.add(k)); }
+    return { ids, seit: neu };
+  }
+  // Kanten im „sparsamen“ Modus (großes Brain): nur die zur Auswahl/zum Weg/zur Suche gehörenden Kanten.
+  // modus: "sel" | "path" | "search" | sonst; fokus: Map(Knoten → Gewicht); inzident(i) → Kantenindizes; ende(k) → [a, b]
+  function kantenFuerFokus(modus, { sel = -1, wegKanten = [], fokus = new Map(), inzident, ende, max = 800 } = {}) {
+    if (modus === "sel" && sel >= 0) return [...new Set(inzident(sel))].slice(0, max);
+    if (modus === "path") return [...new Set(wegKanten)];
+    if (modus === "search") {
+      const out = new Set();
+      for (const i of fokus.keys()) for (const k of inzident(i)) { const [a, b] = ende(k); if (fokus.has(a) && fokus.has(b)) out.add(k); if (out.size >= max) return [...out]; }
+      return [...out];
+    }
+    return [];
+  }
+  const HILFEN = { fuelle, text, neueGelesene, kantenFuerFokus, STANDARD };
+  if (typeof window !== "undefined") window.BrainAppHilfen = HILFEN;
+  if (typeof document === "undefined" || !document.getElementById("gl")) return;
+
+  const t = (k, w) => text(window.BrainTexte, k, w);
+  // Sprache aus den Daten (D.sprache, von daten.mjs/cfg.ansicht.sprache): Vorrang vor navigator.language, aber
+  // nicht vor einer ausdrücklichen Nutzerwahl (die steht schon im localStorage, ausConfig() greift dann nicht).
+  // Vor ladeDaten() aufrufen, sonst würden Namen (z. B. Bereichsnamen) noch in der alten Sprache gebaut.
+  function wendeSpracheAn(raw) {
+    if (!raw || typeof raw.sprache !== "string") return;
+    const bt = window.BrainTexte;
+    if (bt && typeof bt.ausConfig === "function" && bt.ausConfig(raw.sprache)) uebersetzeDom();
+  }
   const T = window.THREE;
-  if (!window.BRAIN_DATA) { fail("Noch keine Daten — sag ‚zeig mir mein Brain‘", true); return; }
-  if (!T || !window.BRAIN_MESH) { fail("three.js oder das Gehirn-Modell fehlt"); return; }
-  if (!window.BrainMarkdown || !window.BrainSuche) { fail("markdown.js oder suche.js fehlt"); return; }
+  const $ = (s) => document.querySelector(s);
+
+  // ================================================================== Schnittstelle für steuer.js (sofort da)
+  let bereit = false, wartendeWahl = null, ladeKette = Promise.resolve();
+  window.BrainApp = {
+    neuLaden: () => (ladeKette = ladeKette.then(() => neuLaden()).catch(() => {})),
+    waehle: (id) => { if (!bereit) { wartendeWahl = id; return false; } return waehleId(id); },
+  };
+
+  uebersetzeDom();
+  if (!T || !window.BRAIN_MESH) { fail(t("fehltThree")); return; }
+  if (!window.BrainMarkdown || !window.BrainSuche) { fail(t("fehltSkripte")); return; }
   const { OrbitControls, EffectComposer, RenderPass, UnrealBloomPass, OutputPass, MarchingCubes } = T;
 
   const params = new URLSearchParams(location.search);
   const SHOT = params.get("shot");
-  const $ = (s) => document.querySelector(s);
   const mqMobile = matchMedia("(max-width: 720px)");
   const isMobile = () => mqMobile.matches;
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches || params.has("still");
   const root = document.documentElement;
   if (params.get("theme") === "light" || SHOT === "light") root.dataset.theme = "light";
   if (params.has("bare")) document.body.classList.add("bare");
-  try { const t = localStorage.getItem("brain3d-theme"); if (t && !SHOT && !params.get("theme")) root.dataset.theme = t; } catch {}
+  try { const th = localStorage.getItem("brain3d-theme"); if (th && !SHOT && !params.get("theme")) root.dataset.theme = th; } catch {}
 
-  // ================================================================== data
-  const RAW = window.BRAIN_DATA;
-  const D = { areas: (RAW.areas || []).slice(), nodes: (RAW.nodes || []).map((n) => ({ ...n })), edges: (RAW.edges || []).slice(), inbox: RAW.inbox || 0, first: RAW.first, last: RAW.last };
-  // Bereiche: aus den Daten; unbekannte Bereiche eines Knotens landen im Zentrum (nie ein Absturz wegen alter data.js)
-  const FIXED = { zentrum: { id: "zentrum", name: "Überblick", farbe: "neutral", region: "tief" }, archiv: { id: "archiv", name: "Archiv", farbe: "grau", region: "kleinhirn" }, inbox: { id: "inbox", name: "Inbox", farbe: "lila", region: "wolke" } };
-  for (const k of Object.keys(FIXED)) if (!D.areas.some((a) => a.id === k)) D.areas.push(FIXED[k]);
-  const AREAS = Object.fromEntries(D.areas.map((a) => [a.id, a]));
-  D.nodes.forEach((n) => { if (!AREAS[n.area]) n.area = "zentrum"; });
-  const synth = Number(params.get("synthetic") || 0);
-  if (synth) addSynthetic(synth);
-  const N = D.nodes.length;
-  const idx = new Map(D.nodes.map((n, i) => [n.id, i]));
-  const byName = new Map();
-  D.nodes.forEach((n, i) => { if (n.name) byName.set(n.name.toLowerCase(), i); byName.set(n.title.toLowerCase(), i); });
-  D.edges = D.edges.filter((e) => idx.has(e.s) && idx.has(e.t));
-  const E = D.edges.length;
-  const out = D.nodes.map(() => []), inn = D.nodes.map(() => []), adj = D.nodes.map(() => new Set());
-  D.edges.forEach((e, k) => { const a = idx.get(e.s), b = idx.get(e.t); e.a = a; e.b = b; out[a].push(k); inn[b].push(k); adj[a].add(b); adj[b].add(a); });
-  const DAY = 86400000;
-  const toT = (d) => (d ? Date.parse(d + "T12:00:00Z") : null);
-  const tLast = toT(D.last) ?? toT(new Date().toISOString().slice(0, 10)), tFirst = toT(D.first) ?? tLast - DAY; // ohne Daten: Zeitleiste endet heute
-  const days = Math.max(1, Math.round((tLast - tFirst) / DAY));
-  D.nodes.forEach((n) => {
-    n.t = toT(n.added) ?? tFirst;
-    n.fresh = tLast - Math.max(n.t, toT(n.changed) ?? n.t) <= DAY;
-    n.day = Math.round((n.t - tFirst) / DAY);
-  });
-  const DENSE = Math.min(1, Math.sqrt(300 / Math.max(N, 1)));    // 1 bei kleinen Brains, kleiner bei vielen Seiten
+  // Datenquelle: Dienst (fetch mit Zugangs-Header aus api.js), sonst data.js (file://). Der Abruf startet sofort und
+  // läuft parallel zum Aufbau der Gehirn-Szene.
+  const api = () => (window.BrainApi && window.BrainApi.verfuegbar ? window.BrainApi : null);
+  let quelle = "keine";
+  function ladeSkript(src) {
+    return new Promise((ok) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = () => { s.remove(); ok(true); }; s.onerror = () => { s.remove(); ok(false); };
+      document.head.appendChild(s);
+    });
+  }
+  async function holeRohdaten(neu) {
+    const a = api();
+    if (a) { quelle = "dienst"; return await a.holeJson("/api/daten"); }
+    if (location.protocol === "file:") {
+      if (!window.BRAIN_DATA || neu) await ladeSkript("../../.logs/ansicht/data.js" + (neu ? "?v=" + Date.now() : ""));
+      quelle = "datei"; return window.BRAIN_DATA || null;
+    }
+    if (window.BRAIN_DATA) { quelle = "datei"; return window.BRAIN_DATA; }
+    return null;
+  }
+  const datenVersprechen = holeRohdaten(false).catch((e) => ({ __fehler: e }));
 
-  const TYPES = { thema: "Thema", entitaet: "Steckbrief", quelle: "Quelle", synthese: "Synthese", ueberblick: "Überblick", notiz: "Notiz" };
-  const css = (v) => getComputedStyle(root).getPropertyValue(v).trim();
-  // Farbe je Bereich aus der festen Palette (style.css: --c-blau, --c-orange, … --c-neutral)
-  const areaColor = (a) => css("--c-" + (AREAS[a]?.farbe || "neutral")) || css("--c-neutral") || "#ffffff";
-
-  // ================================================================== noise + rng
-  const noise3 = (() => {
-    const g = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
-    const p = new Uint8Array(256); for (let i = 0; i < 256; i++) p[i] = i;
-    let s = 2024; for (let i = 255; i > 0; i--) { s = (s * 16807) % 2147483647; const j = s % (i + 1); const t = p[i]; p[i] = p[j]; p[j] = t; }
-    const perm = new Uint8Array(512), pm = new Uint8Array(512);
-    for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; pm[i] = perm[i] % 12; }
-    const F3 = 1 / 3, G3 = 1 / 6;
-    const c = (gi, x, y, z, t) => { if (t < 0) return 0; t *= t; const q = g[gi]; return t * t * (q[0] * x + q[1] * y + q[2] * z); };
-    return (xin, yin, zin) => {
-      const s = (xin + yin + zin) * F3, i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
-      const t = (i + j + k) * G3, x0 = xin - i + t, y0 = yin - j + t, z0 = zin - k + t;
-      let i1, j1, k1, i2, j2, k2;
-      if (x0 >= y0) { if (y0 >= z0) { i1=1;j1=0;k1=0;i2=1;j2=1;k2=0; } else if (x0 >= z0) { i1=1;j1=0;k1=0;i2=1;j2=0;k2=1; } else { i1=0;j1=0;k1=1;i2=1;j2=0;k2=1; } }
-      else { if (y0 < z0) { i1=0;j1=0;k1=1;i2=0;j2=1;k2=1; } else if (x0 < z0) { i1=0;j1=1;k1=0;i2=0;j2=1;k2=1; } else { i1=0;j1=1;k1=0;i2=1;j2=1;k2=0; } }
-      const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3, x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3, x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
-      const ii = i & 255, jj = j & 255, kk = k & 255;
-      return 32 * (c(pm[ii + perm[jj + perm[kk]]], x0, y0, z0, 0.6 - x0*x0 - y0*y0 - z0*z0)
-        + c(pm[ii + i1 + perm[jj + j1 + perm[kk + k1]]], x1, y1, z1, 0.6 - x1*x1 - y1*y1 - z1*z1)
-        + c(pm[ii + i2 + perm[jj + j2 + perm[kk + k2]]], x2, y2, z2, 0.6 - x2*x2 - y2*y2 - z2*z2)
-        + c(pm[ii + 1 + perm[jj + 1 + perm[kk + 1]]], x3, y3, z3, 0.6 - x3*x3 - y3*y3 - z3*z3));
-    };
-  })();
+  // ================================================================== rng
   let seed = 7;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 100000) / 100000; };
@@ -107,30 +170,57 @@
   };
   const cellCenter = (q, out = [0, 0, 0]) => { const i = q % G, j = Math.floor(q / G) % G, k = Math.floor(q / (G * G)); out[0] = GRID.origin[0] + (i + 0.5) * GRID.step; out[1] = GRID.origin[1] + (j + 0.5) * GRID.step; out[2] = GRID.origin[2] + (k + 0.5) * GRID.step; return out; };
 
+  // ================================================================== Datenzustand (neu gesetzt von ladeDaten)
+  const TYPE_KEYS = { thema: "typThema", entitaet: "typEntitaet", quelle: "typQuelle", synthese: "typSynthese", ueberblick: "typUeberblick", notiz: "typNotiz", mcp: "typMcp" };
+  const typName = (ty) => (TYPE_KEYS[ty] ? t(TYPE_KEYS[ty]) : ty);
+  const FIXED = { zentrum: { id: "zentrum", farbe: "neutral", region: "tief" }, archiv: { id: "archiv", farbe: "grau", region: "kleinhirn" }, inbox: { id: "inbox", farbe: "lila", region: "wolke" } };
+  const FIXED_NAME = { zentrum: "bereichZentrum", archiv: "bereichArchiv", inbox: "bereichInbox", werkzeuge: "bereichWerkzeuge" };
+  const DAY = 86400000;
+  const toT = (d) => { if (!d) return null; const v = Date.parse(String(d).slice(0, 10) + "T12:00:00Z"); return Number.isFinite(v) ? v : null; };
+  let D = null, AREAS = {}, N = 0, E = 0, idx = new Map(), byName = new Map(), out = [], inn = [], adj = [];
+  let tFirst = 0, tLast = 0, days = 1, DENSE = 1, mcpInfo = new Map(), S = null, nodeOn = new Uint8Array(0);
+  // Die vier festen Bereiche (zentrum/archiv/inbox/werkzeuge) kommen von daten.mjs IMMER mit einem fest
+  // deutschen `name` (Überblick/Archiv/Inbox/Werkzeuge, siehe .tools/ansicht/daten.mjs) — die Übersetzung aus
+  // texte.js greift darum nur, wenn sie hier Vorrang vor AREAS[a]?.name bekommt. Nur echte Cluster (nicht in
+  // FIXED_NAME) nutzen weiter ihren konfigurierten Namen unverändert (Themen des Vaults werden nicht übersetzt).
+  const areaName = (a) => (FIXED_NAME[a] ? t(FIXED_NAME[a]) : AREAS[a]?.name || a);
+
+  const css = (v) => getComputedStyle(root).getPropertyValue(v).trim();
+  // Farbe je Bereich aus der festen Palette (style.css: --c-blau, --c-orange, … --c-neutral), je Thema einmal gelesen
+  let farbCache = {};
+  const areaColor = (a) => {
+    const f = AREAS[a]?.farbe || "neutral";
+    if (!farbCache[f]) farbCache[f] = css("--c-" + f) || css("--c-neutral") || "#ffffff";
+    return farbCache[f];
+  };
+
   // ================================================================== regions + layout (Bereich -> echter Hirnlappen)
-  // Region (aus BRAIN_DATA.areas[].region) -> echte Hirnlappen. Das Zentrum (Wiki ohne Cluster) liegt im Balken +
-  // Tiefe, damit es sich nicht mit einem Cluster in der Region „tief“ deckt.
+  // Region (aus areas[].region) -> echte Hirnlappen. Das Zentrum (Wiki ohne Cluster) liegt im Balken + Tiefe, damit
+  // es sich nicht mit einem Cluster in der Region „tief“ deckt. „hirnstamm“: MCP-Werkzeuge unten am Stamm.
   const REGION_LOBES = {
     frontal: [LOBE.frontal], temporal: [LOBE.temporal], parietal: [LOBE.parietal], tief: [LOBE.deep, LOBE.limbic],
-    okzipital: [LOBE.occipital], kleinhirn: [LOBE.cerebellum],
+    okzipital: [LOBE.occipital], kleinhirn: [LOBE.cerebellum], hirnstamm: [LOBE.stem],
   };
   const lobesOf = (a) => (a === "zentrum" ? [LOBE.callosum, LOBE.deep] : REGION_LOBES[AREAS[a]?.region] || [LOBE.deep]);
   const isWolke = (a) => AREAS[a]?.region === "wolke";
   const beidseitig = (a) => AREAS[a]?.region === "temporal"; // Schläfenlappen: zwei Hälften, je Seite ein Knotenpunkt
   const REG = { inbox: { c: [1.3, 0.75, 0.15], r: [0.18, 0.12, 0.18] } };
-  const areaInfo = {};
+  let areaInfo = {};
   function buildArea(a) {
     if (areaInfo[a]) return areaInfo[a];
     const set = new Set(lobesOf(a));
-    const valid = new Uint8Array(G3), list = [];
+    const valid = new Uint8Array(G3); let list = [];
     for (let q = 0; q < G3; q++) if (set.has(LAB[q]) && OCC[q] >= 175) { valid[q] = 1; list.push(q); }
+    // schmale Regionen (Hirnstamm): lockerere Schwelle, notfalls die Tiefe — nie eine leere Region
+    if (list.length < 8) for (let q = 0; q < G3; q++) if (!valid[q] && set.has(LAB[q]) && OCC[q] >= 90) { valid[q] = 1; list.push(q); }
+    if (!list.length) for (let q = 0; q < G3; q++) if (LAB[q] === LOBE.deep && OCC[q] >= 175) { valid[q] = 1; list.push(q); }
     // nächstgelegene gültige Zelle für jede Zelle (BFS, 6er-Nachbarschaft)
-    const near = new Int32Array(G3).fill(-1), queue = new Int32Array(G3); let h = 0, t = 0;
-    for (const q of list) { near[q] = q; queue[t++] = q; }
-    while (h < t) {
+    const near = new Int32Array(G3).fill(-1), queue = new Int32Array(G3); let h = 0, tt = 0;
+    for (const q of list) { near[q] = q; queue[tt++] = q; }
+    while (h < tt) {
       const q = queue[h++], i = q % G, j = Math.floor(q / G) % G, k = Math.floor(q / (G * G));
       const nb = [i > 0 ? q - 1 : -1, i < G - 1 ? q + 1 : -1, j > 0 ? q - G : -1, j < G - 1 ? q + G : -1, k > 0 ? q - G * G : -1, k < G - 1 ? q + G * G : -1];
-      for (const r of nb) if (r >= 0 && near[r] < 0) { near[r] = near[q]; queue[t++] = r; }
+      for (const r of nb) if (r >= 0 && near[r] < 0) { near[r] = near[q]; queue[tt++] = r; }
     }
     const c = [0, 0, 0], side = { "-1": [0, 0, 0, 0], "1": [0, 0, 0, 0] }, tmp = [0, 0, 0];
     for (const q of list) { cellCenter(q, tmp); for (let k = 0; k < 3; k++) c[k] += tmp[k] / list.length; const sd = side[tmp[2] < 0 ? "-1" : "1"]; sd[0] += tmp[0]; sd[1] += tmp[1]; sd[2] += tmp[2]; sd[3]++; }
@@ -144,12 +234,15 @@
     const cc = cellCenter(target), hs = GRID.step * 0.45;
     for (let k = 0; k < 3; k++) P[i*3+k] = cc[k] + Math.max(-hs, Math.min(hs, P[i*3+k] - cc[k]));
   }
-  const nodeSide = new Int8Array(N), nodeHub = [];
+  let nodeSide = new Int8Array(0), nodeHub = [];
+  // Kräfte-Layout in einem dichten Raster (Zählsortierung in Typed Arrays statt Map): bei 5000 Seiten zusätzlich
+  // weniger Runden, damit der Start unter 2 s bleibt — die Startpositionen liegen ohnehin in der richtigen Region.
   function layout() {
+    seed = 7;
     const P = new Float32Array(N * 3);
     const cnt = {}; D.nodes.forEach((n) => (cnt[n.area] = (cnt[n.area] || 0) + 1));
     const sp = D.nodes.map((n) => isWolke(n.area) ? 0.08 : 0.8 * Math.cbrt(buildArea(n.area).vol / cnt[n.area]));
-    const groups = new Map(), tmp = [0, 0, 0];
+    const groups = new Map();
     D.nodes.forEach((n, i) => {
       const gk = n.area + "|" + n.group;
       if (!groups.has(gk)) {
@@ -160,20 +253,38 @@
       for (let k = 0; k < 3; k++) P[i*3+k] = n._g[k] + (rnd() - 0.5) * sp[i] * 2;
       if (!isWolke(n.area)) keepIn(P, i, buildArea(n.area));
     });
-    const CELL = Math.max(0.05, Math.max(0, ...sp) * 1.7);
+    // Rastergröße nach dem typischen Abstand (Median), nicht nach dem größten: ein Bereich mit wenigen Seiten
+    // (großer Abstand) würde sonst alle Seiten in wenige Zellen werfen (fast O(N²)). Knoten mit großem Radius
+    // suchen dafür mehr Zellen ab; jedes Paar rechnet der Knoten mit dem größeren Suchradius (gleich: kleinerer Index).
+    const spSort = Float32Array.from(sp).sort();
+    const CELL = Math.max(0.02, (spSort[spSort.length >> 1] || 0.05) * 1.7);
+    const rz = new Int32Array(N); for (let i = 0; i < N; i++) rz[i] = Math.max(1, Math.ceil((sp[i] * 1.6) / CELL));
     const F = new Float32Array(N * 3);
-    const iters = N > 1200 ? 110 : N > 300 ? 180 : 320;
+    const iters = !N ? 0 : N > 3000 ? 60 : N > 1200 ? 110 : N > 300 ? 180 : 320;
     const sameArea = D.edges.filter((e) => D.nodes[e.a].area === D.nodes[e.b].area);
+    const cx = new Int32Array(N), cy = new Int32Array(N), cz = new Int32Array(N), zel = new Int32Array(N), ord = new Int32Array(N);
+    let start = new Int32Array(0);
     for (let it = 0; it < iters; it++) {
       F.fill(0);
-      const cool = 1 - it / iters, grid = new Map();
-      for (let i = 0; i < N; i++) { const k = Math.floor(P[i*3] / CELL) + "," + Math.floor(P[i*3+1] / CELL) + "," + Math.floor(P[i*3+2] / CELL); let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(i); }
+      const cool = 1 - it / iters;
+      let mx = Infinity, my = Infinity, mz = Infinity, Mx = -Infinity, My = -Infinity, Mz = -Infinity;
+      for (let i = 0; i < N; i++) { const x = P[i*3], y = P[i*3+1], z = P[i*3+2]; if (x < mx) mx = x; if (x > Mx) Mx = x; if (y < my) my = y; if (y > My) My = y; if (z < mz) mz = z; if (z > Mz) Mz = z; }
+      const nx = Math.floor((Mx - mx) / CELL) + 1, ny = Math.floor((My - my) / CELL) + 1, nz = Math.floor((Mz - mz) / CELL) + 1, nc = nx * ny * nz;
+      if (start.length < nc + 1) start = new Int32Array(nc + 1); else start.fill(0, 0, nc + 1);
       for (let i = 0; i < N; i++) {
-        const cx = Math.floor(P[i*3] / CELL), cy = Math.floor(P[i*3+1] / CELL), cz = Math.floor(P[i*3+2] / CELL), R0 = sp[i] * 1.6;
-        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
-          const a = grid.get((cx + dx) + "," + (cy + dy) + "," + (cz + dz)); if (!a) continue;
-          for (const j of a) {
-            if (j <= i) continue;
+        cx[i] = Math.floor((P[i*3] - mx) / CELL); cy[i] = Math.floor((P[i*3+1] - my) / CELL); cz[i] = Math.floor((P[i*3+2] - mz) / CELL);
+        zel[i] = (cx[i] * ny + cy[i]) * nz + cz[i]; start[zel[i] + 1]++;
+      }
+      for (let c = 0; c < nc; c++) start[c + 1] += start[c];
+      { const fuell = start.slice(0, nc); for (let i = 0; i < N; i++) ord[fuell[zel[i]]++] = i; }
+      for (let i = 0; i < N; i++) {
+        const R0 = sp[i] * 1.6, ri = rz[i];
+        const x0 = Math.max(0, cx[i] - ri), x1 = Math.min(nx - 1, cx[i] + ri), y0 = Math.max(0, cy[i] - ri), y1 = Math.min(ny - 1, cy[i] + ri), z0 = Math.max(0, cz[i] - ri), z1 = Math.min(nz - 1, cz[i] + ri);
+        for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+          const zeile = (gx * ny + gy) * nz;
+          for (let p = start[zeile + z0], pe = start[zeile + z1 + 1]; p < pe; p++) {
+            const j = ord[p];
+            if (rz[j] > ri || (rz[j] === ri && j <= i)) continue;
             const ex = P[i*3] - P[j*3], ey = P[i*3+1] - P[j*3+1], ez = P[i*3+2] - P[j*3+2];
             const d = Math.sqrt(ex * ex + ey * ey + ez * ez) + 1e-6, R = Math.max(R0, sp[j] * 1.6);
             if (d >= R) continue;
@@ -193,6 +304,7 @@
         if (!isWolke(D.nodes[i].area)) keepIn(P, i, buildArea(D.nodes[i].area));
       }
     }
+    nodeSide = new Int8Array(N); nodeHub = [];
     D.nodes.forEach((n, i) => {
       nodeSide[i] = P[i*3+2] < 0 ? -1 : 1;
       nodeHub[i] = isWolke(n.area) ? REG.inbox.c : beidseitig(n.area) ? buildArea(n.area).sideC(String(nodeSide[i])) : buildArea(n.area).c;
@@ -201,7 +313,7 @@
   }
   // Etiketten-Anker: Schwerpunkt des Lappens (Schläfenlappen: rechte, kameranahe Seite), Richtung nach außen.
   // Ein Etikett je Bereich außer dem Zentrum; teilen sich zwei Bereiche eine Region, wird die Richtung leicht gedreht.
-  const REGION_DIR = { frontal: [1, 0.25, 0], parietal: [-0.3, 1, 0], temporal: [0.45, -1, 0], tief: [-0.55, -1, 0], okzipital: [-1, 0.15, 0], kleinhirn: [-1, -0.7, 0], wolke: [0, 1, 0] };
+  const REGION_DIR = { frontal: [1, 0.25, 0], parietal: [-0.3, 1, 0], temporal: [0.45, -1, 0], tief: [-0.55, -1, 0], okzipital: [-1, 0.15, 0], kleinhirn: [-1, -0.7, 0], hirnstamm: [0.3, -1, 0], wolke: [0, 1, 0] };
   function regionLabelCfg() {
     const cfg = {}, used = {};
     for (const a of D.areas) {
@@ -238,11 +350,11 @@
     if (light) { gr.addColorStop(0, "#ffffff"); gr.addColorStop(0.55, "#eef1f7"); gr.addColorStop(1, "#dfe3ec"); }
     else { gr.addColorStop(0, "#0d1426"); gr.addColorStop(0.45, "#070b16"); gr.addColorStop(1, "#020308"); }
     g.fillStyle = gr; g.fillRect(0, 0, 1024, 1024);
-    const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t;
+    const tx = new T.CanvasTexture(c); tx.colorSpace = T.SRGBColorSpace; return tx;
   }
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.5 * (0.6 + 0.4 * DENSE), 0.45, 0.24);
+  const bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.5, 0.45, 0.24);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const U = { uTime: { value: 0 }, uPR: { value: DPR }, uLight: { value: 0 }, uScale: { value: 1 }, uMotion: { value: RM ? 0 : 1 } };
@@ -324,45 +436,35 @@
   const inboxMat = new T.PointsMaterial({ size: 0.008, color: 0xb8a4ff, transparent: true, opacity: 0.3, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true });
   scene.add(new T.Points(inboxGeo, inboxMat));
 
-  // --- Knoten
-  const P = layout();
-  const nodeGeo = new T.BufferGeometry();
-  const nCol = new Float32Array(N * 3), nSize = new Float32Array(N), nVis = new Float32Array(N), nHl = new Float32Array(N), nRing = new Float32Array(N), nPulse = new Float32Array(N), nPhase = new Float32Array(N);
-  const sizeK = Math.max(0.5, Math.min(1, Math.sqrt(250 / N)));
-  D.nodes.forEach((n, i) => {
-    nSize[i] = sizeK * (n.wiki ? 1.0 : 0.62) * (0.75 + 0.32 * Math.log10(Math.max(n.size || 1000, 500) / 500));
-    if (n.type === "ueberblick") nSize[i] = 1.25;
-    nRing[i] = n.status === "konflikt" ? 2 : n.status === "pruef" ? 1 : 0;
-    nPulse[i] = n.fresh ? 1 : 0; nPhase[i] = rnd() * 6.28; nVis[i] = 1;
-  });
-  nodeGeo.setAttribute("position", new T.BufferAttribute(P, 3));
-  const aCol = new T.BufferAttribute(nCol, 3), aVis = new T.BufferAttribute(nVis, 1), aHl = new T.BufferAttribute(nHl, 1);
-  nodeGeo.setAttribute("color", aCol); nodeGeo.setAttribute("size", new T.BufferAttribute(nSize, 1)); nodeGeo.setAttribute("vis", aVis); nodeGeo.setAttribute("hl", aHl);
-  nodeGeo.setAttribute("ring", new T.BufferAttribute(nRing, 1)); nodeGeo.setAttribute("pulse", new T.BufferAttribute(nPulse, 1)); nodeGeo.setAttribute("phase", new T.BufferAttribute(nPhase, 1));
+  // --- Knoten: eine Points-Geometrie für alle Seiten. Aufleuchten (Live-Lesen) über das Attribut „glow“
+  // (Startzeit in uTime-Sekunden) — der Shader rechnet das 8-s-Glühen selbst, nichts wird neu aufgebaut.
+  const GLUEH_S = 8;
   const nodeMat = new T.ShaderMaterial({
-    uniforms: { ...U, uRingK: { value: new T.Color() }, uRingP: { value: new T.Color() }, uCare: { value: 0 }, uHalo: { value: 0.4 + 0.6 * DENSE } },
+    uniforms: { ...U, uRingK: { value: new T.Color() }, uRingP: { value: new T.Color() }, uCare: { value: 0 }, uHalo: { value: 1 }, uGlueh: { value: GLUEH_S } },
     vertexShader: `
-      attribute vec3 color; attribute float size, vis, hl, ring, pulse, phase;
-      uniform float uPR, uTime, uScale, uCare, uMotion; varying vec3 vC; varying float vA, vRing, vHl, vPulse;
+      attribute vec3 color; attribute float size, vis, hl, ring, pulse, phase, glow;
+      uniform float uPR, uTime, uScale, uCare, uMotion, uGlueh; varying vec3 vC; varying float vA, vRing, vHl, vPulse, vGlow;
       void main(){
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float p = pulse > 0.5 ? (uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * 2.4 + phase) : 0.6) : 0.0;
-        vPulse = p;
-        float s = size * (1.0 + 0.55 * hl + 0.3 * p) * (ring > 0.5 ? 1.0 + 0.6 * uCare : 1.0);
+        float age = uTime - glow;
+        float g = (age >= 0.0 && age < uGlueh) ? (1.0 - smoothstep(uGlueh * 0.6, uGlueh, age)) * (uMotion > 0.5 ? 0.8 + 0.2 * sin(age * 5.0) : 1.0) : 0.0;
+        vPulse = p; vGlow = vis > 0.01 ? g : 0.0;
+        float s = size * (1.0 + 0.55 * hl + 0.3 * p + 1.3 * vGlow) * (ring > 0.5 ? 1.0 + 0.6 * uCare : 1.0);
         gl_PointSize = uPR * uScale * s * 70.0 / -mv.z;
         gl_Position = projectionMatrix * mv;
-        vC = color; vA = vis; vRing = ring; vHl = hl;
+        vC = color; vA = max(vis, vGlow); vRing = ring; vHl = hl;
       }`,
     fragmentShader: `
-      uniform vec3 uRingK, uRingP; uniform float uLight, uCare, uHalo; varying vec3 vC; varying float vA, vRing, vHl, vPulse;
+      uniform vec3 uRingK, uRingP; uniform float uLight, uCare, uHalo; varying vec3 vC; varying float vA, vRing, vHl, vPulse, vGlow;
       void main(){
         float d = length(gl_PointCoord - 0.5) * 2.0;
         if (d > 1.0) discard;
         float core = smoothstep(0.3, 0.16, d);
-        float halo = (exp(-d * d * 7.0) * (0.5 + 0.5 * vHl) + vPulse * exp(-d * d * 3.0) * 0.5) * uHalo;
-        vec3 c = vC * halo * 1.1 + mix(vC, vec3(1.0), 0.75) * core;
+        float halo = (exp(-d * d * 7.0) * (0.5 + 0.5 * vHl) + vPulse * exp(-d * d * 3.0) * 0.5) * uHalo + vGlow * exp(-d * d * 2.2) * 0.95;
+        vec3 c = vC * halo * 1.1 + mix(vC, vec3(1.0), 0.75 + 0.2 * vGlow) * core;
         float a = max(core, halo);
-        if (uLight > 0.5) { c = mix(vC, vec3(1.0), core * 0.25); a = max(core, halo * 0.3); }
+        if (uLight > 0.5) { c = mix(vC, vec3(1.0), core * 0.25); a = max(core, halo * (0.3 + 0.5 * vGlow)); }
         if (vRing > 0.5) {
           vec3 rc = vRing > 1.5 ? uRingK : uRingP;
           float r = smoothstep(0.11, 0.0, abs(d - 0.66)) * (0.75 + 0.25 * uCare);
@@ -372,38 +474,12 @@
       }`,
     transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending,
   });
-  const nodes = new T.Points(nodeGeo, nodeMat); nodes.renderOrder = 3; scene.add(nodes);
+  let P = new Float32Array(0), nodes = null, nodeGeo = null;
+  let nCol, nSize, nVis, nHl, nRing, nPulse, nPhase, nGlow, aCol, aVis, aHl, aGlow;
 
-  // --- Nervenbahnen: gebündelt über Regions-Knotenpunkte, mit gelegentlichen Impulsen
-  const SEG = N > 1000 ? 16 : 22;
-  const ePos = new Float32Array(E * SEG * 6), eCol = new Float32Array(E * SEG * 6), eT = new Float32Array(E * SEG * 2), eA = new Float32Array(E * SEG * 2), eHl = new Float32Array(E * SEG * 2), ePh = new Float32Array(E * SEG * 2);
-  const eBase = new Float32Array(E), eVisCur = new Float32Array(E), eHlCur = new Float32Array(E), eVisT = new Float32Array(E), eHlT = new Float32Array(E);
-  const CENTER = new T.Vector3(-0.08, 0.05, 0);
-  const hubOf = (i) => new T.Vector3(...nodeHub[i]).lerp(CENTER, 0.35);
-  D.edges.forEach((e, k) => {
-    const a = new T.Vector3(P[e.a*3], P[e.a*3+1], P[e.a*3+2]), b = new T.Vector3(P[e.b*3], P[e.b*3+1], P[e.b*3+2]);
-    let curve;
-    if (D.nodes[e.a].area !== D.nodes[e.b].area || (beidseitig(D.nodes[e.a].area) && nodeSide[e.a] !== nodeSide[e.b])) {
-      const ha = hubOf(e.a), hb = hubOf(e.b);
-      const lift = new T.Vector3(0, 0.12 + a.distanceTo(b) * 0.1, 0);
-      curve = new T.CubicBezierCurve3(a, a.clone().lerp(ha, 0.8).add(lift), b.clone().lerp(hb, 0.8).add(lift), b);
-    } else {
-      const mid = a.clone().add(b).multiplyScalar(0.5), dist = a.distanceTo(b);
-      const ctrl = mid.lerp(new T.Vector3(...(D.nodes[e.a]._g || [0, 0, 0])), 0.35); ctrl.y += dist * 0.15;
-      curve = new T.QuadraticBezierCurve3(a, ctrl, b);
-    }
-    const pts = curve.getPoints(SEG), ph = rnd();
-    eBase[k] = e.kind === "quelle" ? 0.55 : 1; eVisCur[k] = eVisT[k] = 1;
-    for (let s = 0; s < SEG; s++) for (let h = 0; h < 2; h++) {
-      const p = pts[s + h], v = (k * SEG + s) * 2 + h;
-      ePos[v*3] = p.x; ePos[v*3+1] = p.y; ePos[v*3+2] = p.z;
-      eT[v] = (s + h) / SEG; ePh[v] = ph; eA[v] = 1;
-    }
-  });
-  const edgeGeo = new T.BufferGeometry();
-  edgeGeo.setAttribute("position", new T.BufferAttribute(ePos, 3));
-  const aeCol = new T.BufferAttribute(eCol, 3), aeA = new T.BufferAttribute(eA, 1), aeHl = new T.BufferAttribute(eHl, 1);
-  edgeGeo.setAttribute("color", aeCol); edgeGeo.setAttribute("t", new T.BufferAttribute(eT, 1)); edgeGeo.setAttribute("ea", aeA); edgeGeo.setAttribute("ehl", aeHl); edgeGeo.setAttribute("ph", new T.BufferAttribute(ePh, 1));
+  // --- Nervenbahnen: gebündelt über Regions-Knotenpunkte, mit gelegentlichen Impulsen. Kleine/mittlere Brains
+  // zeichnen alle Kanten; große (> KANTEN_ALLE_BIS Seiten) nur die der Auswahl, des Wegs oder der Suchtreffer.
+  const KANTEN_ALLE_BIS = 1500;
   const edgeMat = new T.ShaderMaterial({
     uniforms: { ...U, uBase: { value: 0.12 }, uSignal: { value: 1 } },
     vertexShader: `
@@ -422,12 +498,75 @@
     fragmentShader: `varying vec3 vC; varying float vA; void main(){ gl_FragColor = vec4(vC, vA); }`,
     transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending,
   });
-  const edges = new T.LineSegments(edgeGeo, edgeMat); edges.renderOrder = 2; edges.frustumCulled = false; scene.add(edges);
+  const CENTER = new T.Vector3(-0.08, 0.05, 0);
+  let SEG = 22, kantenAlle = true, slots = [], edges = null, kurven = new Map();
+  let eCol, eA, eHl, eBase, eVisCur, eHlCur, eVisT, eHlT, aeCol, aeA, aeHl;
+  const hubOf = (i) => new T.Vector3(...nodeHub[i]).lerp(CENTER, 0.35);
+  function kurve(k) {
+    let pts = kurven.get(k); if (pts) return pts;
+    const e = D.edges[k];
+    const a = new T.Vector3(P[e.a*3], P[e.a*3+1], P[e.a*3+2]), b = new T.Vector3(P[e.b*3], P[e.b*3+1], P[e.b*3+2]);
+    let curve;
+    if (D.nodes[e.a].area !== D.nodes[e.b].area || (beidseitig(D.nodes[e.a].area) && nodeSide[e.a] !== nodeSide[e.b])) {
+      const ha = hubOf(e.a), hb = hubOf(e.b);
+      const lift = new T.Vector3(0, 0.12 + a.distanceTo(b) * 0.1, 0);
+      curve = new T.CubicBezierCurve3(a, a.clone().lerp(ha, 0.8).add(lift), b.clone().lerp(hb, 0.8).add(lift), b);
+    } else {
+      const mid = a.clone().add(b).multiplyScalar(0.5), dist = a.distanceTo(b);
+      const ctrl = mid.lerp(new T.Vector3(...(D.nodes[e.a]._g || [0, 0, 0])), 0.35); ctrl.y += dist * 0.15;
+      curve = new T.QuadraticBezierCurve3(a, ctrl, b);
+    }
+    pts = new Float32Array((SEG + 1) * 3);
+    curve.getPoints(SEG).forEach((p, s) => { pts[s*3] = p.x; pts[s*3+1] = p.y; pts[s*3+2] = p.z; });
+    kurven.set(k, pts);
+    return pts;
+  }
+  // Geometrie für die Kanten `liste` (Indizes in D.edges). Bereits gezeichnete Kanten behalten ihren Blendstand.
+  function baueKanten(liste) {
+    const alt = new Map(); slots.forEach((k, s) => alt.set(k, [eVisCur[s], eHlCur[s]]));
+    slots = liste;
+    const M = liste.length, V = M * SEG * 2;
+    const ePos = new Float32Array(V * 3), eT = new Float32Array(V), ePh = new Float32Array(V);
+    eCol = new Float32Array(V * 3); eA = new Float32Array(V); eHl = new Float32Array(V);
+    eBase = new Float32Array(M); eVisCur = new Float32Array(M); eHlCur = new Float32Array(M); eVisT = new Float32Array(M); eHlT = new Float32Array(M);
+    liste.forEach((k, s) => {
+      const e = D.edges[k], pts = kurve(k), ph = hash(e.s + "|" + e.t), av = alt.get(k);
+      eBase[s] = e.kind === "quelle" ? 0.55 : 1;
+      eVisCur[s] = eVisT[s] = av ? av[0] : kantenAlle ? 1 : 0; eHlCur[s] = av ? av[1] : 0;
+      for (let g = 0; g < SEG; g++) for (let h = 0; h < 2; h++) {
+        const v = (s * SEG + g) * 2 + h, p = (g + h) * 3;
+        ePos[v*3] = pts[p]; ePos[v*3+1] = pts[p+1]; ePos[v*3+2] = pts[p+2];
+        eT[v] = (g + h) / SEG; ePh[v] = ph; eA[v] = eVisCur[s]; eHl[v] = eHlCur[s];
+      }
+    });
+    const geo = new T.BufferGeometry();
+    geo.setAttribute("position", new T.BufferAttribute(ePos, 3));
+    aeCol = new T.BufferAttribute(eCol, 3); aeA = new T.BufferAttribute(eA, 1); aeHl = new T.BufferAttribute(eHl, 1);
+    geo.setAttribute("color", aeCol); geo.setAttribute("t", new T.BufferAttribute(eT, 1)); geo.setAttribute("ea", aeA); geo.setAttribute("ehl", aeHl); geo.setAttribute("ph", new T.BufferAttribute(ePh, 1));
+    if (edges) { scene.remove(edges); edges.geometry.dispose(); }
+    edges = new T.LineSegments(geo, edgeMat); edges.renderOrder = 2; edges.frustumCulled = false; scene.add(edges);
+    faerbeKanten();
+  }
+  function faerbeKanten() {
+    if (!edges) return;
+    const mixC = new T.Color(light ? "#33405f" : "#c9d6ff"), ca = new T.Color(), cb = new T.Color();
+    slots.forEach((k, s) => {
+      const e = D.edges[k]; ca.set(areaColor(D.nodes[e.a].area)); cb.set(areaColor(D.nodes[e.b].area));
+      for (let g = 0; g < SEG; g++) for (let h = 0; h < 2; h++) {
+        const v = (s * SEG + g) * 2 + h, f = (g + h) / SEG;
+        eCol[v*3] = (ca.r + (cb.r - ca.r) * f) * 0.65 + mixC.r * 0.35;
+        eCol[v*3+1] = (ca.g + (cb.g - ca.g) * f) * 0.65 + mixC.g * 0.35;
+        eCol[v*3+2] = (ca.b + (cb.b - ca.b) * f) * 0.65 + mixC.b * 0.35;
+      }
+    });
+    aeCol.needsUpdate = true;
+  }
 
   // ================================================================== theme
   let light = false;
   function applyTheme() {
     light = root.dataset.theme === "light";
+    farbCache = {};
     U.uLight.value = light ? 1 : 0;
     scene.background = bgTexture(light);
     const blend = light ? T.NormalBlending : T.AdditiveBlending;
@@ -442,25 +581,96 @@
     edgeMat.uniforms.uBase.value = (light ? 0.22 : 0.12) * DENSE;
     nodeMat.uniforms.uRingK.value.set(css("--konflikt")); nodeMat.uniforms.uRingP.value.set(css("--pruef"));
     bloom.enabled = !light;
-    D.nodes.forEach((n, i) => { const c = new T.Color(areaColor(n.area)); nCol[i*3] = c.r; nCol[i*3+1] = c.g; nCol[i*3+2] = c.b; });
+    if (!D) return;
+    const c = new T.Color();
+    D.nodes.forEach((n, i) => { c.set(areaColor(n.area)); nCol[i*3] = c.r; nCol[i*3+1] = c.g; nCol[i*3+2] = c.b; });
     aCol.needsUpdate = true;
-    const mixC = new T.Color(light ? "#33405f" : "#c9d6ff");
-    D.edges.forEach((e, k) => {
-      const ca = new T.Color(areaColor(D.nodes[e.a].area)), cb = new T.Color(areaColor(D.nodes[e.b].area));
-      for (let s = 0; s < SEG; s++) for (let h = 0; h < 2; h++) {
-        const v = (k * SEG + s) * 2 + h, c = ca.clone().lerp(cb, (s + h) / SEG).lerp(mixC, 0.35);
-        eCol[v*3] = c.r; eCol[v*3+1] = c.g; eCol[v*3+2] = c.b;
-      }
-    });
-    aeCol.needsUpdate = true;
+    faerbeKanten();
     buildRegionLabels(); drawHist();
   }
 
+  // ================================================================== Daten laden / neu laden
+  function ladeDaten(RAW) {
+    const alt = S && D ? {
+      sel: S.selected >= 0 ? D.nodes[S.selected].id : null, query: S.query,
+      areasAus: Object.keys(AREAS).filter((a) => !S.areas.has(a)), typesAus: Object.keys(TYPE_KEYS).filter((x) => !S.types.has(x)),
+      statusAus: ["ok", "pruef", "konflikt"].filter((x) => !S.status.has(x)), care: S.care, tab,
+    } : null;
+    D = { areas: (RAW.areas || []).slice(), nodes: (RAW.nodes || []).map((n) => ({ ...n })), edges: (RAW.edges || []).map((e) => ({ ...e })), inbox: RAW.inbox || 0, first: RAW.first, last: RAW.last, sprache: typeof RAW.sprache === "string" ? RAW.sprache : undefined };
+    // Bereiche: aus den Daten; unbekannte Bereiche eines Knotens landen im Zentrum (nie ein Absturz wegen alter Daten)
+    for (const k of Object.keys(FIXED)) if (!D.areas.some((a) => a.id === k)) D.areas.push({ ...FIXED[k], name: t(FIXED_NAME[k]) });
+    AREAS = Object.fromEntries(D.areas.map((a) => [a.id, a]));
+    D.nodes.forEach((n) => { if (!AREAS[n.area]) n.area = "zentrum"; if (!n.title) n.title = n.name || n.id; if (!Array.isArray(n.quellen)) n.quellen = []; });
+    const synth = Number(params.get("synthetic") || 0);
+    if (synth) addSynthetic(synth);
+    N = D.nodes.length;
+    idx = new Map(D.nodes.map((n, i) => [n.id, i]));
+    byName = new Map();
+    D.nodes.forEach((n, i) => { if (n.name) byName.set(n.name.toLowerCase(), i); byName.set(String(n.title).toLowerCase(), i); });
+    D.edges = D.edges.filter((e) => idx.has(e.s) && idx.has(e.t));
+    E = D.edges.length;
+    out = D.nodes.map(() => []); inn = D.nodes.map(() => []); adj = D.nodes.map(() => new Set());
+    D.edges.forEach((e, k) => { const a = idx.get(e.s), b = idx.get(e.t); e.a = a; e.b = b; out[a].push(k); inn[b].push(k); adj[a].add(b); adj[b].add(a); });
+    tLast = toT(D.last) ?? toT(new Date().toISOString()); tFirst = toT(D.first) ?? tLast - DAY; // ohne Daten: Zeitleiste endet heute
+    days = Math.max(1, Math.round((tLast - tFirst) / DAY));
+    D.nodes.forEach((n) => {
+      n.t = toT(n.added) ?? tFirst;
+      n.fresh = n.type !== "mcp" && tLast - Math.max(n.t, toT(n.changed) ?? n.t) <= DAY;
+      n.day = Math.max(0, Math.round((n.t - tFirst) / DAY));
+    });
+    DENSE = Math.min(1, Math.sqrt(300 / Math.max(N, 1)));    // 1 bei kleinen Brains, kleiner bei vielen Seiten
+    mcpInfo = new Map((Array.isArray(RAW.mcp) ? RAW.mcp : []).filter((s) => s && s.name).map((s) => [s.name, s]));
+    areaInfo = {}; farbCache = {};
+
+    // Knoten
+    P = layout();
+    if (nodes) { scene.remove(nodes); nodeGeo.dispose(); }
+    nodeGeo = new T.BufferGeometry();
+    nCol = new Float32Array(N * 3); nSize = new Float32Array(N); nVis = new Float32Array(N); nHl = new Float32Array(N);
+    nRing = new Float32Array(N); nPulse = new Float32Array(N); nPhase = new Float32Array(N); nGlow = new Float32Array(N).fill(-1e4);
+    const sizeK = Math.max(0.5, Math.min(1, Math.sqrt(250 / Math.max(N, 1))));
+    D.nodes.forEach((n, i) => {
+      nSize[i] = sizeK * (n.wiki ? 1.0 : 0.62) * (0.75 + 0.32 * Math.log10(Math.max(n.size || 1000, 500) / 500));
+      if (n.type === "ueberblick") nSize[i] = 1.25;
+      if (n.type === "mcp") nSize[i] = sizeK * (0.85 + 0.12 * Math.log10(1 + (mcpInfo.get(n.name)?.benutzt || 0)));
+      nRing[i] = n.status === "konflikt" ? 2 : n.status === "pruef" ? 1 : 0;
+      nPulse[i] = n.fresh ? 1 : 0; nPhase[i] = hash(n.id) * 6.28; nVis[i] = 1;
+    });
+    nodeGeo.setAttribute("position", new T.BufferAttribute(P, 3));
+    aCol = new T.BufferAttribute(nCol, 3); aVis = new T.BufferAttribute(nVis, 1); aHl = new T.BufferAttribute(nHl, 1); aGlow = new T.BufferAttribute(nGlow, 1);
+    nodeGeo.setAttribute("color", aCol); nodeGeo.setAttribute("size", new T.BufferAttribute(nSize, 1)); nodeGeo.setAttribute("vis", aVis); nodeGeo.setAttribute("hl", aHl);
+    nodeGeo.setAttribute("ring", new T.BufferAttribute(nRing, 1)); nodeGeo.setAttribute("pulse", new T.BufferAttribute(nPulse, 1)); nodeGeo.setAttribute("phase", new T.BufferAttribute(nPhase, 1)); nodeGeo.setAttribute("glow", aGlow);
+    nodes = new T.Points(nodeGeo, nodeMat); nodes.renderOrder = 3; nodes.frustumCulled = false; scene.add(nodes);
+    nodeMat.uniforms.uHalo.value = 0.4 + 0.6 * DENSE;
+    bloom.strength = 0.5 * (0.6 + 0.4 * DENSE);
+
+    // Kanten
+    SEG = N > 1000 ? 16 : 22; kurven = new Map(); slots = [];
+    kantenAlle = N <= KANTEN_ALLE_BIS;
+    baueKanten(kantenAlle ? D.edges.map((_, k) => k) : []);
+
+    // Zustand (Filter bleiben beim Neuladen erhalten)
+    S = { areas: new Set(Object.keys(AREAS)), types: new Set(Object.keys(TYPE_KEYS)), status: new Set(["ok", "pruef", "konflikt"]), day: days, selected: -1, hover: -1, hits: [], query: "", pathA: -1, path: [], care: false, mode: "none", focus: new Map(), tVis: new Float32Array(N), tHl: new Float32Array(N) };
+    if (alt) { alt.areasAus.forEach((a) => S.areas.delete(a)); alt.typesAus.forEach((x) => S.types.delete(x)); alt.statusAus.forEach((x) => S.status.delete(x)); tab = alt.tab; }
+    nodeOn = new Uint8Array(N);
+    leuchtend.clear();
+    labelPool.forEach((el) => el.remove()); labelPool.clear();
+    tl.max = days;
+    $("#tlFirst").textContent = fmtDate(D.first).slice(0, 6); $("#tlLast").textContent = fmtDate(D.last).slice(0, 6);
+    applyTheme(); buildFilters(); buildCare(); setDay(days);
+    $("#emptyNote").hidden = N > 0;
+    if (alt) {
+      const i = alt.sel !== null ? idx.get(alt.sel) : undefined;
+      if (i !== undefined) select(i, { noFly: true });
+      else { panel.hidden = true; if (alt.query) { qEl.value = alt.query; runSearch(alt.query, { fly: false }); } }
+      if (alt.care && i === undefined) setCare(true);
+    }
+  }
+
   // ================================================================== state
-  const S = { areas: new Set(Object.keys(AREAS)), types: new Set(Object.keys(TYPES)), status: new Set(["ok", "pruef", "konflikt"]), day: days, selected: -1, hover: -1, hits: [], query: "", pathA: -1, path: [], care: false, mode: "none", tVis: new Float32Array(N), tHl: new Float32Array(N) };
-  const nodeOn = new Uint8Array(N);
   function recompute() {
-    for (let i = 0; i < N; i++) { const n = D.nodes[i]; nodeOn[i] = S.areas.has(n.area) && S.types.has(n.type in TYPES ? n.type : "thema") && S.status.has(n.status) && n.day <= S.day ? 1 : 0; }
+    if (!D) return;
+    for (let i = 0; i < N; i++) { const n = D.nodes[i]; nodeOn[i] = S.areas.has(n.area) && S.types.has(n.type in TYPE_KEYS ? n.type : "thema") && S.status.has(n.status) && n.day <= S.day ? 1 : 0; }
     const focus = new Map();
     let mode = "none";
     if (S.path.length) { mode = "path"; S.path.forEach((i) => focus.set(i, 1)); }
@@ -471,21 +681,28 @@
     for (let i = 0; i < N; i++) { const f = focus.get(i); S.tVis[i] = nodeOn[i] ? (mode === "none" ? 0.92 : f !== undefined ? 1 : 0.12) : 0; S.tHl[i] = nodeOn[i] && f !== undefined ? f : 0; }
     const pathEdge = new Set();
     for (let k = 0; k + 1 < S.path.length; k++) { const a = S.path[k], b = S.path[k + 1]; for (const ei of out[a].concat(inn[a])) { const e = D.edges[ei]; if ((e.a === a && e.b === b) || (e.a === b && e.b === a)) pathEdge.add(ei); } }
-    D.edges.forEach((e, k) => {
-      const on = nodeOn[e.a] && nodeOn[e.b];
-      let v = on ? eBase[k] : 0, h = 0;
+    if (!kantenAlle) {
+      const want = new Set(kantenFuerFokus(mode, { sel: S.selected, wegKanten: [...pathEdge], fokus: focus, inzident: (i) => out[i].concat(inn[i]), ende: (k) => [D.edges[k].a, D.edges[k].b] }));
+      slots.forEach((k, s) => { if (eVisCur[s] > 0.01) want.add(k); }); // ausblendende Kanten noch behalten
+      if (want.size !== slots.length || slots.some((k) => !want.has(k))) baueKanten([...want]);
+    }
+    slots.forEach((k, s) => {
+      const e = D.edges[k], on = nodeOn[e.a] && nodeOn[e.b];
+      let v = on ? eBase[s] : 0, h = 0;
       if (on && mode === "sel") { if (e.a === S.selected || e.b === S.selected) h = 1; else v *= 0.06; }
       else if (on && mode === "path") { if (pathEdge.has(k)) h = 1.4; else v *= 0.04; }
       else if (on && mode === "search") { const fa = focus.has(e.a), fb = focus.has(e.b); if (fa && fb) h = 0.6; else v *= fa || fb ? 0.3 : 0.06; }
       else if (on && mode === "care") v *= 0.12;
-      eVisT[k] = v; eHlT[k] = h;
+      if (!kantenAlle && mode === "none") v = 0;
+      eVisT[s] = v; eHlT[s] = h;
     });
     const dim = mode === "none" ? 0 : 0.75;
     brainUniforms.uDim.value = dim; shellMat.uniforms.uDim.value = dim;
     nodeMat.uniforms.uCare.value = S.care ? 1 : 0;
     edgeMat.uniforms.uSignal.value = (mode === "none" ? 1 : 0.7) * DENSE;
     updateLabelsSet(); updateStats();
-    for (const r of regionEls) if (!isWolke(r.a)) r.b.textContent = D.nodes.filter((n, i) => nodeOn[i] && n.area === r.a).length;
+    const proBereich = {}; for (let i = 0; i < N; i++) if (nodeOn[i]) proBereich[D.nodes[i].area] = (proBereich[D.nodes[i].area] || 0) + 1;
+    for (const r of regionEls) if (!isWolke(r.a)) r.b.textContent = proBereich[r.a] || 0;
   }
   let snap = !!SHOT;
   function animateState(dt) {
@@ -498,7 +715,7 @@
     }
     if (ch) { aVis.needsUpdate = true; aHl.needsUpdate = true; }
     let ce = false;
-    for (let e = 0; e < E; e++) {
+    for (let e = 0; e < slots.length; e++) {
       const v = eVisCur[e] + (eVisT[e] - eVisCur[e]) * k, h = eHlCur[e] + (eHlT[e] - eHlCur[e]) * k;
       if (Math.abs(v - eVisCur[e]) > 1e-4 || Math.abs(h - eHlCur[e]) > 1e-4) {
         ce = true; eVisCur[e] = v; eHlCur[e] = h;
@@ -507,6 +724,17 @@
     }
     if (ce) { aeA.needsUpdate = true; aeHl.needsUpdate = true; }
   }
+
+  // ================================================================== Aufleuchten (Live-Lesen der KI)
+  const leuchtend = new Map(); // Knoten → Endzeit (performance.now) für das Etikett
+  function leuchte(i) {
+    nGlow[i] = U.uTime.value; aGlow.needsUpdate = true;
+    leuchtend.set(i, performance.now() + GLUEH_S * 1000);
+    if (leuchtend.size > 6) leuchtend.delete(leuchtend.keys().next().value);
+    updateLabelsSet();
+    setTimeout(() => { const jetzt = performance.now(); for (const [j, bis] of leuchtend) if (bis <= jetzt) leuchtend.delete(j); updateLabelsSet(); }, GLUEH_S * 1000 + 50);
+  }
+  const leuchtstaerke = (i) => { const age = U.uTime.value - nGlow[i]; return age >= 0 && age < GLUEH_S ? 1 - age / GLUEH_S : 0; };
 
   // ================================================================== camera
   let fly = null, lastInput = performance.now();
@@ -530,16 +758,20 @@
   function flyHome() { flyTo(HOME.target, HOME.pos.distanceTo(HOME.target), HOME.pos.clone().sub(HOME.target)); }
 
   // ================================================================== labels
+  // Seiten-Etiketten nur für Auswahl (+ größte Nachbarn), Weg, Top-Suchtreffer, Hover und gerade aufleuchtende Seiten
+  // — nie für alle, damit auch 5000 Seiten flüssig bleiben.
   const labelsEl = $("#labels");
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "leaders"); labelsEl.appendChild(svg);
   const labelPool = new Map();
   function updateLabelsSet() {
+    if (!D) return;
     const L = new Map();
-    const add = (i, cls) => { if (i < 0 || !nodeOn[i]) return; if (!L.has(i) || cls === "main") L.set(i, cls); };
+    const add = (i, cls) => { if (i < 0 || i >= N || !nodeOn[i]) return; if (!L.has(i) || cls === "main") L.set(i, cls); };
     if (S.mode === "sel") { [...adj[S.selected]].filter((j) => nodeOn[j]).sort((a, b) => nSize[b] - nSize[a]).slice(0, isMobile() ? 4 : 12).forEach((j) => add(j, "minor")); add(S.selected, "main"); }
     if (S.mode === "path") S.path.forEach((i, k) => add(i, k === 0 || k === S.path.length - 1 ? "main" : ""));
     if (S.mode === "search") S.hits.slice(0, isMobile() ? 3 : 7).forEach((h, r) => add(h.i, r === 0 ? "main" : ""));
     if (S.mode === "care") D.nodes.forEach((n, i) => { if (n.status !== "ok") add(i, ""); });
+    for (const i of leuchtend.keys()) if (!L.has(i)) add(i, "glow");
     if (S.pathA >= 0 && !S.path.length) add(S.pathA, "main");
     if (S.hover >= 0) add(S.hover, L.get(S.hover) === "main" ? "main" : "hover");
     const keep = new Set(L.keys());
@@ -556,11 +788,11 @@
     const count = {}; D.nodes.forEach((n) => (count[n.area] = (count[n.area] || 0) + 1));
     regionEls = Object.entries(regionLabelCfg()).map(([a, cfg]) => {
       const el = document.createElement("div"); el.className = "region"; el.style.color = areaColor(a);
-      el.innerHTML = `${esc(AREAS[a].name)}<b>${isWolke(a) ? (D.inbox ? D.inbox : "leer") : count[a] || 0}</b>`;
+      el.append(areaName(a)); const b = document.createElement("b"); b.textContent = isWolke(a) ? (D.inbox ? D.inbox : t("leer")) : count[a] || 0; el.appendChild(b);
       labelsEl.appendChild(el);
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line"); line.setAttribute("stroke", areaColor(a)); svg.appendChild(line);
       const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle"); dot.setAttribute("r", "2.2"); dot.setAttribute("fill", areaColor(a)); svg.appendChild(dot);
-      return { a, el, line, dot, b: el.querySelector("b"), at: new T.Vector3(...cfg.at), dir: new T.Vector3(...cfg.dir).normalize(), free: !!cfg.free };
+      return { a, el, line, dot, b, at: new T.Vector3(...cfg.at), dir: new T.Vector3(...cfg.dir).normalize(), free: !!cfg.free };
     });
   }
   // Silhouette im Bildschirm: max. Radius je Winkelsektor (aus einer Stichprobe der Rindenpunkte)
@@ -568,14 +800,14 @@
   const BINS = 72, silR = new Float32Array(BINS);
   const v3 = new T.Vector3(), w3 = new T.Vector3();
   function toScreen(v, w, h) { v3.copy(v).project(camera); return { x: (v3.x * 0.5 + 0.5) * w, y: (-v3.y * 0.5 + 0.5) * h, z: v3.z }; }
-  const rank = (el) => (el._cls === "main" ? 0 : el._cls === "hover" ? 1 : el._cls === "minor" ? 3 : 2);
+  const rank = (el) => (el._cls === "main" ? 0 : el._cls === "hover" ? 1 : el._cls === "glow" ? 1 : el._cls === "minor" ? 3 : 2);
   function placeLabels() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     // Hindernisse: hervorgehobene Lichtpunkte
     const obstacles = [];
     if (S.mode !== "none") for (const i of S.focus.keys()) { if (!nodeOn[i]) continue; const p = toScreen(w3.set(P[i*3], P[i*3+1], P[i*3+2]), w, h); obstacles.push([p.x - 7, p.y - 7, p.x + 7, p.y + 7, i]); }
     const placed = [];
-    for (const sel of ["#results.open", "#panel:not([hidden])", "#filters", "#care:not([hidden])", ".top .search", "#timeline"]) { const el = document.querySelector(sel); if (el && el.offsetParent !== null) { const b = el.getBoundingClientRect(); if (b.width) placed.push([b.left - 4, b.top - 4, b.right + 4, b.bottom + 4]); } }
+    for (const sel of ["#results.open", "#panel:not([hidden])", "#filters", "#care:not([hidden])", ".top .search", "#timeline", "#banner:not([hidden])"]) { const el = document.querySelector(sel); if (el && el.offsetParent !== null) { const b = el.getBoundingClientRect(); if (b.width) placed.push([b.left - 4, b.top - 4, b.right + 4, b.bottom + 4]); } }
     const ov = (r, self) => placed.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]) || obstacles.some((q) => q[4] !== self && r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
     const camD = camera.position.distanceTo(controls.target);
     const order = [...labelPool.entries()].sort((a, b) => rank(a[1]) - rank(b[1]));
@@ -620,7 +852,7 @@
         const rad = Math.max(silR[b], silR[(b + 1) % BINS], silR[(b + BINS - 1) % BINS]) + 30;
         let ex = c.x + Math.cos(ang2) * rad, ey = c.y + Math.sin(ang2) * rad;
         lx = Math.cos(ang2) >= 0 ? ex + 4 : ex - bw - 4; ly = ey - bh / 2;
-        for (let t = 0; t < 6 && regPlaced.some((q) => lx < q[2] && lx + bw > q[0] && ly < q[3] && ly + bh > q[1]); t++) { ly += Math.sin(ang2) >= 0 ? 18 : -18; }
+        for (let tt = 0; tt < 6 && regPlaced.some((q) => lx < q[2] && lx + bw > q[0] && ly < q[3] && ly + bh > q[1]); tt++) { ly += Math.sin(ang2) >= 0 ? 18 : -18; }
         r.line.setAttribute("x1", pa.x); r.line.setAttribute("y1", pa.y); r.line.setAttribute("x2", Math.cos(ang2) >= 0 ? lx - 4 : lx + bw + 4); r.line.setAttribute("y2", ly + bh / 2);
         r.dot.setAttribute("cx", pa.x); r.dot.setAttribute("cy", pa.y);
       }
@@ -633,6 +865,7 @@
 
   // ================================================================== picking + input
   function pick(cx, cy, radius = 16) {
+    if (!D) return -1;
     const rect = canvas.getBoundingClientRect(), w = rect.width, h = rect.height;
     let best = -1, bd = radius * radius;
     for (let i = 0; i < N; i++) {
@@ -645,28 +878,34 @@
     }
     return best;
   }
-  let down = null;
+  let down = null, hoverPlan = 0, hoverXY = null;
   canvas.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; touch(); hideHint(); });
   canvas.addEventListener("wheel", touch, { passive: true });
+  // Hover höchstens einmal je Bild auswerten (bei 5000 Seiten sonst spürbar)
   canvas.addEventListener("pointermove", (e) => {
     if (e.pointerType !== "mouse" || e.buttons) return;
-    const i = pick(e.clientX, e.clientY);
-    if (i !== S.hover) { S.hover = i; canvas.style.cursor = i >= 0 ? "pointer" : ""; updateLabelsSet(); }
+    hoverXY = [e.clientX, e.clientY];
+    if (hoverPlan) return;
+    hoverPlan = requestAnimationFrame(() => {
+      hoverPlan = 0; if (!D || !hoverXY) return;
+      const i = pick(hoverXY[0], hoverXY[1]);
+      if (i !== S.hover) { S.hover = i; canvas.style.cursor = i >= 0 ? "pointer" : ""; updateLabelsSet(); }
+    });
   });
   canvas.addEventListener("pointerup", (e) => {
-    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+    if (!D || !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
     const i = pick(e.clientX, e.clientY, e.pointerType === "mouse" ? 16 : 26);
     if (e.shiftKey && i >= 0) return pathClick(i);
     if (i >= 0) select(i); else if (S.selected >= 0 || S.path.length) clearSelection();
   });
-  canvas.addEventListener("dblclick", (e) => { if (pick(e.clientX, e.clientY) < 0) resetAll(); });
+  canvas.addEventListener("dblclick", (e) => { if (D && pick(e.clientX, e.clientY) < 0) resetAll(); });
 
   // ================================================================== markdown (markdown.js: alles escaped, nur eigene Tags, nur #seite=/http(s)-Links)
   const esc = window.BrainMarkdown.escape;
   // Wiki-Link-Ziel → Knoten. Zuerst die von daten.mjs per resolveLink vorberechneten Ziele der Seite (dieselbe
   // Auflösung wie Kanten und Lint: exakt, +.md, <wiki>/…, Teilpfad; Wiki-Ordner bevorzugt), danach als Zusatz
   // Titel/Name (byName). Fehlt linkZiele (alte data.js), gilt Pfad-ID und byName. Bereichsfarbe als Klasse.
-  const FARB_KLASSE = new Set(["blau", "orange", "gruen", "gelb", "rot", "lila", "grau", "neutral"]);
+  const FARB_KLASSE = new Set(["blau", "orange", "gruen", "gelb", "rot", "lila", "grau", "tuerkis", "neutral"]);
   const eigen = (o, k) => !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
   function linkZielFuer(seite) {
     return (name) => {
@@ -686,7 +925,7 @@
   const fmtDate = (d) => (d ? d.slice(8, 10) + "." + d.slice(5, 7) + "." + d.slice(0, 4) : "—");
   function linkItem(j, extra = "") {
     const n = D.nodes[j];
-    return `<li data-i="${j}"><span class="dotc" style="color:${areaColor(n.area)}"></span><span class="t">${esc(n.title)}</span><span class="k">${extra || esc(TYPES[n.type] || n.type)}</span></li>`;
+    return `<li data-i="${j}"><span class="dotc" style="color:${areaColor(n.area)}"></span><span class="t">${esc(n.title)}</span><span class="k">${extra || esc(typName(n.type))}</span></li>`;
   }
   // Ausstehende entprellte Suche und verzögerten Suchflug verwerfen — eine Auswahl/ein Weg hat Vorrang
   function stopSearchTimers() { clearTimeout(qTimer); qTimer = 0; clearTimeout(flyTimer); flyTimer = 0; }
@@ -697,35 +936,65 @@
     recompute(); renderPanel(); if (!opts.noFly) flyToNode(i);
     closeResults(); setHash(D.nodes[i].id);
   }
+  // Für steuer.js (Analyse-Liste): Seite auswählen und — falls ausgefiltert — wieder sichtbar machen
+  function waehleId(id) {
+    const i = idx.get(id); if (i === undefined) return false;
+    const n = D.nodes[i];
+    if (!nodeOn[i]) { S.areas.add(n.area); S.types.add(n.type in TYPE_KEYS ? n.type : "thema"); S.status.add(n.status); buildFilters(); if (n.day > S.day) setDay(days); }
+    if (S.care) setCare(false);
+    select(i);
+    return true;
+  }
   function clearSelection() { S.selected = -1; S.path = []; S.pathA = -1; panel.hidden = true; careEl.hidden = !S.care; setHash(null); recompute(); }
   function setHash(id) { if (SHOT) return; try { history.replaceState(null, "", id ? "#seite=" + encodeURIComponent(id) : location.pathname + location.search); } catch {} }
+  const linkListe = (title, arr, extra) => `<div class="links"><h4><span>${esc(title)}</span><span>${arr.length}</span></h4>${arr.length ? `<ul>${arr.map((j) => linkItem(j, extra && extra(j))).join("")}</ul>` : `<div class="muted">${esc(t("keine"))}</div>`}</div>`;
   function renderPanel() {
+    if (!D) return;
     if (S.path.length) return renderPathPanel();
     const i = S.selected; if (i < 0) { panel.hidden = true; return; }
     const n = D.nodes[i];
+    if (n.type === "mcp") return renderMcpPanel(i);
     const outs = out[i].filter((k) => D.edges[k].kind === "link").map((k) => D.edges[k].b);
     const ins = inn[i].filter((k) => D.edges[k].kind === "link").map((k) => D.edges[k].a);
+    const werkzeuge = out[i].concat(inn[i]).filter((k) => D.edges[k].kind === "mcp").map((k) => (D.edges[k].a === i ? D.edges[k].b : D.edges[k].a));
     const srcs = n.quellen.map((q) => idx.get(q)).filter((j) => j !== undefined);
     const used = (n.usedIn || []).map((q) => idx.get(q)).filter((j) => j !== undefined);
-    const conn = (n.wiki ? srcs.length : used.length) + outs.length + ins.length;
-    const list = (title, arr, extra) => `<div class="links"><h4><span>${title}</span><span>${arr.length}</span></h4>${arr.length ? `<ul>${arr.map((j) => linkItem(j, extra && extra(j))).join("")}</ul>` : `<div class="muted">keine</div>`}</div>`;
-    const status = n.status !== "ok" ? `<div class="status-box ${n.status}"><span class="ring"></span><div><b>${n.status === "konflikt" ? "Offener Konflikt" : "Prüfbedürftig"}</b><br>${esc(n.statusNote || "")}</div></div>` : "";
+    const conn = (n.wiki ? srcs.length : used.length) + outs.length + ins.length + werkzeuge.length;
+    const status = n.status !== "ok" ? `<div class="status-box ${n.status === "konflikt" ? "konflikt" : "pruef"}"><span class="ring"></span><div><b>${esc(n.status === "konflikt" ? t("offenerKonflikt") : t("pruefbeduerftig"))}</b><br>${esc(n.statusNote || "")}</div></div>` : "";
     const body = n.body ? renderMarkdown(n) : `<p class="muted">${esc(n.desc || "")}</p>`;
     panelBody.innerHTML = `
-      <div class="p-kicker"><span class="area" style="color:${areaColor(n.area)}"><span class="dotc" style="width:6px;height:6px"></span>${esc(AREAS[n.area]?.name || n.area)}</span><span class="sep">/</span><span>${esc(TYPES[n.type] || n.type)}</span>${n.fresh ? '<span class="sep">/</span><span class="fresh">frisch</span>' : ""}</div>
+      <div class="p-kicker"><span class="area" style="color:${areaColor(n.area)}"><span class="dotc" style="width:6px;height:6px"></span>${esc(areaName(n.area))}</span><span class="sep">/</span><span>${esc(typName(n.type))}</span>${n.fresh ? `<span class="sep">/</span><span class="fresh">${esc(t("frisch"))}</span>` : ""}</div>
       <h2>${esc(n.title)}</h2>
       ${n.wiki && n.desc ? `<p class="desc">${esc(n.desc)}</p>` : ""}
       ${status}
-      <dl class="facts"><div><dt>Stand</dt><dd>${n.rev ? "rev " + n.rev : "—"}</dd></div><div><dt>Seit</dt><dd>${fmtDate(n.added)}</dd></div><div><dt>Geändert</dt><dd>${fmtDate(n.changed)}</dd></div></dl>
-      <div class="p-actions"><button class="btn" id="btnFocus"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.5"/></svg>Fokus</button><span class="path" title="${esc(n.id)}">${esc(n.id.length > 52 ? "…" + n.id.slice(-51) : n.id)}</span></div>
-      <div class="tabs" role="tablist"><button role="tab" data-tab="seite" aria-selected="${tab === "seite"}">Seite</button><button role="tab" data-tab="links" aria-selected="${tab === "links"}">Verbindungen <span>${conn}</span></button></div>
+      <dl class="facts"><div><dt>${esc(t("stand"))}</dt><dd>${n.rev ? "rev " + esc(String(n.rev)) : "—"}</dd></div><div><dt>${esc(t("seit"))}</dt><dd>${fmtDate(n.added)}</dd></div><div><dt>${esc(t("geaendert"))}</dt><dd>${fmtDate(n.changed)}</dd></div></dl>
+      <div class="p-actions"><button class="btn" id="btnFocus"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.5"/></svg>${esc(t("fokus"))}</button><span class="path" title="${esc(n.id)}">${esc(n.id.length > 52 ? "…" + n.id.slice(-51) : n.id)}</span></div>
+      <div class="tabs" role="tablist"><button role="tab" data-tab="seite" aria-selected="${tab === "seite"}">${esc(t("tabSeite"))}</button><button role="tab" data-tab="links" aria-selected="${tab === "links"}">${esc(t("tabVerbindungen"))} <span>${conn}</span></button></div>
       <div class="tabpane" ${tab === "seite" ? "" : "hidden"}><article class="md">${body}</article></div>
       <div class="tabpane" ${tab === "links" ? "" : "hidden"}>
-        ${n.wiki ? list("Quellen", srcs, () => "Rohquelle") : list("Eingearbeitet in", used)}
-        ${list("Verweist auf", outs)}
-        ${list("Verlinkt von", ins)}
+        ${n.wiki ? linkListe(t("quellen"), srcs, () => esc(t("rohquelle"))) : linkListe(t("eingearbeitetIn"), used)}
+        ${linkListe(t("verweistAuf"), outs)}
+        ${linkListe(t("verlinktVon"), ins)}
+        ${werkzeuge.length ? linkListe(t("mcpServer"), werkzeuge) : ""}
       </div>
-      <div class="p-foot"><span><kbd>Shift</kbd>Klick: Weg zu einer zweiten Seite</span><span><kbd>Esc</kbd>zurück</span></div>`;
+      <div class="p-foot"><span><kbd>Shift</kbd>${esc(t("fussWeg"))}</span><span><kbd>Esc</kbd>${esc(t("fussZurueck"))}</span></div>`;
+    panel.hidden = false; panel.scrollTop = 0; careEl.hidden = true;
+  }
+  // MCP-Server: woher bekannt (Quellen), welche Werkzeuge benutzt, wie oft/zuletzt, verknüpfte Brain-Seiten
+  function renderMcpPanel(i) {
+    const n = D.nodes[i], s = mcpInfo.get(n.name) || { quellen: [], werkzeuge: [], benutzt: 0, zuletzt: null };
+    const seiten = [...adj[i]].filter((j) => D.nodes[j].type !== "mcp");
+    const quellen = (s.quellen || []).map((q) => `<span class="chip mcp-q">${esc(q === "genutzt" ? t("mcpGenutzt") : q)}</span>`).join("");
+    const wz = s.werkzeuge || [];
+    const zuletzt = s.zuletzt ? fmtDate(String(s.zuletzt).slice(0, 10)) : "—";
+    panelBody.innerHTML = `
+      <div class="p-kicker"><span class="area" style="color:${areaColor(n.area)}"><span class="dotc" style="width:6px;height:6px"></span>${esc(areaName(n.area))}</span><span class="sep">/</span><span>${esc(t("typMcp"))}</span></div>
+      <h2>${esc(n.title)}</h2>
+      <dl class="facts"><div><dt>${esc(t("mcpBenutzt"))}</dt><dd>${s.benutzt ? esc(t("mcpMal", { n: s.benutzt })) : esc(t("mcpNie"))}</dd></div><div><dt>${esc(t("mcpZuletzt"))}</dt><dd>${zuletzt}</dd></div><div><dt>${esc(t("mcpWerkzeuge"))}</dt><dd>${wz.length}</dd></div></dl>
+      <div class="links"><h4><span>${esc(t("quellen"))}</span><span>${(s.quellen || []).length}</span></h4><div class="chips">${quellen || `<div class="muted">${esc(t("keine"))}</div>`}</div></div>
+      <div class="links"><h4><span>${esc(t("mcpWerkzeuge"))}</span><span>${wz.length}</span></h4>${wz.length ? `<ul class="mcp-wz">${wz.map((w) => `<li><span class="t">${esc(w)}</span></li>`).join("")}</ul>` : `<div class="muted">${esc(t("mcpKeineWerkzeuge"))}</div>`}</div>
+      ${seiten.length ? linkListe(t("mcpSeiten"), seiten) : `<div class="links"><h4><span>${esc(t("mcpSeiten"))}</span><span>0</span></h4><div class="muted">${esc(t("mcpKeineSeite"))}</div></div>`}
+      <div class="p-foot"><span><kbd>Esc</kbd>${esc(t("fussZurueck"))}</span></div>`;
     panel.hidden = false; panel.scrollTop = 0; careEl.hidden = true;
   }
   panelBody.addEventListener("click", (e) => {
@@ -745,7 +1014,7 @@
 
   function shortest(a, b) {
     const prev = new Int32Array(N).fill(-1); prev[a] = a; const q = [a];
-    while (q.length) { const x = q.shift(); if (x === b) break; for (const y of adj[x]) if (prev[y] < 0 && nodeOn[y]) { prev[y] = x; q.push(y); } }
+    for (let h = 0; h < q.length; h++) { const x = q[h]; if (x === b) break; for (const y of adj[x]) if (prev[y] < 0 && nodeOn[y]) { prev[y] = x; q.push(y); } }
     if (prev[b] < 0) return [];
     const p = [b]; let x = b; while (x !== a) { x = prev[x]; p.push(x); } return p.reverse();
   }
@@ -766,11 +1035,11 @@
   function renderPathPanel() {
     const [a, b] = S.pathEnds, p = S.path;
     panelBody.innerHTML = `
-      <div class="p-kicker"><span>Weg</span><span class="sep">/</span><span>${p.length ? p.length - 1 + " Schritte" : "keine Verbindung"}</span></div>
+      <div class="p-kicker"><span>${esc(t("weg"))}</span><span class="sep">/</span><span>${esc(p.length ? t("schritte", { n: p.length - 1 }) : t("keineVerbindung"))}</span></div>
       <h2>${esc(D.nodes[a].title)} <span class="arrow">→</span> ${esc(D.nodes[b].title)}</h2>
-      <p class="desc">${p.length ? "Kürzeste Verbindung über Links und Quellen." : "Zwischen diesen Seiten gibt es im sichtbaren Bereich keine Verbindung."}</p>
+      <p class="desc">${esc(p.length ? t("wegText") : t("wegKeiner"))}</p>
       <div class="links"><ul class="route">${p.map((j) => linkItem(j)).join("")}</ul></div>
-      <div class="p-foot"><span><kbd>Esc</kbd>zurück</span></div>`;
+      <div class="p-foot"><span><kbd>Esc</kbd>${esc(t("fussZurueck"))}</span></div>`;
     panel.hidden = false; careEl.hidden = true;
   }
 
@@ -782,10 +1051,11 @@
       .map((h) => ({ i: idx.get(h.id), s: h.score, auszug: h.auszug, begriffe: h.begriffe }))
       .filter((h) => h.i !== undefined);
   }
-  const hl = (text, h) => window.BrainSuche.hervorheben(text, h.begriffe);
+  const hl = (txt, h) => window.BrainSuche.hervorheben(txt, h.begriffe);
   let active = 0, flyTimer = 0, qTimer = 0;
 
   function runSearch(q, { fly = true } = {}) {
+    if (!D) return;
     clearTimeout(qTimer); qTimer = 0; // ein direkter Aufruf ersetzt eine wartende entprellte Suche
     S.query = q.trim();
     S.hits = S.query ? search(S.query, 60, (i) => nodeOn[i]) : [];
@@ -804,18 +1074,19 @@
     }
   }
   function renderResults() {
-    if (!S.query) { resEl.classList.remove("open"); return; }
+    if (!S || !S.query) { resEl.classList.remove("open"); return; }
     const top = S.hits.slice(0, 7);
     resEl.innerHTML = top.length
-      ? top.map((h, r) => { const n = D.nodes[h.i]; return `<li role="option" data-i="${h.i}" aria-selected="${r === active}"><span class="dotc" style="color:${areaColor(n.area)}"></span><span class="t">${hl(n.title, h)}</span><span class="k">${esc(TYPES[n.type] || n.type)}</span><span class="sn">${hl(h.auszug, h)}</span></li>`; }).join("") + (S.hits.length > 7 ? `<li class="empty">${S.hits.length - 7} weitere leuchten im Brain</li>` : "")
-      : `<li class="empty">Kein Treffer</li>`;
+      ? top.map((h, r) => { const n = D.nodes[h.i]; return `<li role="option" data-i="${h.i}" aria-selected="${r === active}"><span class="dotc" style="color:${areaColor(n.area)}"></span><span class="t">${hl(n.title, h)}</span><span class="k">${esc(typName(n.type))}</span><span class="sn">${hl(h.auszug, h)}</span></li>`; }).join("") + (S.hits.length > 7 ? `<li class="empty">${esc(t("weitereTreffer", { n: S.hits.length - 7 }))}</li>` : "")
+      : `<li class="empty">${esc(t("keinTreffer"))}</li>`;
     resEl.classList.add("open");
   }
   function closeResults() { resEl.classList.remove("open"); }
   // Entprellt: Suche erst 120 ms nach dem letzten Tastendruck (Enter/Pfeile holen sie sofort nach)
   qEl.addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch(qEl.value), 120); });
-  qEl.addEventListener("focus", () => { if (S.query) renderResults(); hideHint(); touch(); });
+  qEl.addEventListener("focus", () => { if (S && S.query) renderResults(); hideHint(); touch(); });
   qEl.addEventListener("keydown", (e) => {
+    if (!D) return;
     if (qTimer && (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp")) runSearch(qEl.value);
     const n = Math.min(7, S.hits.length);
     if (e.key === "ArrowDown") { active = (active + 1) % Math.max(1, n); renderResults(); e.preventDefault(); }
@@ -829,32 +1100,37 @@
   function chip(label, color, count, pressed, onClick, wide) {
     const b = document.createElement("button");
     b.className = "chip" + (wide ? " wide" : ""); b.setAttribute("aria-pressed", pressed);
-    b.innerHTML = `<span>${color ? `<span class="sw" style="color:${color}"></span>` : ""}${label}</span>${count !== null ? `<span class="n">${count}</span>` : ""}`;
+    const l = document.createElement("span");
+    if (color) { const sw = document.createElement("span"); sw.className = "sw"; sw.style.color = color; l.appendChild(sw); }
+    l.append(label); b.appendChild(l);
+    if (count !== null) { const c = document.createElement("span"); c.className = "n"; c.textContent = count; b.appendChild(c); }
     b.addEventListener("click", () => onClick(b));
     return b;
   }
   function toggleSet(set, key, b) { if (set.has(key)) set.delete(key); else set.add(key); b.setAttribute("aria-pressed", set.has(key)); recompute(); if (S.query) runSearch(qEl.value, { fly: false }); }
   function buildFilters() {
-    const cnt = (f) => D.nodes.filter(f).length;
-    const fa = $("#fArea"); fa.innerHTML = "";
-    // Zentrum nur, wenn es Seiten hat; Reihenfolge wie in den Daten (Cluster aus der Config, dann Archiv, Inbox)
-    D.areas.filter((a) => a.id !== "zentrum" || cnt((n) => n.area === "zentrum")).forEach(({ id: a }) => fa.appendChild(chip(esc(AREAS[a].name), areaColor(a), isWolke(a) ? D.inbox : cnt((n) => n.area === a), S.areas.has(a), (b) => toggleSet(S.areas, a, b), true)));
-    const ft = $("#fType"); ft.innerHTML = "";
-    ["thema", "entitaet", "quelle", "synthese", "notiz"].forEach((t) => ft.appendChild(chip(TYPES[t], null, cnt((n) => n.type === t), S.types.has(t), (b) => toggleSet(S.types, t, b))));
-    const fs = $("#fStatus"); fs.innerHTML = "";
-    [["konflikt", "Konflikt", "--konflikt"], ["pruef", "Prüfbedürftig", "--pruef"], ["ok", "In Ordnung", "--fg-3"]].forEach(([k, l, v]) => fs.appendChild(chip(l, css(v), cnt((n) => n.status === k), S.status.has(k), (b) => toggleSet(S.status, k, b), true)));
+    const cntA = {}, cntT = {}, cntS = {};
+    for (const n of D.nodes) { cntA[n.area] = (cntA[n.area] || 0) + 1; cntT[n.type] = (cntT[n.type] || 0) + 1; cntS[n.status] = (cntS[n.status] || 0) + 1; }
+    const fa = $("#fArea"); fa.textContent = "";
+    // Zentrum nur, wenn es Seiten hat; Reihenfolge wie in den Daten (Cluster aus der Config, dann Archiv, Inbox, Werkzeuge)
+    D.areas.filter((a) => a.id !== "zentrum" || cntA.zentrum).forEach(({ id: a }) => fa.appendChild(chip(areaName(a), areaColor(a), isWolke(a) ? D.inbox : cntA[a] || 0, S.areas.has(a), (b) => toggleSet(S.areas, a, b), true)));
+    const ft = $("#fType"); ft.textContent = "";
+    ["thema", "entitaet", "quelle", "synthese", "notiz"].concat(cntT.mcp ? ["mcp"] : []).forEach((ty) => ft.appendChild(chip(typName(ty), null, cntT[ty] || 0, S.types.has(ty), (b) => toggleSet(S.types, ty, b))));
+    const fs = $("#fStatus"); fs.textContent = "";
+    [["konflikt", "statusKonflikt", "--konflikt"], ["pruef", "statusPruef", "--pruef"], ["ok", "statusOk", "--fg-3"]].forEach(([k, l, v]) => fs.appendChild(chip(t(l), css(v), cntS[k] || 0, S.status.has(k), (b) => toggleSet(S.status, k, b), true)));
   }
   $("#btnFilter").addEventListener("click", (e) => { const f = $("#filters"); f.classList.toggle("open"); e.currentTarget.setAttribute("aria-pressed", f.classList.contains("open")); });
 
   const careEl = $("#care");
   function buildCare() {
     const items = D.nodes.map((n, i) => ({ n, i })).filter(({ n }) => n.status !== "ok").sort((a) => (a.n.status === "konflikt" ? -1 : 1));
-    $("#careList").innerHTML = items.length ? items.map(({ n, i }) => `<li data-i="${i}"><span class="ring" style="color:${css(n.status === "konflikt" ? "--konflikt" : "--pruef")}"></span><span>${esc(n.title)}<small>${n.status === "konflikt" ? "Konflikt offen" : "prüfbedürftig"}</small></span></li>`).join("") : `<li class="none">Keine offenen Befunde</li>`;
-    $("#careFresh").textContent = `${D.nodes.filter((n) => n.fresh).length} Seiten in den letzten 2 Tagen eingearbeitet — sie pulsieren.`;
+    $("#careList").innerHTML = items.length ? items.map(({ n, i }) => `<li data-i="${i}"><span class="ring" style="color:${css(n.status === "konflikt" ? "--konflikt" : "--pruef")}"></span><span>${esc(n.title)}<small>${esc(n.status === "konflikt" ? t("konfliktOffen") : t("pruefKlein"))}</small></span></li>`).join("") : `<li class="none">${esc(t("keineBefunde"))}</li>`;
+    $("#careFresh").textContent = t("frischText", { n: D.nodes.filter((n) => n.fresh).length });
     const dot = $("#careDot"); dot.classList.toggle("on", items.length > 0); dot.classList.toggle("red", items.some(({ n }) => n.status === "konflikt"));
   }
   $("#careList").addEventListener("click", (e) => { const li = e.target.closest("li[data-i]"); if (li) select(Number(li.dataset.i)); });
   function setCare(on) {
+    if (!D) return;
     S.care = on; careEl.hidden = !on; $("#btnCare").setAttribute("aria-pressed", on);
     if (on) { stopSearchTimers(); S.selected = -1; S.path = []; panel.hidden = true; S.hits = []; S.query = ""; qEl.value = ""; closeResults(); flyHome(); }
     recompute();
@@ -862,25 +1138,27 @@
   $("#btnCare").addEventListener("click", () => setCare(!S.care));
 
   const tl = $("#tl"), tlEl = $("#timeline");
-  tl.max = days; tl.value = days;
-  $("#tlFirst").textContent = fmtDate(D.first).slice(0, 6); $("#tlLast").textContent = fmtDate(D.last).slice(0, 6);
   function drawHist() {
+    if (!D) return;
     const c = $("#tlHist"); const w = c.clientWidth || 400, h = c.clientHeight || 22; c.width = w * DPR; c.height = h * DPR;
     const g = c.getContext("2d"); g.scale(DPR, DPR); g.clearRect(0, 0, w, h);
     const per = new Array(days + 1).fill(0); D.nodes.forEach((n) => per[Math.min(days, Math.max(0, n.day))]++);
-    const mx = Math.max(...per, 1), bw = w / (days + 1);
+    let mx = 1; for (const v of per) if (v > mx) mx = v;
+    const bw = w / (days + 1);
     per.forEach((v, d) => { if (!v) return; const bh = Math.max(2, (v / mx) * (h - 2)); g.fillStyle = d <= S.day ? css("--fg-2") : css("--line-2"); g.globalAlpha = d <= S.day ? 0.75 : 1; g.fillRect(d * bw + bw * 0.2, h - bh, Math.max(1.5, bw * 0.6), bh); });
   }
   function setDay(d) {
     S.day = d; tl.value = d; tl.style.setProperty("--p", (d / days) * 100 + "%");
     $("#tlDate").textContent = fmtDate(new Date(tFirst + d * DAY).toISOString().slice(0, 10));
-    $("#tlCount").textContent = `${D.nodes.filter((n) => n.day <= d).length} von ${N} Seiten`;
+    let bis = 0; for (const n of D.nodes) if (n.day <= d) bis++;
+    $("#tlCount").textContent = t("vonSeiten", { n: bis, gesamt: N });
     recompute(); drawHist();
   }
-  tl.addEventListener("input", () => { stopPlay(); setDay(Number(tl.value)); });
+  tl.addEventListener("input", () => { if (!D) return; stopPlay(); setDay(Number(tl.value)); });
   let playing = null;
   function stopPlay() { if (playing) { clearInterval(playing); playing = null; tlEl.classList.remove("playing"); } }
   $("#tlPlay").addEventListener("click", () => {
+    if (!D) return;
     if (playing) return stopPlay();
     if (S.day >= days) setDay(0);
     tlEl.classList.add("playing");
@@ -888,15 +1166,22 @@
   });
 
   // ================================================================== misc ui
-  function updateStats() { $("#stats").textContent = `${nodeOn.reduce((a, v) => a + v, 0)} Seiten · ${D.edges.filter((e) => nodeOn[e.a] && nodeOn[e.b]).length} Verbindungen`; }
+  function updateStats() {
+    let seiten = 0, verb = 0; for (let i = 0; i < N; i++) seiten += nodeOn[i];
+    for (const e of D.edges) if (nodeOn[e.a] && nodeOn[e.b]) verb++;
+    $("#stats").textContent = t("statistik", { seiten, verbindungen: verb });
+  }
   let hintTimer = setTimeout(hideHint, 9000);
   function hideHint() { $("#hint").classList.add("gone"); clearTimeout(hintTimer); }
   $("#btnReset").addEventListener("click", () => resetAll());
-  function resetAll() { stopPlay(); S.hits = []; S.query = ""; qEl.value = ""; closeResults(); S.selected = -1; S.path = []; S.pathA = -1; panel.hidden = true; setHash(null); if (S.care) setCare(false); setDay(days); flyHome(); }
-  $("#btnTheme").addEventListener("click", () => { root.dataset.theme = light ? "dark" : "light"; try { localStorage.setItem("brain3d-theme", root.dataset.theme); } catch {} applyTheme(); buildFilters(); buildCare(); renderPanel(); renderResults(); });
+  function resetAll() { if (!D) return; stopPlay(); S.hits = []; S.query = ""; qEl.value = ""; closeResults(); S.selected = -1; S.path = []; S.pathA = -1; panel.hidden = true; setHash(null); if (S.care) setCare(false); setDay(days); flyHome(); }
+  $("#btnTheme").addEventListener("click", () => { root.dataset.theme = light ? "dark" : "light"; try { localStorage.setItem("brain3d-theme", root.dataset.theme); } catch {} applyTheme(); if (D) { buildFilters(); buildCare(); renderPanel(); renderResults(); } });
   document.addEventListener("keydown", (e) => {
     touch();
+    if (!D) return;
     const typing = document.activeElement === qEl;
+    // Eingaben in fremden Feldern (z. B. die Steuerzentrale) lösen keine Kürzel der Ansicht aus
+    if (!typing && e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true']")) return;
     if (e.key === "/" && !typing) { e.preventDefault(); qEl.focus(); qEl.select(); return; }
     if (e.key === "Escape") {
       if (typing) { if (qEl.value) { qEl.value = ""; runSearch(""); } else qEl.blur(); return; }
@@ -913,11 +1198,58 @@
     if ((e.key === "f" || e.key === "F") && S.selected >= 0) frameNode(S.selected);
   });
   function fromHash() {
+    if (!D) return;
     const m = location.hash.match(/seite=([^&]+)/); if (!m) return;
     let id; try { id = decodeURIComponent(m[1]); } catch { return; } // kaputter Hash (z. B. %E0%A4) legt den Start nicht lahm
     const i = idx.get(id); if (i !== undefined && i !== S.selected) select(i);
   }
   window.addEventListener("hashchange", fromHash);
+  // Sprache gewechselt (texte.js) → statische und gerade sichtbare Texte neu setzen
+  document.addEventListener("brain:sprache", () => { uebersetzeDom(); if (D) { buildRegionLabels(); buildFilters(); buildCare(); setDay(S.day); renderPanel(); renderResults(); labelPool.forEach((el) => (el._w = 0)); } });
+
+  // ================================================================== Dienst: Aufleuchten, Lebenszeichen, Ablauf
+  let aufleuchtenAn = false, abgelaufen = false, gelesenSeit = Date.now(), gelesenLaeuft = false;
+  const gesehen = new Set();
+  const banner = $("#banner");
+  document.addEventListener("brain:neu-oeffnen", () => {
+    abgelaufen = true;
+    if (banner) { banner.textContent = t("neuOeffnen"); banner.hidden = false; }
+  });
+  async function leseEinstellungen() {
+    const a = api(); if (!a) { aufleuchtenAn = false; return; }
+    try { const r = await a.holeJson("/api/einstellungen"); aufleuchtenAn = !(r && r.werte && r.werte.liveAufleuchten === false); }
+    catch { aufleuchtenAn = false; }
+  }
+  async function frageGelesen() {
+    const a = api();
+    if (!a || !D || !aufleuchtenAn || abgelaufen || gelesenLaeuft || document.visibilityState !== "visible") return;
+    gelesenLaeuft = true;
+    try {
+      const r = await a.holeJson("/api/gelesen?seit=" + gelesenSeit);
+      const { ids, seit } = neueGelesene(r, gesehen, gelesenSeit);
+      gelesenSeit = seit;
+      for (const id of ids) { const i = idx.get(id); if (i !== undefined) leuchte(i); }
+    } catch {} finally { gelesenLaeuft = false; }
+  }
+  function lebenszeichen() {
+    const a = api();
+    if (!a || abgelaufen || document.visibilityState !== "visible") return;
+    a.holeJson("/api/ping").catch(() => {});
+  }
+  function starteDienstTakt() {
+    if (!api()) return;
+    setInterval(frageGelesen, 3000);
+    setInterval(lebenszeichen, 60000);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { lebenszeichen(); frageGelesen(); } });
+  }
+  async function neuLaden() {
+    if (!bereit) return;
+    const raw = await holeRohdaten(true);
+    if (!raw || !Array.isArray(raw.nodes)) return;
+    wendeSpracheAn(raw);
+    ladeDaten(raw);
+    await leseEinstellungen();
+  }
 
   // ================================================================== resize + loop
   function resize() {
@@ -948,21 +1280,41 @@
     const kk = snap || RM ? 1 : Math.min(1, dt * 6);
     viewOff += (wantX - viewOff) * kk; viewOffY += (wantY - viewOffY) * kk;
     if (Math.abs(viewOff) > 0.5 || Math.abs(viewOffY) > 0.5) { const w = canvas.clientWidth, h = canvas.clientHeight; camera.setViewOffset(w + viewOff * 2, h + viewOffY * 2, viewOff * 2, viewOffY * 2, w, h); } else camera.clearViewOffset();
-    animateState(dt);
+    if (D) { animateState(dt); placeLabels(); }
     if (!RM) { const br = 1 + Math.sin(U.uTime.value * 0.6) * 0.003; brain.scale.setScalar(br); ghost.scale.setScalar(br); }
-    placeLabels();
     if (light) renderer.render(scene, camera); else composer.render();
     frames++; fpsT += dt; if (fpsT > 1) { window.__fps = frames / fpsT; frames = 0; fpsT = 0; }
     requestAnimationFrame(tick);
   }
 
   // ================================================================== boot
-  resize(); applyTheme(); buildFilters(); buildCare(); setDay(days);
-  if (!N) $("#emptyNote").hidden = false;
-  if (SHOT) applyShot(); else fromHash();
-  requestAnimationFrame(() => { $("#loading").classList.add("done"); snap = !!SHOT; });
+  resize(); applyTheme();
   requestAnimationFrame(tick);
-  window.__brain = { S, D, select, runSearch, setPath, setCare, setDay, search: (q) => search(q, 10).map((h) => D.nodes[h.i].title) };
+  window.__brain = {
+    get S() { return S; }, get D() { return D; }, get bereit() { return bereit; }, get quelle() { return quelle; }, ladezeit: null,
+    select: (i) => select(i), runSearch: (q, o) => runSearch(q, o), setPath: (a, b) => setPath(a, b), setCare: (on) => setCare(on), setDay: (d) => setDay(d),
+    search: (q) => search(q, 10).map((h) => D.nodes[h.i].title),
+    sichtbar: (i) => !!nodeOn[i], leuchten: (id) => { const i = idx.get(id); return i === undefined ? 0 : leuchtstaerke(i); },
+    kanten: () => slots.length,
+  };
+  (async () => {
+    let raw = await datenVersprechen;
+    if (raw && raw.__fehler) { fail(t("datenFehler"), true); return; }
+    if (!raw || !Array.isArray(raw.nodes)) {
+      // http ohne gültigen Zugang (Seite neu geladen in einem neuen Tab o. Ä.) → Hinweis zum Neu-Öffnen
+      if (location.protocol === "http:") { fail(t("neuOeffnen"), true); return; }
+      fail(t("keineDaten"), true); return;
+    }
+    wendeSpracheAn(raw);
+    ladeDaten(raw);
+    bereit = true;
+    window.__brain.ladezeit = performance.now();
+    if (SHOT) applyShot(); else fromHash();
+    if (wartendeWahl !== null) { const id = wartendeWahl; wartendeWahl = null; waehleId(id); }
+    requestAnimationFrame(() => { $("#loading").classList.add("done"); snap = !!SHOT; });
+    await leseEinstellungen();
+    starteDienstTakt();
+  })();
 
   function applyShot() {
     hideHint();
@@ -983,7 +1335,7 @@
   }
 
   function addSynthetic(n) {
-    const areas = D.areas.filter((x) => !FIXED[x.id]).map((x) => x.id), base = D.nodes.length;
+    const areas = D.areas.filter((x) => !FIXED[x.id] && x.id !== "werkzeuge").map((x) => x.id), base = D.nodes.length;
     if (!areas.length) areas.push("zentrum");
     for (let i = 0; i < n; i++) {
       const a = areas[i % areas.length], g = a + "/s" + ((i >> 2) % 17);
@@ -998,5 +1350,19 @@
       if (x !== y) D.edges.push({ s: nx.id, t: D.nodes[y].id, kind: "link" });
     }
   }
-  function fail(msg, plain) { const l = document.getElementById("loading"); if (l) l.innerHTML = `<p style="color:#a7afc3;font:14px system-ui">${plain ? msg : "3D-Ansicht konnte nicht starten: " + msg + "."}</p>`; }
+
+  // ================================================================== Texte im Grundgerüst (index.html: data-t, data-t-title, data-t-aria, data-t-placeholder)
+  function uebersetzeDom() {
+    document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+    document.querySelectorAll("[data-t-title]").forEach((el) => { el.title = t(el.dataset.tTitle); });
+    document.querySelectorAll("[data-t-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.tAria)); });
+    document.querySelectorAll("[data-t-placeholder]").forEach((el) => { el.placeholder = t(el.dataset.tPlaceholder); });
+    const bt = window.BrainTexte; if (bt && (bt.sprache === "de" || bt.sprache === "en")) document.documentElement.lang = bt.sprache;
+  }
+  function fail(msg, plain) {
+    const l = document.getElementById("loading"); if (!l) return;
+    const p = document.createElement("p"); p.className = "load-fail";
+    p.textContent = plain ? msg : t("startFehler", { grund: msg });
+    l.textContent = ""; l.appendChild(p);
+  }
 })();

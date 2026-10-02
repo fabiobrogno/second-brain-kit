@@ -4,12 +4,15 @@
 // ist (WARN blockiert nichts — der Alltag funktioniert trotzdem, nur nicht optimal).
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { totalmem } from "node:os";
+import { totalmem, homedir } from "node:os";
 import { vaultPfad, ladeConfig, configFehler, ordner, istQuellVault, renderVorlage } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { qmdBefehl } from "./qmd-befehl.mjs";
 import { pruefeUpdate, hinweisZeile } from "./update-check.mjs";
+import { findeClaude } from "./ernte.mjs";
+import { anzahlVorschlaege } from "./vorschlaege.mjs";
 
 const vault = vaultPfad();
 const cfgFuerGit = ladeConfig(vault);
@@ -97,6 +100,17 @@ else {
   else zeile("WARN", "3D-Ansicht", "noch nicht installiert — „brain zeig“ funktioniert erst, sobald das Kit aktualisiert ist.");
 }
 
+// 9b. Ansicht-Dienst (Spec §3b.9): läuft er gerade? Beides ist in Ordnung — er startet bei Bedarf von selbst.
+{
+  let lauf = null;
+  try {
+    const modul = join(vault, ".tools", "ansicht", "dienst-start.mjs");
+    if (existsSync(modul)) lauf = await (await import(pathToFileURL(modul).href)).laufender(vault);
+  } catch { lauf = null; }
+  if (lauf) zeile("OK", "Ansicht-Dienst", `läuft (Port ${lauf.port})`);
+  else zeile("OK", "Ansicht-Dienst", "aus (startet bei ‚zeig mir mein Brain‘)");
+}
+
 // 10. AGENTS.md aktuell (Hash des frischen Renders == Datei auf der Platte)
 {
   const quelle = join(vault, ".tools", "kit", "AGENTS.md");
@@ -107,6 +121,35 @@ else {
     if (render.replace(/\r\n/g, "\n") === readFileSync(ziel, "utf8").replace(/\r\n/g, "\n")) zeile("OK", "AGENTS.md", "aktuell");
     else zeile("WARN", "AGENTS.md", "nicht mehr aktuell — sag „update mein Brain“ (erzeugt sie neu) bzw. starte eine neue Sitzung.");
   }
+}
+
+// 11. Hooks v0.3 (Live-Aufleuchten + Hintergrund-Ernte-Auslöser, Claude-Code-Adapter) — nur relevant, wenn
+// dieser Adapter überhaupt installiert ist (andere KIs haben kein ~/.claude/settings.json); fehlt es nur
+// deshalb, ist das kein Mangel (WARN statt FEHLT) — der Alltag funktioniert so oder so weiter.
+{
+  const heimSettings = join(homedir(), ".claude", "settings.json");
+  let settings = null;
+  try { settings = JSON.parse(readFileSync(heimSettings, "utf8")); } catch { settings = null; }
+  const hooksText = settings ? JSON.stringify(settings.hooks || {}) : "";
+  if (!hooksText.includes("/.tools/adapters/claude-code/")) {
+    zeile("OK", "Hooks (Claude Code)", "nicht installiert — nur für Claude Code relevant");
+  } else if (hooksText.includes("werkzeug-protokoll.mjs") && hooksText.includes("ernte-ausloeser.mjs")) {
+    zeile("OK", "Hooks v0.3", "Live-Aufleuchten und Hintergrund-Ernte eingerichtet");
+  } else {
+    zeile("WARN", "Hooks v0.3", "noch nicht eingerichtet — sag „update mein Brain“ (richtet die neuen Hooks ein).");
+  }
+}
+
+// 12. Ernte (Hintergrund-Zusammenfassung durch Haiku) — braucht eine lokale claude-Installation.
+{
+  if (findeClaude()) zeile("OK", "Ernte", "claude gefunden");
+  else zeile("WARN", "Ernte", "claude nicht gefunden — Ernte nicht möglich (Suche und Hinweise funktionieren trotzdem).");
+}
+
+// 13. Offene Vorschläge (aus der Hintergrund-Ernte) — reine Information, blockiert nie.
+{
+  const n = anzahlVorschlaege(vault);
+  zeile("OK", "Vorschläge", n > 0 ? `${n} offen — in der Ansicht prüfen („zeig mir mein Brain“).` : "keine offen");
 }
 
 // Update-Hinweis (Spec §3.9) — eigene Zeile, kein OK/FEHLT/WARN, blockiert nie.

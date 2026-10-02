@@ -79,7 +79,7 @@ test("Claude-Commands: update/backup heißen brain-update/brain-backup, alle tra
   const v = mkdtempSync(join(tmpdir(), "v-")); writeFileSync(join(v, "brain.config.json"), "{}");
   execFileSync(process.execPath, [build, v, "--ziel", "claude-commands", z]);
   const dateien = readdirSync(z).sort();
-  assert.deepEqual(dateien, ["brain-backup.md", "brain-feedback.md", "brain-lint.md", "brain-review.md", "brain-update.md", "handoff.md", "ingest.md"]);
+  assert.deepEqual(dateien, ["brain-backup.md", "brain-feedback.md", "brain-import.md", "brain-lint.md", "brain-review.md", "brain-update.md", "handoff.md", "ingest.md"]);
   for (const d of dateien) assert.match(readFileSync(join(z, d), "utf8"), /^---\n[\s\S]*?\n---\n<!-- brain-kit -->\n/, d);
 });
 test("Gleichnamiger fremder Command ohne Marke: Backup .bak-<zeit> + ersetzt + Meldung; eigener wird still überschrieben", () => {
@@ -109,4 +109,14 @@ test("Update-Skill Schritt 6 erzeugt AGENTS.md immer neu und die Codex-Skills, w
   assert.match(schritt6, /\.agents\/skills` \(/);
   assert.ok(schritt6.includes(`${nodeBefehl()} "${vf}/.tools/adapters/claude-code/install.mjs" "${vf}"`), schritt6);
   assert.match(schritt6, /brain-update\.md` mit der Marke/);
+});
+test("Import-Skill Schritt 4: Notizen mit Zugangsdaten sind NICHT übernommen — Quelle bereinigen, neu importieren, nie _import/ editieren", () => {
+  const s = readFileSync(join(T, "skills", "import", "SKILL.md"), "utf8");
+  const schritt4 = s.slice(s.indexOf("4. **Zugangsdaten-Hinweis"), s.indexOf("5. **Pakete anbieten"));
+  assert.match(schritt4, /NICHT übernommen/);
+  assert.match(schritt4, /erneut starten/);
+  assert.match(schritt4, /Duplikat/);
+  assert.match(schritt4, /Nie eine Datei unter `\{\{INBOX\}\}\/_import\/` bearbeiten/);
+  assert.ok(!/liegen jetzt nur als unveränderte Rohquelle/.test(schritt4), "alte, falsche Aussage");
+  assert.match(schritt4, /Original-Notiz \(in der Quelle\)/);
 });

@@ -110,8 +110,9 @@ function scanneVerzeichnis(dir, namen, erlaubt) {
       const f = join(d, n), r = relative(dir, f).split(sep).join("/"); // Windows: "\\" → "/", sonst griffe die vorlage/-Regel nie
       if (n === ".git") continue;
       if (statSync(f).isDirectory()) { lauf(f); continue; }
-      // Vault-Skelett: unter vorlage/ nur .gitkeep, _schema.md, _log.md, ueberblick.md, vorlagen/*, brain.config.json
-      if (/^vorlage\//.test(r) && !/(\.gitkeep|_schema\.md|_log\.md|ueberblick\.md|brain\.config\.json)$|^vorlage\/vorlagen\//.test(r)) befunde.push(`INHALT: ${r}`);
+      // Vault-Skelett: unter vorlage/ nur .gitkeep, _schema.md, _log.md, ueberblick.md, ich.md, vorlagen/*, brain.config.json
+      // (ich.md: feste, inhaltsfreie Ich-Karte-Vorlage aus dem Kit selbst — Task 12 — kein Leck aus einem echten Vault)
+      if (/^vorlage\//.test(r) && !/(\.gitkeep|_schema\.md|_log\.md|ueberblick\.md|ich\.md|brain\.config\.json)$|^vorlage\/vorlagen\//.test(r)) befunde.push(`INHALT: ${r}`);
       const buf = readFileSync(f);
       if (istBinaer(buf)) continue;
       buf.toString("utf8").split("\n").forEach((z, i) => {

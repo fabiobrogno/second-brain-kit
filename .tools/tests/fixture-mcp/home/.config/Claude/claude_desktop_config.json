@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "linserver": { "command": "node", "args": ["d.js"] }
+  }
+}

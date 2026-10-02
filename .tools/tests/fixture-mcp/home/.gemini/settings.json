@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "gemini-server": {
+      "headers": { "Authorization": "KOEDER-geheim-wert-123" }
+    }
+  }
+}

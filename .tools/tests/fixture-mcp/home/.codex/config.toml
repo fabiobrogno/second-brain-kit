@@ -1,0 +1,9 @@
+# Codex-Konfiguration (erfunden, nur fürs Fixture) — Kommentare müssen beim Parsen ignoriert werden
+[mcp_servers.codex-server]
+command = "node" # noch ein Kommentar
+args = ["KOEDER-geheim-123"]
+
+# Name mit Punkt braucht Anführungszeichen in TOML
+[mcp_servers."mit-punkt.x"]
+command = "python"
+url = "https://koeder.example/abc"

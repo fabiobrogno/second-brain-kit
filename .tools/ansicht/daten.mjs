@@ -4,18 +4,19 @@
 // Bereiche kommen aus brain.config.json (clusters), nicht aus festen Namen: jeder Cluster wird ein Bereich
 // mit einer Hirnregion; dazu die festen Bereiche zentrum (Wiki ohne passenden Cluster), archiv, inbox.
 // Nutzung: node .tools/ansicht/daten.mjs [vault]
-import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { vaultPfad, ladeConfig, ordner, configFehler } from "../pfade.mjs";
+import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "../pfade.mjs";
 import { walk } from "../vault-dateien.mjs";
 import { wikilinks, resolveLink } from "../wiki-pfade.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
+import { inventar, quellDateien } from "./mcp-inventar.mjs";
 
 export const REGIONEN = ["frontal", "temporal", "parietal", "tief", "okzipital"];
-export const FARBEN = ["blau", "orange", "gruen", "gelb", "rot", "lila", "grau"];
+export const FARBEN = ["blau", "orange", "gruen", "gelb", "rot", "lila", "grau", "tuerkis"];
 const TYPE_LABEL = { thema: "Thema", entitaet: "Steckbrief", quelle: "Quelle", synthese: "Synthese", ueberblick: "Überblick", notiz: "Notiz" };
 
 // Vergleichsform für Ordner-/Clusternamen: klein, ohne Umlaute, ohne Ziffernpräfix („40_persoenlich“ → „persoenlich“)
@@ -70,7 +71,9 @@ function ersterAbsatz(body) {
   return s;
 }
 
-export function erzeugeAnsichtsDaten(vault) {
+// Reine Datenaufbereitung — liest nur, schreibt nie. `erzeugeAnsichtsDaten` (unten) nutzt dies und schreibt
+// zusätzlich <vault>/.logs/ansicht/data.js. Der Dienst (Task 1, `./dienst.mjs`) ruft NUR diese Funktion auf.
+export function baueAnsichtsDaten(vault) {
   // Tippfehler im Pfad darf nie still einen Ordnerbaum anlegen — klare Meldung statt leerem Gehirn
   let istOrdner = false; try { istOrdner = statSync(vault).isDirectory(); } catch {}
   if (!istOrdner) throw new Error(`Brain-Ordner nicht gefunden: ${vault} — bitte den Pfad prüfen.`);
@@ -97,7 +100,7 @@ export function erzeugeAnsichtsDaten(vault) {
   }
   const ids = files.map(f => f.id), idSet = new Set(ids);
   // BOM weg (Windows PowerShell 5.1 schreibt UTF-8 mit BOM), sonst gilt das Frontmatter als Text
-  const rd = (rel) => readFileSync(join(vault, ...rel.split("/")), "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const rd = (rel) => entferneBom(readFileSync(join(vault, ...rel.split("/")), "utf8")).replace(/\r\n/g, "\n");
 
   const wikiBereich = (seg) => {
     const n = normName(seg);
@@ -139,15 +142,18 @@ export function erzeugeAnsichtsDaten(vault) {
   const lintConflict = new Set(), lintReview = new Set();
   const lintCache = join(vault, ".logs", "lint-cache.txt");
   if (existsSync(lintCache)) {
-    const mitWiki = (s) => (s.startsWith(o.wiki + "/") ? s : o.wiki + "/" + s);
-    for (const l of readFileSync(lintCache, "utf8").split(/\r?\n/)) {
-      const k = l.match(/^- KONFLIKT[^:]*:\s*(\S+)/); if (k) lintConflict.add(mitWiki(k[1]));
-      const r = l.match(/^- PRÜFBEDÜRFTIG[^:]*:\s*(\S+)/); if (r) lintReview.add(mitWiki(r[1]));
+    // "- <ART>: <pfad> — <grund>": Pfad darf Leerzeichen tragen, unter Windows mit "\\" geschrieben
+    const mitWiki = (s) => { const p = s.trim().split("\\").join("/"); return p.startsWith(o.wiki + "/") ? p : o.wiki + "/" + p; };
+    let roh = ""; try { roh = readFileSync(lintCache, "utf8"); } catch {}
+    for (const l of roh.split(/\r?\n/)) {
+      const k = l.match(/^- KONFLIKT[^:]*:\s*(.+?)(?: — |$)/); if (k) lintConflict.add(mitWiki(k[1]));
+      const r = l.match(/^- PRÜFBEDÜRFTIG[^:]*:\s*(.+?)(?: — |$)/); if (r) lintReview.add(mitWiki(r[1]));
     }
   }
 
   const sha16 = (rel) => createHash("sha256").update(readFileSync(join(vault, ...rel.split("/")))).digest("hex").slice(0, 16);
   const nodes = [], links = new Map();
+  const mcpFrontmatter = new Map(); // Seiten-ID → [Servername, …] (Frontmatter `mcp: [..]`)
   const aufgeloest = new Map(); // Link-Text → Seiten-ID|null (hängt nicht von der Quellseite ab)
   const loese = (l) => { if (!aufgeloest.has(l)) aufgeloest.set(l, resolveLink(ids, l, o.wiki, idSet)); return aufgeloest.get(l); };
   for (const f of files) {
@@ -169,6 +175,8 @@ export function erzeugeAnsichtsDaten(vault) {
     // Ohne Prototyp: ein Link „__proto__“ wird ein normaler Schlüssel.
     const linkZiele = Object.create(null);
     for (const l of wl) { const z = loese(l); if (z) linkZiele[l] = z; }
+    const mcpRefs = arr("mcp");
+    if (mcpRefs.length) mcpFrontmatter.set(f.id, mcpRefs);
     nodes.push({
       id: f.id, name, title: titel, area: areaOf(f.p), group: groupOf(f.p), wiki: isWiki, type: typ, typeLabel: TYPE_LABEL[typ] || typ,
       desc: beschreibung || ersterAbsatz(body), beschreibung, linkZiele, size: f.size,
@@ -182,22 +190,107 @@ export function erzeugeAnsichtsDaten(vault) {
   for (const n of nodes) if (n.wiki) for (const q of n.quellen) byId.get(q)?.usedIn.push(n.id);
   for (const n of nodes) n.usedIn.sort();
 
+  // MCP-Server: aus Client-Configs + Werkzeug-Log (nur Namen — nie command/args/env/url/headers), Bereich
+  // "werkzeuge" nur wenn ≥ 1 Server und nicht per cfg.ansicht.mcp === false abgeschaltet.
+  const mcpServer = cfg.ansicht?.mcp === false ? [] : inventar(vault).server;
+  if (mcpServer.length) {
+    areas.push({ id: "werkzeuge", name: "Werkzeuge", farbe: "tuerkis", region: "hirnstamm" });
+    for (const s of mcpServer) {
+      nodes.push({
+        id: `mcp:${s.name}`, name: s.name, title: s.name, area: "werkzeuge", group: s.quellen[0] || "mcp",
+        wiki: false, type: "mcp", typeLabel: "MCP",
+        desc: s.quellen.join(", ") + (s.benutzt ? ` · ${s.benutzt}×` : ""), beschreibung: "", linkZiele: Object.create(null),
+        size: 0, rev: null, quellen: [], usedIn: [], body: "",
+        added: null, changed: s.zuletzt || null, status: "ok", statusNote: null,
+      });
+    }
+  }
+
   const key = new Set(), edges = [];
-  const addEdge = (s, t, kind) => { if (!idSet.has(s) || !idSet.has(t) || s === t) return; const k = [s, t].sort().join("|") + kind; if (key.has(k)) return; key.add(k); edges.push({ s, t, kind }); };
-  for (const n of nodes) for (const l of links.get(n.id)) addEdge(n.id, loese(l), "link");
+  const edgeIds = new Set(nodes.map(n => n.id));
+  const addEdge = (s, t, kind) => { if (!edgeIds.has(s) || !edgeIds.has(t) || s === t) return; const k = [s, t].sort().join("|") + kind; if (key.has(k)) return; key.add(k); edges.push({ s, t, kind }); };
+  for (const n of nodes) if (links.has(n.id)) for (const l of links.get(n.id)) addEdge(n.id, loese(l), "link");
   for (const n of nodes) for (const q of n.quellen) addEdge(n.id, q, "quelle");
+  // MCP-Kanten: explizit per Frontmatter `mcp: [..]`, sonst Namensgleichheit (normalisierter Servername ist
+  // Teil des normalisierten Seitennamens, ab 4 Zeichen — kürzere Namen wären zu unspezifisch).
+  if (mcpServer.length) {
+    for (const [seite, refs] of mcpFrontmatter) for (const ref of refs) addEdge(seite, `mcp:${ref}`, "mcp");
+    for (const s of mcpServer) {
+      const n = normName(s.name);
+      if (n.length < 4) continue;
+      for (const f of files) if (normName(f.p[f.p.length - 1].replace(/\.md$/, "")).includes(n)) addEdge(f.id, `mcp:${s.name}`, "mcp");
+    }
+  }
 
   const dates = nodes.map((n) => n.added).filter(Boolean).sort();
-  const data = {
+  const daten = {
     built: new Date().toISOString().slice(0, 10), first: dates[0] || null, last: dates[dates.length - 1] || null,
     areas, nodes, edges, inbox: nodes.filter(n => n.area === "inbox").length,
+    mcp: mcpServer, warnungen,
   };
+  // Oberflächensprache aus der Config (nur "de"/"en"; sonst entscheidet die Ansicht selbst)
+  const sprache = cfg.ansicht?.sprache;
+  if (sprache === "de" || sprache === "en") daten.sprache = sprache;
+  return daten;
+}
+
+export function erzeugeAnsichtsDaten(vault) {
+  const data = baueAnsichtsDaten(vault);
   const dir = join(vault, ".logs", "ansicht");
   mkdirSync(dir, { recursive: true });
   const pfad = join(dir, "data.js");
   // "</" maskieren: die Datei wird per <script> geladen, Seiteninhalt darf das Script-Tag nie schließen
   writeFileSync(pfad, "// generiert von .tools/ansicht/daten.mjs — nicht von Hand ändern\nwindow.BRAIN_DATA = " + JSON.stringify(data).replace(/<\//g, "<\\/") + ";\n");
-  return { pfad, seiten: nodes.length, verbindungen: edges.length, warnungen };
+  return { pfad, seiten: data.nodes.length, verbindungen: data.edges.length, warnungen: data.warnungen };
+}
+
+// Fingerabdruck des Vault-Baums: rekursives Verzeichnis-Listing (relativer Pfad + mtime + Größe je Datei,
+// mtime je Ordner) — erkennt Anlegen, Ändern, Löschen, Umbenennen und Verschieben (rename behält die mtime
+// der Datei, ändert aber Pfad und Ordner-mtime) in ALLEN Ordnern (Wiki, Inbox, Archiv, Cluster, sonstige).
+// Ausgelassen: Punkt-Ordner (.git, .logs, .obsidian …) — dort ändert sich laufend etwas, das nicht in die
+// Ansicht einfließt; was aus .logs zählt, nimmt datenSchluessel() einzeln dazu. Symlink-Ordner: nicht folgen.
+function baumAbdruck(vault, hash) {
+  const stapel = [""];
+  while (stapel.length) {
+    const rel = stapel.pop();
+    let eintraege;
+    try { eintraege = readdirSync(rel ? join(vault, rel) : vault, { withFileTypes: true }); } catch { hash.update(`${rel}/\0?\n`); continue; }
+    eintraege.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const e of eintraege) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (e.name.startsWith(".")) continue;
+        let m = 0; try { m = statSync(join(vault, r)).mtimeMs; } catch {}
+        hash.update(`${r}/\0${m}\n`);
+        stapel.push(r);
+      } else {
+        let m = 0, g = -1; try { const st = statSync(join(vault, r)); m = st.mtimeMs; g = st.size; } catch {}
+        hash.update(`${r}\0${m}\0${g}\n`);
+      }
+    }
+  }
+}
+
+// Cache-Schlüssel für den Dienst (Task 1): ändert sich, sobald sich irgendetwas ändert, das in die Ansichtsdaten
+// einfließt — Vault-Baum (Ruling 6), brain.config.json, git-HEAD, MCP-Quelldateien (nur mtimes, nie Inhalt),
+// Werkzeug-Log und Lint-Cache.
+export function datenSchluessel(vault) {
+  const cfg = ladeConfig(vault);
+  const hash = createHash("sha256");
+  baumAbdruck(vault, hash);
+  const mtime = (p) => { try { const st = statSync(p); return `${st.mtimeMs}:${st.size}`; } catch { return "0"; } };
+  const teile = [mtime(join(vault, "brain.config.json"))];
+  try {
+    const head = execFileSync(gitBefehl({ cfg }), ["-C", vault, "rev-parse", "HEAD"], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
+      env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))),
+    }).trim();
+    teile.push(head);
+  } catch { teile.push(""); }
+  for (const p of quellDateien(vault)) teile.push(mtime(p));
+  teile.push(mtime(join(vault, ".logs", "werkzeug.log")), mtime(join(vault, ".logs", "lint-cache.txt")));
+  hash.update(teile.join("|"));
+  return hash.digest("hex");
 }
 
 let aufruf = "";

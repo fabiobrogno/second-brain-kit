@@ -23,6 +23,49 @@
   const extern = (url, inhalt) => '<a href="' + escape(url) + '" target="_blank" rel="noopener noreferrer">' + inhalt + "</a>";
   const PLATZ = /\u0000(\d+)\u0000/g;
 
+  // Hervorhebungen (*, **, ***, _, __, ~~) mit einem Stapel statt Regex-Paaren: jeder Schluss-Tag schließt den
+  // zuletzt geöffneten, darum entsteht nie falsch verschachteltes HTML (z. B. „**a *b** c*“ →
+  // <strong>a <em>b</em></strong> c*). Was sich nicht schließen lässt, bleibt als sichtbares Zeichen stehen.
+  // `_` öffnet/schließt nicht mitten im Wort (snake_case bleibt Text), `*` schon (a**b**c).
+  const TAG = { "*1": "em", "*2": "strong", "_1": "em", "_2": "strong", "~2": "del" };
+  const leer = (c) => !c || /\s/.test(c);
+  const wort = (c) => !!c && /[\p{L}\p{N}_]/u.test(c);
+  function hervorheben(s) {
+    const aus = [], stapel = [];
+    const lauf = /\*+|_+|~+/g;
+    let letzt = 0, m;
+    while ((m = lauf.exec(s))) {
+      if (m.index > letzt) aus.push(s.slice(letzt, m.index));
+      letzt = lauf.lastIndex;
+      const ch = m[0][0];
+      let k = m[0].length;
+      if (ch === "~" ? k !== 2 : k > 3) { aus.push(m[0]); continue; }
+      const p = s[m.index - 1] || "", q = s[lauf.lastIndex] || "";
+      const kannAuf = !leer(q) && (ch !== "_" || !wort(p));
+      const kannZu = !leer(p) && (ch !== "_" || !wort(q));
+      let geschlossen = false;
+      while (kannZu && k > 0) {
+        let i = stapel.length - 1;
+        while (i >= 0 && stapel[i].ch !== ch) i--;
+        if (i < 0) break;
+        while (stapel.length - 1 > i) { const x = stapel.pop(); x.slot.text = x.ch.repeat(x.len); }
+        const o = stapel.pop();
+        let tag, vor = "";
+        if (o.len <= k || geschlossen) { tag = TAG[ch + o.len]; k -= Math.min(o.len, k); }
+        else { tag = TAG[ch + 1]; vor = ch; k -= 1; } // „**a*“: ein Zeichen bleibt Text, Rest wird <em>
+        o.slot.text = vor + "<" + tag + ">";
+        aus.push("</" + tag + ">");
+        geschlossen = true;
+      }
+      if (k > 0 && kannAuf) {
+        for (const len of (k === 3 ? [2, 1] : [k])) { const slot = { text: "" }; aus.push(slot); stapel.push({ ch, len, slot }); }
+      } else if (k > 0) aus.push(ch.repeat(k));
+    }
+    if (letzt < s.length) aus.push(s.slice(letzt));
+    for (const x of stapel) x.slot.text = x.ch.repeat(x.len);
+    return aus.map((x) => (typeof x === "string" ? x : x.text)).join("");
+  }
+
   function inline(src, linkZiel) {
     const teile = [];
     const halte = (html) => "\u0000" + (teile.push(html) - 1) + "\u0000";
@@ -58,10 +101,7 @@
     });
     // 5) Rest escapen (Roh-HTML wird sichtbarer Text), dann Hervorhebungen auf den escapten Text (enthält keine Tags mehr).
     s = escape(s);
-    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
-    s = s.replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
-      .replace(/(^|[\s(])_([^_\s][^_]*)_(?=[\s.,;:!?)]|$)/g, "$1<em>$2</em>");
-    s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    s = hervorheben(s);
     // 6) Platzhalter zurück (verschachtelt möglich, z. B. Code im Link-Text).
     for (let k = 0; k < 8 && /\u0000\d+\u0000/.test(s); k++) s = s.replace(PLATZ, (_, n) => teile[n] || "");
     return s.replace(/\u0000/g, "");
