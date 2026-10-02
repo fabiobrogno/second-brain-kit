@@ -106,4 +106,18 @@ else
   echo "SKIP: ln -s nicht verfügbar — Symlink-Test übersprungen"
 fi
 rm -rf "$SLD"
+
+# BRAIN_ERSTCOMMIT=1 (nur install.mjs, allererster Commit): Unit-Tests des Kits entfallen, Secrets blockieren weiter.
+VE=$(mktemp -d); mkdir -p "$VE/09_wiki" "$VE/.tools/tests"; cp fixture/brain.config.json "$VE/"
+printf 'import { test } from "node:test";\ntest("rot", () => { throw new Error("rot"); });\n' > "$VE/.tools/tests/test-rot.mjs"
+echo 'export const x = 1;' > "$VE/.tools/x.mjs"
+git -C "$VE" init -q; git -C "$VE" add -- .tools brain.config.json
+RC=0; OUT=$(node "$C" "$VE" 2>&1) || RC=$?
+[ $RC -eq 2 ] && echo "$OUT" | grep -q 'UNIT-TESTS' || { echo "FAIL: roter Unit-Test blockiert nicht (rc=$RC): $OUT"; exit 1; }
+RC=0; OUT=$(BRAIN_ERSTCOMMIT=1 node "$C" "$VE" 2>&1) || RC=$?
+[ $RC -eq 0 ] || { echo "FAIL: BRAIN_ERSTCOMMIT=1 lässt Unit-Tests trotzdem laufen (rc=$RC): $OUT"; exit 1; }
+KEY=api_key; VAL=sk-DUMMY1234567890; printf '# n\n%s=%s\n' "$KEY" "$VAL" > "$VE/n.md"; git -C "$VE" add -- n.md
+RC=0; OUT=$(BRAIN_ERSTCOMMIT=1 node "$C" "$VE" 2>&1) || RC=$?
+[ $RC -eq 2 ] && echo "$OUT" | grep -q 'SECRETS: n.md' || { echo "FAIL: BRAIN_ERSTCOMMIT=1 übergeht Secrets (rc=$RC): $OUT"; exit 1; }
+rm -rf "$VE"
 echo "PASS"

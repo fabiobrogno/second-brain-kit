@@ -116,3 +116,29 @@ test("CSP: keine Inline-Skripte, keine Inline-Event-Handler (index.html und app.
   assert.doesNotMatch(APP, /javascript:/i);
   assert.doesNotMatch(INDEX, /<script[^>]*data\.js/, "data.js lädt app.js nur unter file:// selbst nach");
 });
+
+// Trackpad-Pinch darf nie die Seite zoomen (sonst Neuaufbau der Ansicht → Gehirn blitzt schwarz).
+test("app.js: Pinch (wheel + ctrlKey) und Safari-Gesten werden nie als Seiten-Zoom durchgelassen", () => {
+  const quelle = readFileSync(new URL("../ansicht/app.js", import.meta.url), "utf8");
+  assert.match(quelle, /addEventListener\("wheel", \(e\) => \{ if \(e\.ctrlKey\) e\.preventDefault\(\); \}, \{ passive: false \}\)/);
+  assert.match(quelle, /\["gesturestart", "gesturechange", "gestureend"\]/);
+});
+
+// Beim Hineinzoomen darf kein Punkt unendlich groß werden (schwarzes Quadrat über dem Gehirn).
+test("app.js: Punkt-Shader begrenzen die Größe, verwerfen Punkte an/hinter der Kamera und NaN-Koordinaten", () => {
+  const quelle = readFileSync(new URL("../ansicht/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(quelle, /gl_PointSize = uPR \* uScale \* s \* 70\.0 \/ -mv\.z;/);
+  assert.match(quelle, /tiefe > 0\.06 \? min\(uPR \* uScale \* s \* 70\.0 \/ tiefe, uPR \* 160\.0\) : 0\.0/);
+  assert.match(quelle, /if \(!\(d <= 1\.0\)\) discard;/);
+  assert.match(quelle, /if \(!\(d <= 0\.5\)\) discard;/);
+});
+
+// Ein ungültiger/überlaufender Bildpunkt darf nie in den Bloom gelangen (schwarzes Quadrat beim Zoomen).
+test("app.js: Klemm-Durchgang zwischen RenderPass und Bloom; Punktwolken mit Größengrenze", () => {
+  const quelle = readFileSync(new URL("../ansicht/app.js", import.meta.url), "utf8");
+  const a = quelle.indexOf("composer.addPass(new RenderPass"), k = quelle.indexOf("composer.addPass(klemmPass)"), b = quelle.indexOf("new UnrealBloomPass(");
+  assert.ok(a > 0 && k > a && b > k, "Reihenfolge RenderPass → klemmPass → Bloom");
+  assert.match(quelle, /greaterThanEqual\(c, vec4\(0\.0\)\)/);
+  assert.match(quelle, /punktGrenze\(hazeMat, /);
+  assert.match(quelle, /punktGrenze\(inboxMat, /);
+});

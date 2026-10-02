@@ -354,6 +354,25 @@
   }
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
+  // Sicherung vor dem Bloom: ein einzelner ungültiger (NaN/∞) oder überlaufender Bildpunkt — etwa wenn sich beim
+  // Hineinzoomen viele leuchtende Punkte additiv überlagern — wurde vom Bloom zu einem schwarzen Quadrat verschmiert.
+  // Dieser Durchgang setzt solche Werte auf 0 bzw. begrenzt sie, bevor der Bloom sie sieht.
+  const klemmPass = (() => {
+    const mat = new T.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: "uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv);"
+        + " vec4 ok = vec4(greaterThanEqual(c, vec4(0.0))); gl_FragColor = mix(vec4(0.0), min(c, vec4(32.0)), ok); }",
+      depthTest: false, depthWrite: false,
+    });
+    const quad = new T.Mesh(new T.PlaneGeometry(2, 2), mat), kam = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    return {
+      enabled: true, needsSwap: true, clear: false, renderToScreen: false,
+      setSize() {}, dispose() { mat.dispose(); quad.geometry.dispose(); },
+      render(r, schreib, lies) { mat.uniforms.tDiffuse.value = lies.texture; r.setRenderTarget(this.renderToScreen ? null : schreib); r.render(quad, kam); },
+    };
+  })();
+  composer.addPass(klemmPass);
   const bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.5, 0.45, 0.24);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
@@ -406,11 +425,11 @@
         a *= 1.0 - 0.6 * uDim;
         vA = a;
         vC = mix(uColA, uColB, clamp(s * 0.72 + rim * 0.3, 0.0, 1.0));
-        gl_PointSize = min(uPR * uScale * (1.5 + 1.7 * s) * (4.2 / -mv.z), uPR * 4.5);
+        gl_PointSize = -mv.z > 0.06 ? min(uPR * uScale * (1.5 + 1.7 * s) * (4.2 / -mv.z), uPR * 4.5) : 0.0;
         gl_Position = projectionMatrix * mv;
       }`;
   const pointFS = `uniform float uOpacity; varying float vA; varying vec3 vC;
-      void main(){ float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; gl_FragColor = vec4(vC, vA * smoothstep(0.5, 0.05, d) * uOpacity); }`;
+      void main(){ float d = length(gl_PointCoord - 0.5); if (!(d <= 0.5)) discard; gl_FragColor = vec4(vC, vA * smoothstep(0.5, 0.05, d) * uOpacity); }`;
   const brainUniforms = { ...U, uColA: { value: new T.Color() }, uColB: { value: new T.Color() }, uOpacity: { value: 1 }, uDim: { value: 0 } };
   const brainMat = new T.ShaderMaterial({ uniforms: { ...brainUniforms, uGhost: { value: 0 } }, vertexShader: brainVS, fragmentShader: pointFS, transparent: true, depthWrite: false, depthTest: true, blending: T.AdditiveBlending });
   const ghostMat = new T.ShaderMaterial({ uniforms: { ...brainUniforms, uGhost: { value: 0.035 } }, vertexShader: brainVS, fragmentShader: pointFS, transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending });
@@ -420,7 +439,17 @@
   // --- Innenleben: dünner Nebel im Volumen (lichter innen, dichter an der Oberfläche)
   const hazeGeo = new T.BufferGeometry();
   { const a = [], tmp = [0, 0, 0]; for (let q = 0; q < G3 && a.length < 21000; q++) if (OCC[q] > 235 && rnd() < 0.12) { cellCenter(q, tmp); a.push(tmp[0] + (rnd() - 0.5) * GRID.step, tmp[1] + (rnd() - 0.5) * GRID.step, tmp[2] + (rnd() - 0.5) * GRID.step); } hazeGeo.setAttribute("position", new T.Float32BufferAttribute(a, 3)); }
+  // three.js zeichnet PointsMaterial-Punkte als Quadrate ohne Größengrenze: ein Dunstpunkt direkt vor der Kamera wurde
+  // beim Hineinzoomen bildschirmgroß (schwarzes Quadrat). Darum Größe begrenzen und Punkte an/hinter der Kamera verwerfen.
+  const punktGrenze = (mat, maxPx) => {
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace("#include <fog_vertex>",
+        "#include <fog_vertex>\n  gl_PointSize = (-mvPosition.z > 0.06) ? min(gl_PointSize, " + maxPx.toFixed(1) + ") : 0.0;");
+    };
+    return mat;
+  };
   const hazeMat = new T.PointsMaterial({ size: 0.006, color: 0x6f8cff, transparent: true, opacity: 0.07, depthWrite: false, depthTest: false, blending: T.AdditiveBlending, sizeAttenuation: true });
+  punktGrenze(hazeMat, 5 * DPR);
   const haze = new T.Points(hazeGeo, hazeMat); haze.renderOrder = 1; scene.add(haze);
   const glowMat = new T.SpriteMaterial({ map: radialTex(), color: 0x3a5fd9, transparent: true, opacity: 0.12, depthWrite: false, depthTest: false, blending: T.AdditiveBlending });
   const glow = new T.Sprite(glowMat); glow.scale.set(3.4, 2.8, 1); glow.position.set(-0.05, -0.05, 0); glow.renderOrder = -1; scene.add(glow);
@@ -434,6 +463,7 @@
   const inboxGeo = new T.BufferGeometry();
   { const a = []; const R = REG.inbox; for (let i = 0; i < 700; i++) { const th = rnd() * Math.PI * 2, ph = Math.acos(2 * rnd() - 1), g = Math.pow(rnd(), 0.9); a.push(R.c[0] + R.r[0] * g * Math.sin(ph) * Math.cos(th) * 1.5, R.c[1] + R.r[1] * g * Math.cos(ph) * 1.5, R.c[2] + R.r[2] * g * Math.sin(ph) * Math.sin(th) * 1.5); } inboxGeo.setAttribute("position", new T.Float32BufferAttribute(a, 3)); }
   const inboxMat = new T.PointsMaterial({ size: 0.008, color: 0xb8a4ff, transparent: true, opacity: 0.3, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true });
+  punktGrenze(inboxMat, 6 * DPR);
   scene.add(new T.Points(inboxGeo, inboxMat));
 
   // --- Knoten: eine Points-Geometrie für alle Seiten. Aufleuchten (Live-Lesen) über das Attribut „glow“
@@ -451,7 +481,10 @@
         float g = (age >= 0.0 && age < uGlueh) ? (1.0 - smoothstep(uGlueh * 0.6, uGlueh, age)) * (uMotion > 0.5 ? 0.8 + 0.2 * sin(age * 5.0) : 1.0) : 0.0;
         vPulse = p; vGlow = vis > 0.01 ? g : 0.0;
         float s = size * (1.0 + 0.55 * hl + 0.3 * p + 1.3 * vGlow) * (ring > 0.5 ? 1.0 + 0.6 * uCare : 1.0);
-        gl_PointSize = uPR * uScale * s * 70.0 / -mv.z;
+        // Punkte dicht vor oder hinter der Kamera (beim Hineinzoomen) nie zeichnen und die Größe begrenzen: sonst wird
+        // gl_PointSize unendlich, gl_PointCoord ungültig, der Kreis-Test greift nicht und ein schwarzes Quadrat entsteht.
+        float tiefe = -mv.z;
+        gl_PointSize = tiefe > 0.06 ? min(uPR * uScale * s * 70.0 / tiefe, uPR * 160.0) : 0.0;
         gl_Position = projectionMatrix * mv;
         vC = color; vA = max(vis, vGlow); vRing = ring; vHl = hl;
       }`,
@@ -459,7 +492,7 @@
       uniform vec3 uRingK, uRingP; uniform float uLight, uCare, uHalo; varying vec3 vC; varying float vA, vRing, vHl, vPulse, vGlow;
       void main(){
         float d = length(gl_PointCoord - 0.5) * 2.0;
-        if (d > 1.0) discard;
+        if (!(d <= 1.0)) discard; // fängt auch ungültige (NaN) Werte ab
         float core = smoothstep(0.3, 0.16, d);
         float halo = (exp(-d * d * 7.0) * (0.5 + 0.5 * vHl) + vPulse * exp(-d * d * 3.0) * 0.5) * uHalo + vGlow * exp(-d * d * 2.2) * 0.95;
         vec3 c = vC * halo * 1.1 + mix(vC, vec3(1.0), 0.75 + 0.2 * vGlow) * core;
@@ -881,6 +914,11 @@
   let down = null, hoverPlan = 0, hoverXY = null;
   canvas.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; touch(); hideHint(); });
   canvas.addEventListener("wheel", touch, { passive: true });
+  // Trackpad-Pinch (macOS: wheel mit ctrlKey, Safari: gesture*) nie als Seiten-Zoom durchlassen. OrbitControls
+  // verhindert ihn nur im Ruhezustand — während Drehen/Kameraflug zoomte sonst die ganze Seite, die Ansicht wurde
+  // neu angelegt und das Gehirn blitzte schwarz auf. Der Kamera-Zoom selbst läuft weiter über OrbitControls.
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
   // Hover höchstens einmal je Bild auswerten (bei 5000 Seiten sonst spürbar)
   canvas.addEventListener("pointermove", (e) => {
     if (e.pointerType !== "mouse" || e.buttons) return;

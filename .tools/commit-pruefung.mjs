@@ -102,7 +102,9 @@ try {
 
   // 4) Unit-Tests nur, wenn Werkzeug-Code gestagt ist (fremder .tools-Code blockiert keinen Ingest). 45 s: seit v0.3
   //    warten einige Tests auf losgelöste Prozesse (~8 s gesamt); ein Ingest-Commit ohne .tools-Code wartet nie.
-  if (gestagt.some(f => /^\.tools\/.*\.mjs$/.test(f)) && existsSync(join(S, ".tools", "tests"))) {
+  //    BRAIN_ERSTCOMMIT=1 setzt nur install.mjs für den allerersten Commit (frisch kopierter Kit-Code) — die
+  //    übrigen Prüfungen (Secrets, Wiki) laufen trotzdem.
+  if (process.env.BRAIN_ERSTCOMMIT !== "1" && gestagt.some(f => /^\.tools\/.*\.mjs$/.test(f)) && existsSync(join(S, ".tools", "tests"))) {
     const unit = readdirSync(join(S, ".tools", "tests")).filter(f => /^test-.*\.mjs$/.test(f)).map(f => join(S, ".tools", "tests", f));
     // Ohne GIT_*: im Hook setzt git GIT_DIR/GIT_INDEX_FILE — ein Test mit eigenem Temp-Repo träfe sonst dieses Repo.
     const testEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));

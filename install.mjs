@@ -395,7 +395,11 @@ async function main() {
       // würde, statt sie wie gewohnt still zu überspringen. Bestehende Vaults bekommen hier KEINEN
       // automatischen Commit (das bleibt Sache des Updates/der Person) — nur dieser Zweig committet.
       git(vault, "add", "--all");
-      git(vault, "commit", "-q", "-m", "init: Second Brain eingerichtet");
+      // BRAIN_ERSTCOMMIT=1: die Commit-Prüfung (Secrets, Wiki-Regeln) läuft voll, nur die Unit-Tests des Kits
+      // nicht — sie prüfen den gerade unverändert kopierten Kit-Code, kosten auf langsamen Windows-Rechnern bis zu
+      // 45 s und hätten bei einem einzelnen zeitkritischen Test den ersten Commit still verhindert.
+      execFileSync(GIT, ["-C", vault, "commit", "-q", "-m", "init: Second Brain eingerichtet"],
+        { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: { ...laufendesEnv(), BRAIN_ERSTCOMMIT: "1" } });
       melde(S("Erster Stand deines Brains ist gesichert.", "Your brain's first snapshot is saved."));
     }
   } catch (e) { logDetail(`git-Einrichtung übersprungen: ${e?.message || e}`); }

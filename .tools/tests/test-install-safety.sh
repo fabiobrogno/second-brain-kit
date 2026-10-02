@@ -109,7 +109,7 @@ node "$INSTALL" "$V4" --agent keiner --sprache de --backup keins >/dev/null || {
 rm -rf "$V4/.git"
 touch "$V4/.DS_Store"
 node "$INSTALL" "$V4" --agent keiner --sprache de --backup keins >/dev/null || { echo "FAIL: Reinstall nach rm -rf .git + .DS_Store"; exit 1; }
-git -C "$V4" log -1 >/dev/null 2>&1 || { echo "FAIL: nach rm -rf .git + .DS_Store existiert kein Commit"; exit 1; }
+git -C "$V4" log -1 >/dev/null 2>&1 || { echo "FAIL: nach rm -rf .git + .DS_Store existiert kein Commit"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 
 # --- 4. Kaputte brain.config.json: abbrechen, NICHTS umschreiben ----------------------------------
 V5="$T/KaputteConfig"; mkdir -p "$V5"; printf '{kaputt' > "$V5/brain.config.json"

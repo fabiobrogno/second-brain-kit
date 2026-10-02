@@ -29,6 +29,26 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}/;
 // echte Adresse auf derselben Zeile bleibt so trotzdem ein Fund. Gleiche Deckelung wie EMAIL_RE, aus
 // demselben Grund (lief vorher auf JEDER Zeile mit "@", noch vor dem EMAIL_RE-Test).
 const EMAIL_AUSNAHME = /([A-Za-z0-9._%+-]{0,64}noreply@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}|[A-Za-z0-9._%+-]{1,64}@example\.com)/gi;
+// Die Deckelung macht die Suche linear, aber mit Faktor ~64: an JEDER Startposition einer langen Zeichenkette
+// probiert die Regex bis zu 64 Lokalteil-Zeichen, bevor sie am fehlenden "@" scheitert (gemessen: 200 KB ≈
+// 170 ms auf macOS, auf dem Windows-Runner > 1 s). Jeder Treffer beider Regexe liegt aber nah an einem "@"
+// (Lokalteil ≤ 64+7 davor, Domain ≤ 279 dahinter; nach dem Herausschneiden einer Ausnahme rücken höchstens
+// noch einmal so viele Zeichen nach). Darum werden nur Fenster um jedes "@" geprüft — überlappende Fenster
+// verschmolzen, getrennt durch "\n", das in keiner Zeichenklasse vorkommt (Zeilen enthalten selbst keins).
+// Ergebnis wie auf der ganzen Zeile, Aufwand nur noch proportional zur Zahl der "@".
+const AT_VOR = 200, AT_NACH = 600;
+function umAtVerdichtet(z) {
+  const teile = [];
+  let start = -1, ende = -1;
+  for (let i = z.indexOf("@"); i !== -1; i = z.indexOf("@", i + 1)) {
+    const a = Math.max(0, i - AT_VOR), b = Math.min(z.length, i + 1 + AT_NACH);
+    if (start !== -1 && a <= ende) { ende = Math.max(ende, b); continue; }
+    if (start !== -1) teile.push(z.slice(start, ende));
+    start = a; ende = b;
+  }
+  if (start !== -1) teile.push(z.slice(start, ende));
+  return teile.join("\n");
+}
 const regeln = [
   ["PFAD", /\/(Users|home)\/(?!<name>|runner\b|USER\b)[A-Za-z0-9._-]+/],
   ["EMAIL", EMAIL_RE],
@@ -84,7 +104,7 @@ function pruefeZeile(z, namen, erlaubt) {
     // langen Zeile ohne "@" (z. B. eine 1-MB-Zeile ohne Zeilenumbrüche) backtrackt das quadratisch und
     // hängt. Billiger includes()-Vorcheck umgeht das für den Normalfall "kein @ da" komplett.
     if (art === "EMAIL") {
-      if (z.includes("@") && EMAIL_RE.test(z.replace(EMAIL_AUSNAHME, ""))) funde.push(art);
+      if (z.includes("@") && EMAIL_RE.test(umAtVerdichtet(z).replace(EMAIL_AUSNAHME, ""))) funde.push(art);
     } else if (re.test(z)) funde.push(art);
   }
   if (namen.length) {

@@ -59,7 +59,9 @@ function obsidianQuelle() {
   if (QUELLE) return QUELLE;
   const q = join(temp(), "Mein altes Brain, Küche's");
   kopiereBaum(join(FIX, "obsidian"), q);
-  const brot = readFileSync(join(q, "Rezepte und Küche", "Brotteig.md"), "utf8");
+  // Ohne .gitattributes im Kit checkt Git unter Windows (autocrlf) die Fixture mit CRLF aus — erst auf LF
+  // bringen, sonst entstünde aus "\r\n" → "\r  \r\n" eine echte Zusatz-Leerzeile statt nur anderer Zeilenenden.
+  const brot = readFileSync(join(q, "Rezepte und Küche", "Brotteig.md"), "utf8").replace(/\r\n/g, "\n");
   writeFileSync(join(q, "Rezepte und Küche", "Brotteig (Windows).md"), "\uFEFF" + brot.replace(/\n/g, "  \r\n"));
   mkdirSync(join(q, "Anhänge"), { recursive: true });   // leerer Ordner kommt nicht durch git
   writeFileSync(join(q, "Anhänge", "foto-suppe.png"), PNG);
