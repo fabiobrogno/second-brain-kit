@@ -72,14 +72,15 @@ grep -q 'Lies zuerst `09_wiki/ich.md`' "$T/AGENTS.md" 2>/dev/null || { echo "FAI
 BRAIN_VAULT="$T" node "$B" einstellungen ichKarte=false >/dev/null || { echo "FAIL: einstellungen ichKarte=false"; exit 1; }
 grep -q 'Lies zuerst' "$T/AGENTS.md" && { echo "FAIL: Ich-Karten-Satz nach ichKarte=false noch da"; exit 1; }
 # Final-Review #7: Pfade mit Komma bleiben ein Eintrag; ";" trennt, "+=" hängt an, JSON-Liste geht auch
+# (ohne_pfadumbau: sonst macht Git Bash unter Windows aus "/kunden/a, b" schon vor Node "C:/Program Files/Git/kunden/a, b")
 nicht_in() { node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).automatik.ernteNichtIn))' "$T/brain.config.json"; }
-BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=C:\Users\Müller, Anna\Firma' >/dev/null || { echo "FAIL: ernteNichtIn Komma-Pfad"; exit 1; }
+BRAIN_VAULT="$T" ohne_pfadumbau node "$B" einstellungen 'ernteNichtIn=C:\Users\Müller, Anna\Firma' >/dev/null || { echo "FAIL: ernteNichtIn Komma-Pfad"; exit 1; }
 [ "$(nicht_in)" = '["C:\\Users\\Müller, Anna\\Firma"]' ] || { echo "FAIL: Komma-Pfad zerlegt: $(nicht_in)"; exit 1; }
-BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn+=/kunden/a, b' >/dev/null || { echo "FAIL: ernteNichtIn+="; exit 1; }
+BRAIN_VAULT="$T" ohne_pfadumbau node "$B" einstellungen 'ernteNichtIn+=/kunden/a, b' >/dev/null || { echo "FAIL: ernteNichtIn+="; exit 1; }
 [ "$(nicht_in)" = '["C:\\Users\\Müller, Anna\\Firma","/kunden/a, b"]' ] || { echo "FAIL: += hängt nicht an: $(nicht_in)"; exit 1; }
-BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=/x, y;/z' >/dev/null && [ "$(nicht_in)" = '["/x, y","/z"]' ] || { echo "FAIL: ; trennt nicht: $(nicht_in)"; exit 1; }
-BRAIN_VAULT="$T" node "$B" einstellungen 'ernteNichtIn=["/j, k","/l"]' >/dev/null && [ "$(nicht_in)" = '["/j, k","/l"]' ] || { echo "FAIL: JSON-Liste: $(nicht_in)"; exit 1; }
-BRAIN_VAULT="$T" node "$B" einstellungen ernteNichtIn=null >/dev/null || { echo "FAIL: ernteNichtIn=null"; exit 1; }
+BRAIN_VAULT="$T" ohne_pfadumbau node "$B" einstellungen 'ernteNichtIn=/x, y;/z' >/dev/null && [ "$(nicht_in)" = '["/x, y","/z"]' ] || { echo "FAIL: ; trennt nicht: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" ohne_pfadumbau node "$B" einstellungen 'ernteNichtIn=["/j, k","/l"]' >/dev/null && [ "$(nicht_in)" = '["/j, k","/l"]' ] || { echo "FAIL: JSON-Liste: $(nicht_in)"; exit 1; }
+BRAIN_VAULT="$T" ohne_pfadumbau node "$B" einstellungen ernteNichtIn=null >/dev/null || { echo "FAIL: ernteNichtIn=null"; exit 1; }
 RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" einstellungen gibtsnicht=1 2>&1) || RC=$?
 [ "$RC" != 0 ] && echo "$OUT" | grep -q 'Einstellungs-Schlüssel' || { echo "FAIL: einstellungen unbekannter Schlüssel rc=$RC: $OUT"; exit 1; }
 # brain import (Task 12): Ordner mit einer Notiz landet unverändert unter 00_inbox/_import/<name>/

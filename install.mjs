@@ -10,7 +10,8 @@
 //                                   [--profil minimal|leicht|voll|auto] [--backup github|ordner:<pfad>|keins]
 // Flags dürfen vor oder nach dem Vault-Pfad stehen; genau EIN positionales Argument (der Vault) ist erlaubt.
 import {
-  existsSync, mkdirSync, cpSync, rmSync, readFileSync, writeFileSync, readdirSync, appendFileSync, realpathSync,
+  existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, appendFileSync, realpathSync,
+  copyFileSync, lstatSync, constants as fsKonst,
 } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { join, dirname, basename, resolve, relative, isAbsolute } from "node:path";
@@ -26,6 +27,23 @@ function logDetail(text) {
   try { appendFileSync(LOG, `${new Date().toISOString()} ${text}\n`); } catch {}
 }
 function melde(text) { console.log(text); logDetail(text); }
+
+// Rekursives Kopieren ohne fs.cpSync: unter Windows (CI, Node 22) legte cpSync Ordner mit Umlauten still unter
+// einem anderen Namen an — „Rezepte und Küche/Brotteig.md“ war danach nicht mehr auffindbar, ohne Fehler.
+// copyFileSync/mkdirSync gehen über libuv (UTF-16) und behalten jeden Namen. Verknüpfungen werden nicht kopiert.
+// ueberschreiben=false: vorhandene Dateien bleiben unangetastet (wie cpSync force:false).
+function kopiereBaum(quelle, ziel, { ueberschreiben = true } = {}) {
+  const st = lstatSync(quelle);
+  if (st.isSymbolicLink()) return;
+  if (st.isDirectory()) {
+    mkdirSync(ziel, { recursive: true });
+    for (const name of readdirSync(quelle)) kopiereBaum(join(quelle, name), join(ziel, name), { ueberschreiben });
+    return;
+  }
+  if (!st.isFile()) return;
+  if (!ueberschreiben && existsSync(ziel)) return;
+  copyFileSync(quelle, ziel, ueberschreiben ? 0 : fsKonst.COPYFILE_EXCL);
+}
 
 // --- Argumente: echtes Parsing (Flags vor ODER nach dem Vault-Pfad), Werte geprüft -----------
 const BEKANNTE_FLAGS = {
@@ -302,12 +320,12 @@ async function main() {
 
   // --- Vault anlegen, Vorlage ohne Überschreiben kopieren ---------------------------------
   mkdirSync(vault, { recursive: true });
-  cpSync(join(K, "vorlage"), vault, { recursive: true, force: false });
+  kopiereBaum(join(K, "vorlage"), vault, { ueberschreiben: false });
 
   // .tools: System-Dateien, immer ersetzt (nur innerhalb .tools/ geleert, nie der ganze Vault)
   const toolsZiel = join(vault, ".tools");
   if (existsSync(toolsZiel)) rmSync(toolsZiel, { recursive: true, force: true });
-  cpSync(join(K, ".tools"), toolsZiel, { recursive: true });
+  kopiereBaum(join(K, ".tools"), toolsZiel);
 
   // --- brain.config.json ergänzen (nur sprache/suche.profil/backup bei ERSTINSTALLATION;
   // systemVersion wird bei JEDEM Lauf aktualisiert — Wiedereinrichten darf nie eine später manuell
@@ -360,7 +378,7 @@ async function main() {
     }
     const gitignoreQuelle = join(K, ".gitignore");
     const gitignoreZiel = join(vault, ".gitignore");
-    if (existsSync(gitignoreQuelle) && !existsSync(gitignoreZiel)) cpSync(gitignoreQuelle, gitignoreZiel);
+    if (existsSync(gitignoreQuelle) && !existsSync(gitignoreZiel)) kopiereBaum(gitignoreQuelle, gitignoreZiel, { ueberschreiben: false });
 
     const hooksLauf = nodeSkript(join(toolsZiel, "install-git-hooks.mjs"), [vault]);
     logDetail((hooksLauf.stdout || "") + (hooksLauf.stderr || ""));

@@ -16,3 +16,7 @@ case "$(uname -s)" in
 esac
 # PATH-Einträge brauchen unter Git Bash die POSIX-Form (/c/…): in "C:/…" wäre der Doppelpunkt ein Trenner.
 posixpfad() { if [ "$TEST_WIN" = 1 ]; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+# Git Bash schreibt Argumente, die wie POSIX-Pfade aussehen ("/api/daten", "x=/kunden/a"), beim Start
+# eines Windows-Programms in C:/Program Files/Git/… um. Für Argumente, die Daten sind (URL-Pfade,
+# Config-Werte), diesen Umbau abschalten: ohne_pfadumbau node … — auf macOS/Linux wirkungslos.
+ohne_pfadumbau() { MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' "$@"; }

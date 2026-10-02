@@ -30,16 +30,18 @@ test("Read außerhalb des Vaults schreibt nichts", () => {
   assert.equal(existsSync(logDatei(v)), false);
 });
 
+// Dateiname nur mit Zeichen, die auch Windows erlaubt (kein ?, *, <, >, |, ", :) — trotzdem alles, was kodiert werden muss.
 test("Pfad mit Leerzeichen und Umlaut: korrekt kodiert und über leseGelesen wieder lesbar", () => {
   const v = neuerVault();
   mkdirSync(join(v, "09_wiki", "Käse Straße"), { recursive: true });
-  const datei = join(v, "09_wiki", "Käse Straße", "nötig, oder?.md");
+  const datei = join(v, "09_wiki", "Käse Straße", "nötig, oder & #1 (50%).md");
   writeFileSync(datei, "x");
   assert.equal(protokolliere(v, { sid: "s1", toolName: "Read", toolInput: { file_path: datei } }), true);
   const gelesen = leseGelesen(v, 0);
   assert.equal(gelesen.length, 1);
   assert.equal(gelesen[0].art, "lesen");
-  assert.equal(gelesen[0].ziel, "09_wiki/Käse Straße/nötig, oder?.md");
+  assert.match(readFileSync(logDatei(v), "utf8"), /ziel=09_wiki%2FK%C3%A4se%20Stra%C3%9Fe%2Fn%C3%B6tig%2C%20oder%20%26%20%231%20\(50%25\)\.md$/m);
+  assert.equal(gelesen[0].ziel, "09_wiki/Käse Straße/nötig, oder & #1 (50%).md");
   assert.equal(gelesen[0].sid, "s1");
 });
 

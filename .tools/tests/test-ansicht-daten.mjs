@@ -1,7 +1,8 @@
 // .tools/tests/test-ansicht-daten.mjs — Daten der 3D-Ansicht: Bereiche aus der Config, Ausgabe nur nach .logs/ansicht/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, utimesSync, renameSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync, renameSync, rmSync } from "node:fs";
+import { kopiereBaum } from "./kopiere-baum.mjs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -40,7 +41,7 @@ test("Inline-Auszug entspricht der Kit-Vorlage (nur wo die Vorlage existiert)", 
 
 test("fixture: eigene Cluster — jede Seite hat einen Bereich aus areas, keine generierten Dateien, Ausgabe unter .logs/ansicht", () => {
   const v = join(tempVault(), "vault");
-  cpSync(join(T, "tests", "fixture"), v, { recursive: true });
+  kopiereBaum(join(T, "tests", "fixture"), v);
   // generierte Datei und Vorlage dürfen nicht als Knoten erscheinen
   writeFileSync(join(v, "09_wiki", "_index.md"), "# generiert\n");
   mkdirSync(join(v, "01_vorlagen"), { recursive: true });

@@ -4,8 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, lstatSync, cpSync, existsSync, utimesSync,
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, lstatSync, existsSync, utimesSync,
 } from "node:fs";
+import { kopiereBaum } from "./kopiere-baum.mjs";
 import { join, relative, sep, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -46,9 +47,9 @@ function neuesVault() {
   mkdirSync(join(v, "30_wissen"), { recursive: true });
   mkdirSync(join(v, "00_inbox"), { recursive: true });
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ wiki: { ordner: "09_wiki" } }, null, 2) + "\n");
-  cpSync(join(FIX, "wiki", "thema_gartenplan.md"), join(v, "09_wiki", "thema_gartenplan.md"));
+  kopiereBaum(join(FIX, "wiki", "thema_gartenplan.md"), join(v, "09_wiki", "thema_gartenplan.md"));
   // Exaktes Duplikat im bestehenden Brain (anderer Name, gleicher Inhalt).
-  cpSync(join(FIX, "obsidian", "Garten", "Kompost.md"), join(v, "30_wissen", "kompost.md"));
+  kopiereBaum(join(FIX, "obsidian", "Garten", "Kompost.md"), join(v, "30_wissen", "kompost.md"));
   return v;
 }
 
@@ -57,7 +58,7 @@ let QUELLE = null;
 function obsidianQuelle() {
   if (QUELLE) return QUELLE;
   const q = join(temp(), "Mein altes Brain, Küche's");
-  cpSync(join(FIX, "obsidian"), q, { recursive: true });
+  kopiereBaum(join(FIX, "obsidian"), q);
   const brot = readFileSync(join(q, "Rezepte und Küche", "Brotteig.md"), "utf8");
   writeFileSync(join(q, "Rezepte und Küche", "Brotteig (Windows).md"), "\uFEFF" + brot.replace(/\n/g, "  \r\n"));
   mkdirSync(join(q, "Anhänge"), { recursive: true });   // leerer Ordner kommt nicht durch git

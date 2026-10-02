@@ -33,13 +33,17 @@ function frage(port, token, pfad, { methode = "GET", timeoutMs = 800 } = {}) {
     if (methode !== "GET") { headers.Origin = `http://127.0.0.1:${port}`; headers["Content-Length"] = 0; }
     let fertig = false;
     const ende = (wert) => { if (fertig) return; fertig = true; clearTimeout(timer); ja(wert); };
-    const req = http.request({ host: "127.0.0.1", port, path: pfad, method: methode, headers }, (res) => {
-      let text = "";
-      res.setEncoding("utf8");
-      res.on("data", (d) => { if (text.length < 65536) text += d; });
-      res.on("end", () => { let json = null; try { json = JSON.parse(text); } catch {} ende({ status: res.statusCode, json }); });
-      res.on("error", () => ende(null));
-    });
+    // encodeURI: ein Pfad mit Leerzeichen/Umlaut würfe in http.request synchron (ERR_UNESCAPED_CHARACTERS).
+    let req;
+    try {
+      req = http.request({ host: "127.0.0.1", port, path: encodeURI(pfad), method: methode, headers }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (d) => { if (text.length < 65536) text += d; });
+        res.on("end", () => { let json = null; try { json = JSON.parse(text); } catch {} ende({ status: res.statusCode, json }); });
+        res.on("error", () => ende(null));
+      });
+    } catch { ja(null); return; }   // ungültiger Pfad/Kopf (z. B. kaputtes Token in dienst.json) → „kein Dienst“
     const timer = setTimeout(() => { req.destroy(); ende(null); }, timeoutMs);
     req.on("error", () => ende(null));
     req.end();

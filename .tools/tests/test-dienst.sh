@@ -24,8 +24,8 @@ aufraeumen() {
 }
 trap aufraeumen EXIT
 # HTTP-Anfrage per node:http (überall vorhanden, unabhängig von curl): druckt "<status> <körper>"
-hole() { # hole <port> <pfad> [token] [methode]
-  node -e '
+hole() { # hole <port> <pfad> [token] [methode] — <pfad> ist ein URL-Pfad, kein Dateipfad: nie umschreiben lassen
+  ohne_pfadumbau node -e '
     const [port, pfad, token, methode] = process.argv.slice(1);
     const h = {}; if (token) h["X-Brain-Token"] = token;
     if (methode && methode !== "GET") h.Origin = "http://127.0.0.1:" + port;

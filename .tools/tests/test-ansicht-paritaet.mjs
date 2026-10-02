@@ -2,7 +2,8 @@
 // (daten.mjs → data.js) wie `brain search` (minisuche): gleiche Top-3 und Scores; beschreibung wie minisuche.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { kopiereBaum } from "./kopiere-baum.mjs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,7 @@ function mitTempVault(fn) {
 
 test("Parität: Knoten aus erzeugeAnsichtsDaten(Fixture-Kopie) → gleiche Top-3 wie minisuche", () => {
   mitTempVault((v) => {
-    cpSync(join(T, "tests", "fixture"), v, { recursive: true });
+    kopiereBaum(join(T, "tests", "fixture"), v);
     const { nodes } = datenAus(v);
     assert.ok(nodes.some((n) => n.beschreibung), "Fixture hat Seiten mit description — sonst prüft der Test das Gewicht nicht");
     for (const frage of ["thema alpha", "testthema beta amazon", "siehe gamma"]) {
@@ -81,7 +82,7 @@ test("daten.mjs: beschreibung = letzte description-Zeile (wie minisuche), sonst 
 
 test("BOM: Datei mit UTF-8-BOM — Frontmatter erkannt, Ranking wie minisuche", () => {
   mitTempVault((v) => {
-    cpSync(join(T, "tests", "fixture"), v, { recursive: true });
+    kopiereBaum(join(T, "tests", "fixture"), v);
     writeFileSync(join(v, "10_projekte", "bom.md"), "\uFEFF---\ndescription: Kontingent Drosselung\n---\n# Bom\n\nKurzer Text über das Kontingent.\n");
     const { nodes } = datenAus(v);
     const bom = nodes.find((n) => n.id === "10_projekte/bom.md");
@@ -99,7 +100,7 @@ test("BOM: Datei mit UTF-8-BOM — Frontmatter erkannt, Ranking wie minisuche", 
 
 test("Titel-Nachrang auf echten Ansichtsdaten: Seite ohne H1, Titel nur aus dem Dateinamen", () => {
   mitTempVault((v) => {
-    cpSync(join(T, "tests", "fixture"), v, { recursive: true });
+    kopiereBaum(join(T, "tests", "fixture"), v);
     writeFileSync(join(v, "10_projekte", "einkaufsplanung.md"), "Nur Stichpunkte: Bestellung, Lager.\n");
     const { nodes } = datenAus(v);
     const n = nodes.find((x) => x.id === "10_projekte/einkaufsplanung.md");
@@ -115,7 +116,7 @@ test("Titel-Nachrang auf echten Ansichtsdaten: Seite ohne H1, Titel nur aus dem 
 
 test("linkZiele: Panel-Links lösen wie resolveLink/Kanten auf ([[x.md]], Teilpfad, Namenskollision)", () => {
   mitTempVault((v) => {
-    cpSync(join(T, "tests", "fixture"), v, { recursive: true });
+    kopiereBaum(join(T, "tests", "fixture"), v);
     writeFileSync(join(v, "09_wiki", "x.md"), "# X Wiki\n\nWiki-Seite x.\n");
     writeFileSync(join(v, "10_projekte", "x.md"), "# X Projekt\n\nProjekt-Seite x.\n");
     const links = ["thema_beta.md", "amazon/thema_beta", "x", "10_projekte/x", "gibtsnicht", "__proto__"];

@@ -72,4 +72,12 @@ WZ_GIT=$(node -p "const c=require('$V5/brain.config.json'); (c.werkzeuge && c.we
 echo "$WZ_GIT" | grep -q '\.brain-kit/git/cmd/git\.exe$' || { echo "FAIL: werkzeuge.git fehlt/falsch: '$WZ_GIT'"; exit 1; }
 [ "$(node -p "require('$V5/brain.config.json').backup.art")" = "keins" ] || { echo "FAIL: backup wurde durch die werkzeuge-Logik verändert"; exit 1; }
 
+# Vault-Pfad mit Umlaut, Komma und Apostroph: Vorlage und .tools kommen unter ihrem echten Namen an — auch
+# Unterordner mit Umlaut (unter Windows legte fs.cpSync sie still unter verstümmeltem Namen an).
+V6="$HOME/Jürgens Brain, Küche's"
+node "$T/kit/install.mjs" "$V6" --agent keiner --sprache de --profil minimal --backup keins >/dev/null \
+  || { echo "FAIL: install mit Umlaut/Komma/Apostroph im Pfad"; exit 1; }
+for p in wiki/_schema.md brain.config.json .tools/brain.mjs ".tools/tests/fixture-import/obsidian/Rezepte und Küche/Brotteig.md"; do
+  [ -f "$V6/$p" ] || { echo "FAIL: fehlt nach Umlaut-Install: $p"; exit 1; }
+done
 echo "OK test-install"

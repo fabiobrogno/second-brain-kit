@@ -10,7 +10,7 @@ echo '{"paths":{"thema-alpha.md":"09_wiki/thema_alpha.md"},"pages":{"09_wiki/the
 export BRAIN_DIENST_LIB="$T/fake-qmd-lib.mjs" BRAIN_DIENST_IDLE_MS=3000
 S="$V/.logs/suchdienst.sock"
 warte(){ for i in $(seq 1 50); do [ -S "$S" ] && return 0; sleep 0.1; done; return 1; }
-frag(){ node --input-type=module -e "import { frageDienst } from '$T/../dienst-client.mjs'; frageDienst('$V', { query: 'alpha frage', limit: 20, top: 3 }, { antwortMs: 2000 }).then(r => console.log(JSON.stringify(r)), e => console.log('FEHLER ' + e.code))"; }
+frag(){ node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { frageDienst } = await import(pathToFileURL('$T/../dienst-client.mjs').href); frageDienst('$V', { query: 'alpha frage', limit: 20, top: 3 }, { antwortMs: 2000 }).then(r => console.log(JSON.stringify(r)), e => console.log('FEHLER ' + e.code))"; }
 node "$D" "$V" & warte || { echo "FAIL: Dienst legt keinen Socket an"; exit 1; }
 # Portabler Ersatz für `stat -f %Lp` (BSD, bricht unter GNU) — das ganze Skript ist unter Windows schon oben per SKIP beendet.
 RECHTE=$(node -e 'console.log((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8).padStart(3,"0"))' "$S")
@@ -29,9 +29,9 @@ pkill -f "suchdienst.mjs $V"; sleep 0.5; FAKE_DIENST_RR_FEHLER=1 node "$D" "$V" 
 frag | grep -q '"rr":null' || { echo "FAIL: Rerank-Fehler bricht Antwort"; exit 1; }
 # Hängender Rerank → Client läuft in ETIMEDOUT
 pkill -f "suchdienst.mjs $V"; sleep 0.5; FAKE_DIENST_HAENGT=1 node "$D" "$V" & warte
-node --input-type=module -e "import { frageDienst } from '$T/../dienst-client.mjs'; const t=Date.now(); frageDienst('$V', { query: 'x' }, { antwortMs: 500 }).catch(e => { console.log(e.code, Date.now()-t < 1500 ? 'schnell' : 'langsam'); })" | grep -q 'ETIMEDOUT schnell' || { echo "FAIL: Hänger nicht per Frist abgebrochen"; exit 1; }
+node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { frageDienst } = await import(pathToFileURL('$T/../dienst-client.mjs').href); const t=Date.now(); frageDienst('$V', { query: 'x' }, { antwortMs: 500 }).catch(e => { console.log(e.code, Date.now()-t < 1500 ? 'schnell' : 'langsam'); })" | grep -q 'ETIMEDOUT schnell' || { echo "FAIL: Hänger nicht per Frist abgebrochen"; exit 1; }
 # Aufwärmphase: Anfragen vor „bereit" bekommen sofort EWARM statt zu hängen
 pkill -f "suchdienst.mjs $V"; sleep 0.5; FAKE_DIENST_WARM_MS=3000 node "$D" "$V" & warte
-node --input-type=module -e "import { frageDienst } from '$T/../dienst-client.mjs'; const t=Date.now(); frageDienst('$V', { query: 'x' }, { antwortMs: 2000 }).catch(e => console.log(e.code, Date.now()-t < 500 ? 'sofort' : 'langsam'))" | grep -q 'EWARM sofort' || { echo "FAIL: kein EWARM während Aufwärmen"; exit 1; }
+node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { frageDienst } = await import(pathToFileURL('$T/../dienst-client.mjs').href); const t=Date.now(); frageDienst('$V', { query: 'x' }, { antwortMs: 2000 }).catch(e => console.log(e.code, Date.now()-t < 500 ? 'sofort' : 'langsam'))" | grep -q 'EWARM sofort' || { echo "FAIL: kein EWARM während Aufwärmen"; exit 1; }
 sleep 3.5; frag | grep -q '"rr":0.73' || { echo "FAIL: nach Aufwärmen nicht bereit"; exit 1; }
 echo "PASS"
