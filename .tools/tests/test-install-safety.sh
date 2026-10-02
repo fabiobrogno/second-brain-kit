@@ -88,7 +88,7 @@ V3="$T/OrdnerAbsolut"; mkdir -p usb
 node "$INSTALL" "$V3" --agent keiner --sprache de --backup "ordner:usb" >/dev/null || { echo "FAIL: ordner:-Backup (relativ)"; exit 1; }
 PFAD=$(node -p "require('$V3/brain.config.json').backup.pfad")
 case "$PFAD" in
-  /*) : ;;
+  /*|[A-Za-z]:[\\/]*) : ;;   # POSIX oder Windows (C:\… / C:/…)
   *) echo "FAIL: ordner:-Pfad wurde nicht absolut gemacht: $PFAD"; exit 1 ;;
 esac
 cd - >/dev/null

@@ -38,18 +38,24 @@ if (cfg.werkzeuge) { console.error('FAIL: werkzeuge im Normalfall gesetzt:', JSO
 # libnode-Datei daneben, sonst bricht es nach dem Kopieren mit "Library not loaded" ab.
 NODE_BIN="$(command -v node)"
 V4="$HOME/Privater Node"
-HEIM4="$T/heim-node"; mkdir -p "$HEIM4/node/bin"
-cp "$NODE_BIN" "$HEIM4/node/bin/node"; chmod +x "$HEIM4/node/bin/node"
-P="$(dirname "$(dirname "$NODE_BIN")")"
-for L in "$P"/lib/libnode*.dylib "$P"/lib/libnode*.so*; do
-  [ -f "$L" ] && { mkdir -p "$HEIM4/node/lib"; cp "$L" "$HEIM4/node/lib/"; }
-done
-BRAIN_KIT_HOME="$HEIM4" "$HEIM4/node/bin/node" "$T/kit/install.mjs" "$V4" --agent keiner --sprache de --profil minimal --backup keins >/dev/null \
+HEIM4="$T/heim-node"
+if [ "$TEST_WIN" = 1 ]; then
+  # Windows-Layout wie bootstrap.ps1: <BRAIN_KIT_HOME>/node/node.exe
+  PRIV_NODE="$HEIM4/node/node.exe"; mkdir -p "$HEIM4/node"; cp "$(node -p process.execPath)" "$PRIV_NODE"
+else
+  PRIV_NODE="$HEIM4/node/bin/node"; mkdir -p "$HEIM4/node/bin"
+  cp "$NODE_BIN" "$PRIV_NODE"; chmod +x "$PRIV_NODE"
+  P="$(dirname "$(dirname "$NODE_BIN")")"
+  for L in "$P"/lib/libnode*.dylib "$P"/lib/libnode*.so*; do
+    [ -f "$L" ] && { mkdir -p "$HEIM4/node/lib"; cp "$L" "$HEIM4/node/lib/"; }
+  done
+fi
+BRAIN_KIT_HOME="$HEIM4" "$PRIV_NODE" "$T/kit/install.mjs" "$V4" --agent keiner --sprache de --profil minimal --backup keins >/dev/null \
   || { echo "FAIL: install mit privatem Node"; exit 1; }
 WZ_NODE=$(node -p "const c=require('$V4/brain.config.json'); (c.werkzeuge && c.werkzeuge.node) || ''")
 # process.execPath ist IMMER real aufgelöst (macOS: $TMPDIR real unter /private/...) — der gespeicherte
-# Wert also ebenso; erwarteter Pfad hier daher auch über realpath, nicht der rohe mktemp-Pfad.
-WZ_NODE_ERWARTET=$(node -e "console.log(require('node:fs').realpathSync('$HEIM4/node/bin/node'))")
+# Wert also ebenso; erwarteter Pfad hier daher auch über realpath, nicht der rohe mktemp-Pfad. Gespeichert wird mit "/".
+WZ_NODE_ERWARTET=$(node -e "console.log(require('node:fs').realpathSync(process.argv[1]).split(require('node:path').sep).join('/'))" "$PRIV_NODE")
 [ "$WZ_NODE" = "$WZ_NODE_ERWARTET" ] || { echo "FAIL: werkzeuge.node fehlt/falsch: '$WZ_NODE' erwartet '$WZ_NODE_ERWARTET'"; exit 1; }
 [ "$(node -p "require('$V4/brain.config.json').sprache")" = "de" ] || { echo "FAIL: sprache wurde durch die werkzeuge-Logik verändert"; exit 1; }
 

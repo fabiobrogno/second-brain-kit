@@ -4,7 +4,14 @@
 # [Environment]::GetFolderPath('MyDocuments') ist der ECHTE Dokumente-Ordner — berücksichtigt auch
 # OneDrive-Umleitung; Join-Path $env:USERPROFILE "Dokumente\Brain" wäre ein zweiter, falscher Ordner
 # (Explorer zeigt den echten Ordner nur lokalisiert als "Dokumente" AN, er heißt "Documents").
-param([string]$Ziel = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) "Brain"), [string]$Backup = "keins", [string]$Version = "")
+# Das Default-Ziel entsteht erst unten (nicht im param-Block): GetFolderPath liefert "", wenn der Ordner fehlt —
+# im param-Block bräche Join-Path dann mit einem rohen PowerShell-Fehler ab, noch vor dem try/catch.
+param([string]$Ziel = "", [string]$Backup = "keins", [string]$Version = "")
+if (-not $Ziel) {
+  $Dok = [Environment]::GetFolderPath('MyDocuments')
+  if (-not $Dok) { $Dok = Join-Path $env:USERPROFILE "Documents" }
+  $Ziel = Join-Path $Dok "Brain"
+}
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ErrorActionPreference = "Stop"
 if (-not $Version) { $Version = $env:BRAIN_KIT_VERSION; if (-not $Version) { $Version = "v0.1.0" } }

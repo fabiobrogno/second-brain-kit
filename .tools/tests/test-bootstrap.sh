@@ -77,9 +77,11 @@ for (const f of ['--agent auto', '--profil auto', '--sprache auto', '--backup ke
   pruef_argv "$HOME/.brain-kit/install-argv.json" "$ZIEL_W" || exit 1
   # Ohne -Ziel: [Environment]::GetFolderPath('MyDocuments')\Brain — der echte Dokumente-Ordner (auch OneDrive-
   # umgeleitet) lässt sich per Umgebung nicht umbiegen, darum legt der Stub hier nichts an und protokolliert nur.
-  HOME2="$T/home2"; mkdir -p "$HOME2"
-  DOK="$("$PWSH" -NoProfile -NonInteractive -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d "\r")"
-  OUT3=$(USERPROFILE="$HOME2" STUB_NUR_ARGV=1 ps1 -Backup keins); RC3=$?
+  # Eigenes Profil ohne Documents-Ordner: GetFolderPath liefert dann "" → Rückfall %USERPROFILE%\Documents\Brain.
+  HOME2="$T/home2"; mkdir -p "$HOME2"; HOME2_W="$(cygpath -w "$HOME2")"
+  DOK="$(USERPROFILE="$HOME2_W" "$PWSH" -NoProfile -NonInteractive -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d "\r")"
+  [ -n "$DOK" ] || DOK="$HOME2_W\\Documents"
+  OUT3=$(USERPROFILE="$HOME2_W" STUB_NUR_ARGV=1 ps1 -Backup keins); RC3=$?
   [ "$RC3" = 0 ] || { echo "FAIL: bootstrap.ps1 (Default-Ziel) rc=$RC3: $OUT3"; exit 1; }
   pruef_argv "$HOME2/.brain-kit/install-argv.json" "$DOK\\Brain" || { echo "FAIL: Default-Ziel ist nicht Documents\\Brain"; exit 1; }
   # Negativtest: BRAIN_KIT_HOME ist eine Datei (nicht anlegbar) → Exit 1, genau der freundliche Satz, kein Fachjargon
