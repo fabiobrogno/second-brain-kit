@@ -57,8 +57,10 @@ if [ "$TEST_WIN" = 1 ]; then
   PWSH="$(command -v pwsh)"; NODE_EXE="$(node -p process.execPath)"; SR="$(cygpath -u "$SYSTEMROOT")"
   SYS="$SR/System32:$SR"
   ( PATH="$SYS"; hash -r; command -v node >/dev/null 2>&1 ) && { echo "FAIL: node im Test-PATH"; exit 1; }
-  ps1() { PATH="$SYS" BRAIN_KIT_ARCHIV="$(cygpath -w "$T/kit.tar.gz")" BRAIN_KIT_NODE_QUELLE="$NODE_EXE" BRAIN_KIT_OHNE_QMD=1 \
-    "$PWSH" -NoProfile -NonInteractive -File "$(cygpath -w "$T/kit/bootstrap.ps1")" "$@" 2>&1; }
+  # Windows-Pfade VORHER berechnen: in den Präfix-Zuweisungen unten gälte schon PATH="$SYS" (kein cygpath)
+  ARCHIV_W="$(cygpath -w "$T/kit.tar.gz")"; PS1_W="$(cygpath -w "$T/kit/bootstrap.ps1")"
+  ps1() { PATH="$SYS" BRAIN_KIT_ARCHIV="$ARCHIV_W" BRAIN_KIT_NODE_QUELLE="$NODE_EXE" BRAIN_KIT_OHNE_QMD=1 \
+    "$PWSH" -NoProfile -NonInteractive -File "$PS1_W" "$@" 2>&1; }
   ZIEL_W="$(cygpath -w "$HOME/MeinBrain")"
   OUT=$(ps1 -Ziel "$ZIEL_W" -Backup keins); RC=$?
   [ "$RC" = 0 ] || { echo "FAIL: bootstrap.ps1 rc=$RC: $OUT"; exit 1; }
@@ -82,7 +84,8 @@ for (const f of ['--agent auto', '--profil auto', '--sprache auto', '--backup ke
   pruef_argv "$HOME2/.brain-kit/install-argv.json" "$DOK\\Brain" || { echo "FAIL: Default-Ziel ist nicht Documents\\Brain"; exit 1; }
   # Negativtest: BRAIN_KIT_HOME ist eine Datei (nicht anlegbar) → Exit 1, genau der freundliche Satz, kein Fachjargon
   SPERR="$T/sperr-datei"; : > "$SPERR"
-  OUT2=$(BRAIN_KIT_HOME="$(cygpath -w "$SPERR")" ps1 -Ziel "$(cygpath -w "$HOME/MeinBrain2")" -Backup keins); RC2=$?
+  SPERR_W="$(cygpath -w "$SPERR")"; ZIEL2_W="$(cygpath -w "$HOME/MeinBrain2")"
+  OUT2=$(BRAIN_KIT_HOME="$SPERR_W" ps1 -Ziel "$ZIEL2_W" -Backup keins); RC2=$?
   [ "$RC2" = 1 ] || { echo "FAIL: nicht anlegbares Home müsste Exit 1 liefern, rc=$RC2: $OUT2"; exit 1; }
   echo "$OUT2" | grep -qiE 'exception|permission denied|at line' && { echo "FAIL: Fachmeldung im Output: $OUT2"; exit 1; }
   echo "$OUT2" | grep -q "nicht geklappt" || { echo "FAIL: freundlicher Satz fehlt: $OUT2"; exit 1; }

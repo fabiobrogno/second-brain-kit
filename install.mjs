@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { join, dirname, basename, resolve, relative, isAbsolute } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 
 const K = dirname(fileURLToPath(import.meta.url)); // Kit-Wurzel: install.mjs, vorlage/, .tools/, lib/ liegen hier nebeneinander
@@ -230,7 +230,7 @@ async function main() {
   }
 
   // --- git/qmd (nie abbrechen — degradieren statt scheitern) ------------------------------
-  const { sorgeFuerGit, sorgeFuerQmd, werkzeugeGitAus, istPrivaterNode } = await import(join(K, "lib", "voraussetzungen.mjs"));
+  const { sorgeFuerGit, sorgeFuerQmd, werkzeugeGitAus, istPrivaterNode } = await import(pathToFileURL(join(K, "lib", "voraussetzungen.mjs")).href); // Windows: import() braucht file://-URL, kein C:-Pfad
   // Absoluter git-Ort fürs Config-Feld werkzeuge.git — nur gesetzt, wenn wir gerade selbst MinGit
   // installiert haben (private Werkzeuge): Laufzeit-Skripte (.tools/werkzeug.mjs) sollen dann genau
   // diesen Ort nutzen, statt sich auf ein PATH zu verlassen, das nach dieser Installation wieder anders aussieht.
@@ -256,7 +256,7 @@ async function main() {
     logDetail(`git: ${JSON.stringify(gitErgebnis)}`);
   } catch (e) { logDetail(`git-Einrichtung übersprungen: ${e?.message || e}`); }
 
-  const { qmdBefehl } = await import(join(K, ".tools", "qmd-befehl.mjs"));
+  const { qmdBefehl } = await import(pathToFileURL(join(K, ".tools", "qmd-befehl.mjs")).href);
   const qb = qmdBefehl();
   let qmdProfil; // "leicht" (nutzbar) oder "minimal" (nicht nutzbar/nicht gewollt) — nie "voll", das ist Opt-in.
   if (process.env.BRAIN_KIT_OHNE_QMD) {
