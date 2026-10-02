@@ -43,9 +43,21 @@ for (const f of files) for (const l of f.links) { const t = resolveLink(l); if (
 edges.sort((a, b) => (a.source + a.target).localeCompare(b.source + b.target));
 
 // Nur schreiben, wenn sich der Inhalt ändert — sonst verfälscht jede Session die mtime (Such-Refresh, Frische).
+// Windows: rename/unlink auf eine Datei, die ein paralleler Lauf gerade ersetzt oder löscht, scheitert kurz mit
+// EPERM/EBUSY/EACCES (unter macOS/Linux gibt es das nicht) — kurz nachfassen; steht der Inhalt schon da, ist es gut.
+const WIN_KONKURRENZ = new Set(process.platform === "win32" ? ["EPERM", "EBUSY", "EACCES"] : []);
+const kurzWarten = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const atomic = (p, content) => {
   if (existsSync(p) && readFileSync(p, "utf8") === content) return;
-  const t = `${p}.${process.pid}.tmp`; writeFileSync(t, content); renameSync(t, p);
+  const t = `${p}.${process.pid}.tmp`; writeFileSync(t, content);
+  for (let versuch = 0; ; versuch++) {
+    try { renameSync(t, p); return; } catch (e) {
+      if (!WIN_KONKURRENZ.has(e.code)) throw e;
+      let gleich = false; try { gleich = readFileSync(p, "utf8") === content; } catch {}
+      if (gleich || versuch >= 10) { try { unlinkSync(t); } catch {} if (gleich) return; throw e; }
+      kurzWarten(20);
+    }
+  }
 };
 
 // graph.json
@@ -94,7 +106,7 @@ const aufraeumen = (dir) => {
     const f = join(dir, e.name);
     if (e.isDirectory()) aufraeumen(f);
     else if (e.name !== "_index.md" && istGeneriert(toSlash(relative(vault, f)), wikiDir) && !erzeugt.has(f)) {
-      try { unlinkSync(f); } catch (err) { if (err.code !== "ENOENT") throw err; }
+      try { unlinkSync(f); } catch (err) { if (err.code !== "ENOENT" && !WIN_KONKURRENZ.has(err.code)) throw err; }
     }
   }
 };
@@ -129,9 +141,10 @@ for (const p of wikiPages) {
   karten.add(name);
   wikiMap.paths[qmdPath(name)] = p.id.split(sep).join("/");
 }
-// Parallele Läufe (zweite Session, Lint) löschen dieselbe Waise → ENOENT ist hier kein Fehler.
+// Parallele Läufe (zweite Session, Lint) löschen dieselbe Waise → ENOENT ist hier kein Fehler; unter Windows
+// meldet ein gerade laufendes fremdes Löschen EPERM/EBUSY — die Waise verschwindet dann ohnehin.
 for (const f of readdirSync(kartenDir)) if (f.endsWith(".md") && !karten.has(f)) {
-  try { unlinkSync(join(kartenDir, f)); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  try { unlinkSync(join(kartenDir, f)); } catch (e) { if (e.code !== "ENOENT" && !WIN_KONKURRENZ.has(e.code)) throw e; }
 }
 atomic(join(vault, ".logs", "wiki-map.json"), JSON.stringify(wikiMap, null, 2) + "\n");
 

@@ -87,7 +87,9 @@ rm -f "$TR" "$A"
 # in einem tief verschachtelten Export-/Temp-Pfad kann der die macOS/Linux-Grenze (~100 Byte) sprengen
 # (suchdienst.mjs verweigert dann bewusst mit fehler=SOCKPFAD) — dann SKIP statt FAIL für diesen Teil.
 SOCKPFAD="$BRAIN_VAULT/.logs/suchdienst.sock"
-if [ "$(printf '%s' "$SOCKPFAD" | wc -c | tr -d " ")" -gt 100 ]; then
+if [ "${OS:-}" = "Windows_NT" ]; then
+  echo "SKIP: Suchdienst-Teil (Suchdienst unter Windows erst ab v0.3)"
+elif [ "$(printf '%s' "$SOCKPFAD" | wc -c | tr -d " ")" -gt 100 ]; then
   echo "SKIP: Suchdienst-Teil (Socket-Pfad zu lang: $(printf '%s' "$SOCKPFAD" | wc -c | tr -d " ") Byte)"
 else
   export BRAIN_DIENST_LIB="$T/fake-qmd-lib.mjs" BRAIN_DIENST_IDLE_MS=20000
@@ -95,9 +97,9 @@ else
   DS="$BRAIN_VAULT/.logs/suchdienst.sock"; dstop(){ [ "${OS:-}" = "Windows_NT" ] || pkill -f "suchdienst.mjs $BRAIN_VAULT" 2>/dev/null; sleep 0.3; rm -f "$DS" "$BRAIN_VAULT/.logs/dienst-haengt" "$BRAIN_VAULT/.logs/dienst-start" "$BRAIN_VAULT/.logs/dienst-timeouts"; }
   dwarte(){ for i in $(seq 1 40); do [ -S "$DS" ] && return 0; sleep 0.1; done; return 1; }
   trap 'dstop' EXIT
-  cp "$BRAIN_VAULT/brain.config.json" /tmp/brain-hint-cfg.bak
-  cfg(){ node -e "const f='$BRAIN_VAULT/brain.config.json',c=JSON.parse(require('fs').readFileSync('/tmp/brain-hint-cfg.bak','utf8'));c.hinweis={...c.hinweis,...JSON.parse(process.argv[1])};require('fs').writeFileSync(f,JSON.stringify(c))" "$1"; }
-  zurueck(){ cp /tmp/brain-hint-cfg.bak "$BRAIN_VAULT/brain.config.json"; }
+  CB=$(mktemp); cp "$BRAIN_VAULT/brain.config.json" "$CB"
+  cfg(){ node -e "const f='$BRAIN_VAULT/brain.config.json',c=JSON.parse(require('fs').readFileSync('$CB','utf8'));c.hinweis={...c.hinweis,...JSON.parse(process.argv[1])};require('fs').writeFileSync(f,JSON.stringify(c))" "$1"; }
+  zurueck(){ cp "$CB" "$BRAIN_VAULT/brain.config.json"; }
   F=$(mktemp); echo '[{"filepath":"qmd://brainkarten/thema-alpha.md","score":0.33}]' > "$F"; export FAKE_DIENST_JSON="$F"
   echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.6}]' > "$J"
   cfg '{"rerankSchwelle":0.55,"dienstMs":2500}'
@@ -140,6 +142,6 @@ else
   # (d) Schalter aus → nie Dienst
   dstop; zurueck; node ../suchdienst.mjs "$BRAIN_VAULT" & dwarte
   run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"d6"}' >/dev/null; tail -1 "$BRAIN_VAULT/.logs/hint.log" | grep -q 'weg=vektor' || { echo "FAIL: ohne rerankSchwelle trotzdem Dienst"; exit 1; }
-  dstop; unset BRAIN_DIENST_LIB FAKE_DIENST_JSON; rm -f "$F"
+  dstop; unset BRAIN_DIENST_LIB FAKE_DIENST_JSON; rm -f "$F" "$CB"
 fi
 rm -rf "$BRAIN_VAULT/.logs"; rm -f "$J"; echo "PASS"

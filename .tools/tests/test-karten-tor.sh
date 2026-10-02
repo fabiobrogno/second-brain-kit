@@ -20,6 +20,11 @@ FAKE_THROW=SQLITE_BUSY node "$K" thema_alpha.md | grep -q 'KARTEN-TOR: nicht prÃ
 # $BRAIN_VAULT/.logs/; in einem tief verschachtelten Export-/Temp-Pfad kann der die macOS/Linux-Grenze
 # (~100 Byte) sprengen (suchdienst.mjs verweigert dann bewusst mit fehler=SOCKPFAD) â€” dann SKIP statt FAIL.
 SOCKPFAD="$BRAIN_VAULT/.logs/suchdienst.sock"
+if [ "${OS:-}" = "Windows_NT" ]; then
+  echo "SKIP: Dienst-Weg (Suchdienst unter Windows erst ab v0.3)"
+  echo "PASS"
+  exit 0
+fi
 if [ "$(printf '%s' "$SOCKPFAD" | wc -c | tr -d " ")" -gt 100 ]; then
   echo "SKIP: Dienst-Weg (Socket-Pfad zu lang: $(printf '%s' "$SOCKPFAD" | wc -c | tr -d " ") Byte)"
   echo "PASS"

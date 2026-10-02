@@ -9,6 +9,7 @@ export BRAIN_VAULT="$V"
 node "$H"
 [ -f "$V/AGENTS.md" ] || { echo "FAIL: AGENTS.md wurde nicht erzeugt"; exit 1; }
 grep -qF "$V" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md enthält nicht den Vault-Pfad"; exit 1; }
-grep -qF "node\" \"$V/.tools/brain.mjs\" search" "$V/AGENTS.md" || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
+# Node-Pfad endet unter Windows auf node.exe
+grep -F "\"$V/.tools/brain.mjs\" search" "$V/AGENTS.md" | grep -qE 'node(\.exe)?" "' || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
 rm -rf "$(dirname "$V")"
 echo "PASS"

@@ -11,7 +11,7 @@ else
   mkdir -p "$T/kit"; (cd "$D/../.." && tar --exclude=./.git -cf - .) | (cd "$T/kit" && tar -xf -)
 fi
 V="$HOME/Documents/Brain"
-OUT=$(BRAIN_KIT_OHNE_QMD=1 node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil minimal --backup keins 2>&1) || { echo "FAIL: install: $OUT"; exit 1; }
+OUT=$(BRAIN_KIT_OHNE_QMD=1 node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil minimal --backup keins 2>&1) || { echo "FAIL: install: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 B="$V/.tools/brain.mjs"
 # Aus einem fremden Arbeitsordner aufrufen — der Vault darf nicht vom cwd abhängen
 cd "$T"

@@ -2,7 +2,7 @@
 . "$(dirname "$0")/plattform.sh"
 # .tools/tests/test-cli.sh
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; B="$D/../brain.mjs"; T="$(mktemp -d)/Mein Brain"; cp -R "$D/fixture" "$T"
-[ "$(node "$B" version)" = "$(cat "$D/../VERSION")" ] || { echo "FAIL: version"; exit 1; }
+[ "$(node "$B" version)" = "$(tr -d "\r" < "$D/../VERSION")" ] || { echo "FAIL: version"; exit 1; }
 RC=0; node "$B" gibtsnicht >/dev/null 2>&1 || RC=$?; [ "$RC" = 64 ] || { echo "FAIL: unbekannter Befehl rc=$RC"; exit 1; }
 BRAIN_VAULT="$T" node "$B" index >/dev/null || { echo "FAIL: index"; exit 1; }
 KEY=api_key; VAL=sk-DUMMY1; printf '%s=%s\n' "$KEY" "$VAL" > "$T/x.md"; RC=0; node "$B" ingest-check "$T/x.md" >/dev/null || RC=$?; [ "$RC" = 3 ] || { echo "FAIL: ingest-check rc=$RC"; exit 1; }
@@ -10,10 +10,10 @@ KEY=api_key; VAL=sk-DUMMY1; printf '%s=%s\n' "$KEY" "$VAL" > "$T/x.md"; RC=0; no
 # PATH nur mit node (der Homebrew-Ordner enthält sonst auch qmd)
 mkdir -p "$T/nurnode"
 if [ "${OS:-}" = "Windows_NT" ]; then cp "$(command -v node)" "$T/nurnode/node.exe"; else ln -s "$(command -v node)" "$T/nurnode/node"; fi
-RC=0; OUT=$(PATH="/usr/bin:/bin:$T/nurnode" BRAIN_VAULT="$T" node "$B" search "Testthema Alpha" 2>"$T/err") || RC=$?
+RC=0; OUT=$(PATH="/usr/bin:/bin:$(posixpfad "$T/nurnode")" BRAIN_VAULT="$T" node "$B" search "Testthema Alpha" 2>"$T/err") || RC=$?
 [ "$RC" = 0 ] && echo "$OUT" | grep -q 'thema_alpha.md' && grep -q 'einfache Suche' "$T/err" && ! grep -q '    at ' "$T/err" || { echo "FAIL: ohne qmd rc=$RC: $OUT $(cat "$T/err")"; exit 1; }
 # refresh ohne qmd darf nie fehlschlagen: Hinweis auf stderr, exit 0, kein Stacktrace
-RC=0; PATH="/usr/bin:/bin:$T/nurnode" BRAIN_VAULT="$T" node "$B" refresh >/dev/null 2>"$T/err-refresh" || RC=$?
+RC=0; PATH="/usr/bin:/bin:$(posixpfad "$T/nurnode")" BRAIN_VAULT="$T" node "$B" refresh >/dev/null 2>"$T/err-refresh" || RC=$?
 [ "$RC" = 0 ] && grep -q 'Suchindex' "$T/err-refresh" && ! grep -q '    at ' "$T/err-refresh" || { echo "FAIL: refresh ohne qmd rc=$RC: $(cat "$T/err-refresh")"; exit 1; }
 # Mit Fake-qmd: Profil leicht ruft search + vsearch, nicht query
 mkdir -p "$T/bin"
@@ -33,7 +33,7 @@ EOF
 else
   printf '#!/bin/bash\necho "$1" >> "%s/aufrufe"\necho "#a,0.9,qmd://brain/10_projekte/alpha/notiz-a.md"\n' "$T" > "$T/bin/qmd"; chmod +x "$T/bin/qmd"
 fi
-PATH="$T/bin:$PATH" BRAIN_VAULT="$T" node "$B" search "alpha" | grep -q 'notiz-a.md' || { echo "FAIL: search Ausgabe"; exit 1; }
+PATH="$(posixpfad "$T/bin"):$PATH" BRAIN_VAULT="$T" node "$B" search "alpha" | grep -q 'notiz-a.md' || { echo "FAIL: search Ausgabe"; exit 1; }
 grep -qx search "$T/aufrufe" && grep -qx vsearch "$T/aufrufe" && ! grep -qx query "$T/aufrufe" || { echo "FAIL: Profil leicht"; exit 1; }
 # Skill-Helfer (plattformneutral statt date/rm -f/shasum)
 J=$(BRAIN_VAULT="$T" node "$B" jetzt); echo "$J" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$' || { echo "FAIL: jetzt-Format: $J"; exit 1; }

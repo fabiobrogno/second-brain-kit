@@ -13,7 +13,7 @@ else
   (cd "$D/../.." && tar --exclude=./.git -cf - .) | (cd "$T/kit" && tar -xf -)
 fi
 INSTALL="$T/kit/install.mjs"
-mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$T/bin:$PATH"
+mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$(posixpfad "$T/bin"):$PATH"
 
 # --- 1. Gefährliche Ziele: exit 1, nichts angelegt/gelöscht, kein git init ------------------------
 pruefe_abgelehnt() {
@@ -67,7 +67,7 @@ fi
 
 # --- Bestehender Vault: Reinstall funktioniert weiterhin ------------------------------------------
 V="$T/EchterVault"
-node "$INSTALL" "$V" --agent keiner --sprache de --backup keins >/dev/null || { echo "FAIL: Erstinstallation"; exit 1; }
+OUT=$(node "$INSTALL" "$V" --agent keiner --sprache de --backup keins 2>&1) || { echo "FAIL: Erstinstallation: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 node "$INSTALL" "$V" --agent keiner --sprache de --backup keins >/dev/null || { echo "FAIL: Reinstall auf bestehendem Vault"; exit 1; }
 
 # --- 2. Argument-Parsing: Flags vor dem Vault-Pfad, Werte geprüft, ordner:-Pfad absolut -----------
@@ -143,7 +143,7 @@ EOF
 chmod +x "$FAKENPM/npm"
 V6="$T/ProfilMinimal"
 NODEDIR="$(dirname "$(command -v node)")"
-OUT=$(PATH="$FAKENPM:$NODEDIR:/usr/bin:/bin" node "$INSTALL" "$V6" --agent keiner --sprache de --backup keins --profil minimal 2>&1); RC=$?
+OUT=$(PATH="$(posixpfad "$FAKENPM"):$NODEDIR:/usr/bin:/bin" node "$INSTALL" "$V6" --agent keiner --sprache de --backup keins --profil minimal 2>&1); RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: Install mit --profil minimal (eingeschränktes PATH) schlug fehl, rc=$RC: $OUT"; exit 1; }
 [ -f "$NPM_LOG" ] && { echo "FAIL: npm wurde trotz --profil minimal aufgerufen: $(cat "$NPM_LOG")"; exit 1; }
 [ "$(node -p "require('$V6/brain.config.json').suche.profil")" = "minimal" ] || { echo "FAIL: Profil wurde nicht auf minimal gesetzt"; exit 1; }

@@ -92,7 +92,7 @@ try {
     const bestand = n.filter(b => altSet.has(b));
     // Archivieren (LOG-LANG): älteste Einträge fallen am Ende weg und stehen in einem gestagten <archiv>/ingest-log-*.md
     const archivRegex = new RegExp(`^${archiv.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\/ingest-log-.*\\.md$`);
-    const archivInhalt = gestagt.filter(f => archivRegex.test(f)).map(f => { try { return readFileSync(join(S, f), "utf8"); } catch { return ""; } }).join("\n");
+    const archivInhalt = gestagt.filter(f => archivRegex.test(f)).map(f => { try { return readFileSync(join(S, f), "utf8").replace(/\r\n/g, "\n"); } catch { return ""; } }).join("\n");
     const archiviert = bestand.length < a.length && bestand.every((b, i) => b === a[i]) && a.slice(bestand.length).every(b => archivInhalt.includes(b));
     if (!archiviert && (bestand.length !== a.length || bestand.some((b, i) => b !== a[i]))) blockiert.push("LOG-BESTAND: bestehende _log-Einträge verändert, gelöscht oder umsortiert — _log.md ist append-only");
     else if (neuIdx.some((idx, k) => idx !== k)) blockiert.push(`LOG-REIHENFOLGE: neuer Eintrag „${n[neuIdx.find((idx, k) => idx !== k)].split("\n")[0]}" steht nicht oben — direkt unter die Formatvorlage (neuester oben)`);

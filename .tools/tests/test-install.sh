@@ -11,14 +11,14 @@ else
   mkdir -p "$T/kit"
   (cd "$D/../.." && tar --exclude=./.git -cf - .) | (cd "$T/kit" && tar -xf -)
 fi
-mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$T/bin:$PATH"
+mkdir -p "$T/bin"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/qmd"; chmod +x "$T/bin/qmd"; export PATH="$(posixpfad "$T/bin"):$PATH"
 V="$HOME/Mein Brain"
-OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 1: $OUT"; exit 1; }
+OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 1: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 for p in inbox wiki/_schema.md AGENTS.md brain.config.json .tools/brain.mjs; do [ -e "$V/$p" ] || { echo "FAIL: fehlt $p"; exit 1; }; done
 [ "$(git -C "$V" config core.hooksPath)" = ".tools/git-hooks" ] || { echo "FAIL: pre-commit nicht aktiv"; exit 1; }
 [ "$(node -p "require('$V/brain.config.json').systemVersion")" = "0.1.0" ] || { echo "FAIL: systemVersion"; exit 1; }
 echo "# meine notiz" > "$V/inbox/eigen.md"
-OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 2: $OUT"; exit 1; }
+OUT=$(node "$T/kit/install.mjs" "$V" --agent claude-code --sprache de --profil leicht --backup keins 2>&1) || { echo "FAIL: install 2: $OUT"; tail -n 20 "$HOME/.brain-kit/install.log" 2>/dev/null; exit 1; }
 [ "$(cat "$V/inbox/eigen.md")" = "# meine notiz" ] || { echo "FAIL: Notiz überschrieben"; exit 1; }
 [ "$(ls "$HOME/.claude" | grep -c 'settings.json.bak-')" -le 1 ] || { echo "FAIL: zweiter Lauf hat settings erneut geändert"; exit 1; }
 BRAIN_VAULT="$V" node "$V/.tools/brain.mjs" doctor | grep -q '^FEHLT' && { echo "FAIL: doctor meldet FEHLT"; exit 1; }

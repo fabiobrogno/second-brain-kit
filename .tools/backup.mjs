@@ -13,6 +13,9 @@ export function einrichten(vault, wahl) {
   // Config-Änderung sofort sichern (wie bei systemVersion im Skill update) — per Pfadangabe NUR diese
   // Datei stagen und committen, damit andere bereits gestagte (fremde) Änderungen unangetastet bleiben.
   try {
+    // Ohne git-Identität (frischer Rechner, wiederhergestellter Vault) scheiterte der Commit sonst still —
+    // gleicher Rückfall wie in install.mjs, nur für diesen Vault.
+    try { git(vault, "config", "user.email"); } catch { git(vault, "config", "user.email", "brain@localhost"); git(vault, "config", "user.name", "Second Brain"); }
     git(vault, "add", "--", "brain.config.json");
     git(vault, "commit", "-q", "-m", "brain: Sicherung eingerichtet", "--", "brain.config.json");
   } catch {}
@@ -38,7 +41,9 @@ export function sichern(vault) {
   const hinweis = nichtEingearbeitet(vault);
   if (b.art === "github") { try { git(vault, "push", "-q"); return "Online gesichert." + hinweis; } catch { return "Online-Sicherung hat gerade nicht geklappt (kein Internet?). Ich versuche es beim nächsten Mal wieder."; } }
   if (!existsSync(b.pfad)) return "Der Sicherungsordner ist gerade nicht da (Stick oder Platte nicht angeschlossen?). Ich sichere beim nächsten Mal.";
-  const datei = join(b.pfad, `brain-${new Date().toISOString().slice(0, 10)}.bundle`);
+  // Datum nach Ortszeit (wie der Kalender des Nutzers), nicht UTC — sonst trüge eine Sicherung kurz nach Mitternacht das Vortagsdatum
+  const h = new Date(), tag = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
+  const datei = join(b.pfad, `brain-${tag}.bundle`);
   git(vault, "bundle", "create", datei, "--all");
   const alle = readdirSync(b.pfad).filter(f => /^brain-.*\.bundle$/.test(f)).sort((x, y) => statSync(join(b.pfad, y)).mtimeMs - statSync(join(b.pfad, x)).mtimeMs);
   for (const alt of alle.slice(7)) rmSync(join(b.pfad, alt));

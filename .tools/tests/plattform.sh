@@ -12,3 +12,5 @@ case "$(uname -s)" in
     mktemp() { local p; p="$(command mktemp "$@")" || return 1; cygpath -ml "$p"; }
     ;;
 esac
+# PATH-Einträge brauchen unter Git Bash die POSIX-Form (/c/…): in "C:/…" wäre der Doppelpunkt ein Trenner.
+posixpfad() { if [ "$TEST_WIN" = 1 ]; then cygpath -u "$1"; else printf '%s' "$1"; fi; }

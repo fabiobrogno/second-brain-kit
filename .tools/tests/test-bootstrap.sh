@@ -35,8 +35,11 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 const ziel = process.argv[2];
-mkdirSync(ziel, { recursive: true });
-writeFileSync(join(ziel, "AGENTS.md"), "# Second Brain\n");
+// STUB_NUR_ARGV: nur argv protokollieren, nichts anlegen (Windows-Default-Ziel = echter Dokumente-Ordner des Rechners)
+if (!process.env.STUB_NUR_ARGV) {
+  mkdirSync(ziel, { recursive: true });
+  writeFileSync(join(ziel, "AGENTS.md"), "# Second Brain\n");
+}
 const heim = join(homedir(), ".brain-kit");
 mkdirSync(heim, { recursive: true });
 writeFileSync(join(heim, "install-argv.json"), JSON.stringify(process.argv.slice(2)));
@@ -45,13 +48,52 @@ console.log("Frag mich, was du wissen willst.");
 console.log("Sag „update mein Brain“, wenn es eine neue Version gibt.");
 EOF
 
-tar -czf "$T/kit.tar.gz" -C "$T" kit || { echo "FAIL: Archiv"; exit 1; }
+# POSIX-Form: GNU tar hielte "C:/…" für einen entfernten Rechner
+tar -czf "$(posixpfad "$T/kit.tar.gz")" -C "$(posixpfad "$T")" kit || { echo "FAIL: Archiv"; exit 1; }
+
+if [ "$TEST_WIN" = 1 ]; then
+  # Windows-Weg: bootstrap.ps1 (bootstrap.sh ist der macOS/Linux-Weg). PATH nur mit den Windows-Systemordnern
+  # (tar.exe liegt in System32) — also ohne node; pwsh über den vollen Pfad.
+  PWSH="$(command -v pwsh)"; NODE_EXE="$(node -p process.execPath)"; SR="$(cygpath -u "$SYSTEMROOT")"
+  SYS="$SR/System32:$SR"
+  ( PATH="$SYS"; hash -r; command -v node >/dev/null 2>&1 ) && { echo "FAIL: node im Test-PATH"; exit 1; }
+  ps1() { PATH="$SYS" BRAIN_KIT_ARCHIV="$(cygpath -w "$T/kit.tar.gz")" BRAIN_KIT_NODE_QUELLE="$NODE_EXE" BRAIN_KIT_OHNE_QMD=1 \
+    "$PWSH" -NoProfile -NonInteractive -File "$(cygpath -w "$T/kit/bootstrap.ps1")" "$@" 2>&1; }
+  ZIEL_W="$(cygpath -w "$HOME/MeinBrain")"
+  OUT=$(ps1 -Ziel "$ZIEL_W" -Backup keins); RC=$?
+  [ "$RC" = 0 ] || { echo "FAIL: bootstrap.ps1 rc=$RC: $OUT"; exit 1; }
+  [ -f "$HOME/.brain-kit/node/node.exe" ] || { echo "FAIL: Node nicht nach ~/.brain-kit/node"; exit 1; }
+  [ -f "$HOME/MeinBrain/AGENTS.md" ] || { echo "FAIL: Vault fehlt"; exit 1; }
+  echo "$OUT" | grep -qiE 'error|exception|stack|ENOENT' && { echo "FAIL: Fachmeldung im Output: $OUT"; exit 1; }
+  echo "$OUT" | tail -3 | grep -q 'merk dir' || { echo "FAIL: Drei-Sätze-Anleitung fehlt: $OUT"; exit 1; }
+  pruef_argv() { node -e "
+const a = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'));
+if (a[0] !== process.argv[2]) { console.error('FAIL: ziel falsch:', a, 'erwartet', process.argv[2]); process.exit(1); }
+const txt = a.join(' ');
+for (const f of ['--agent auto', '--profil auto', '--sprache auto', '--backup keins']) if (!txt.includes(f)) { console.error('FAIL: Flag fehlt:', f, a); process.exit(1); }
+" "$1" "$2"; }
+  pruef_argv "$HOME/.brain-kit/install-argv.json" "$ZIEL_W" || exit 1
+  # Ohne -Ziel: [Environment]::GetFolderPath('MyDocuments')\Brain — der echte Dokumente-Ordner (auch OneDrive-
+  # umgeleitet) lässt sich per Umgebung nicht umbiegen, darum legt der Stub hier nichts an und protokolliert nur.
+  HOME2="$T/home2"; mkdir -p "$HOME2"
+  DOK="$("$PWSH" -NoProfile -NonInteractive -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d "\r")"
+  OUT3=$(USERPROFILE="$HOME2" STUB_NUR_ARGV=1 ps1 -Backup keins); RC3=$?
+  [ "$RC3" = 0 ] || { echo "FAIL: bootstrap.ps1 (Default-Ziel) rc=$RC3: $OUT3"; exit 1; }
+  pruef_argv "$HOME2/.brain-kit/install-argv.json" "$DOK\\Brain" || { echo "FAIL: Default-Ziel ist nicht Documents\\Brain"; exit 1; }
+  # Negativtest: BRAIN_KIT_HOME ist eine Datei (nicht anlegbar) → Exit 1, genau der freundliche Satz, kein Fachjargon
+  SPERR="$T/sperr-datei"; : > "$SPERR"
+  OUT2=$(BRAIN_KIT_HOME="$(cygpath -w "$SPERR")" ps1 -Ziel "$(cygpath -w "$HOME/MeinBrain2")" -Backup keins); RC2=$?
+  [ "$RC2" = 1 ] || { echo "FAIL: nicht anlegbares Home müsste Exit 1 liefern, rc=$RC2: $OUT2"; exit 1; }
+  echo "$OUT2" | grep -qiE 'exception|permission denied|at line' && { echo "FAIL: Fachmeldung im Output: $OUT2"; exit 1; }
+  echo "$OUT2" | grep -q "nicht geklappt" || { echo "FAIL: freundlicher Satz fehlt: $OUT2"; exit 1; }
+  echo "OK test-bootstrap (Windows, bootstrap.ps1)"
+  exit 0
+fi
 NODE_BIN="$(command -v node)"
 # Fake-Node-Download: das Kit soll Node nach ~/.brain-kit/node legen; im Test kopieren wir das vorhandene Binary.
 OUT=$(PATH="/usr/bin:/bin" BRAIN_KIT_ARCHIV="$T/kit.tar.gz" BRAIN_KIT_NODE_QUELLE="$NODE_BIN" BRAIN_KIT_OHNE_QMD=1 \
   bash "$T/kit/bootstrap.sh" --ziel "$HOME/MeinBrain" --backup keins 2>&1)
 RC=$?
-# Auf windows-latest läuft derselbe Ablauf über: pwsh -File "$T/kit/bootstrap.ps1" -Ziel "$HOME/MeinBrain" -Backup keins
 [ "$RC" = 0 ] || { echo "FAIL: bootstrap rc=$RC: $OUT"; exit 1; }
 [ -x "$HOME/.brain-kit/node/bin/node" ] || { echo "FAIL: Node nicht nach ~/.brain-kit"; exit 1; }
 [ -f "$HOME/MeinBrain/AGENTS.md" ] || { echo "FAIL: Vault fehlt"; exit 1; }

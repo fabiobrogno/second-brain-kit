@@ -10,7 +10,8 @@ BRAIN_VAULT="$V" node "$B" backup >/dev/null || { echo "FAIL: backup"; exit 1; }
 [ "$(ls "$Z" | grep -c '\.bundle$')" = 7 ] || { echo "FAIL: Rotation ($(ls "$Z" | wc -l))"; exit 1; }
 [ -f "$Z/brain-$(date +%F).bundle" ] || { echo "FAIL: heutiges Bundle fehlt"; exit 1; }
 BRAIN_VAULT="$V" node "$B" backup wiederherstellen "$Z/brain-$(date +%F).bundle" "$T/zurück" >/dev/null || { echo "FAIL: wiederherstellen"; exit 1; }
-diff -q "$V/brain.config.json" "$T/zurück/brain.config.json" >/dev/null || { echo "FAIL: Inhalt anders"; exit 1; }
+# Zeilenenden ausgenommen: unter Windows (core.autocrlf) checkt der Klon CRLF aus, die Arbeitskopie hat LF
+[ "$(tr -d "\r" < "$V/brain.config.json")" = "$(tr -d "\r" < "$T/zurück/brain.config.json")" ] || { echo "FAIL: Inhalt anders"; exit 1; }
 # Ordner weg (USB abgezogen): freundlich melden, Exit 0, nichts kaputt
 rm -rf "$Z"; RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" backup 2>&1) || RC=$?
 [ "$RC" = 0 ] && echo "$OUT" | grep -q 'Sicherungsordner ist gerade nicht da' || { echo "FAIL: fehlender Ordner rc=$RC $OUT"; exit 1; }
