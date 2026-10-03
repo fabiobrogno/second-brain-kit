@@ -2,6 +2,74 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0] - 2026-10-03
+"Self-maintenance and looks" — the brain now tells you what in it needs attention, lets you resolve
+contradictions with one click, and is easier to read at a glance. As before, everything new that calls an
+AI is off (or local-only) by default; with every new switch at its default, the brain behaves like 0.3.
+
+### Added
+- **Knowledge gets an expiry date.** A page can carry `stand: YYYY-MM-DD` (as of when) and
+  `pruefen_bis: YYYY-MM-DD` (a hard deadline) in its frontmatter, in addition to the existing `verfall:
+  <days>`. Once the stricter of the two is passed, `brain-lint` reports it as `ABGELAUFEN` (replacing the
+  old `VERFALL` wording) and the 3D brain marks the page with an amber ring; an "Expired" filter and the
+  page panel show "as of …, check by …". Pages without these fields behave exactly as before. The **ingest**
+  skill sets `pruefen_bis` for fast-changing facts (90 days by default, 30 for prices).
+- **Resolve contradictions in one click.** The brain reads every `[!KONFLIKT]` box on a page and, in its new
+  **Maintenance** tab, shows A and B side by side with their sources. "A is right" / "B is right" / "both
+  apply (different cases)" / "later", plus an optional note, write a decision order into
+  `inbox/_entscheidungen/` — the wiki itself is never touched from the click, only your AI resolves it on
+  the next ingest, which now works through any open decisions first. Changing your mind before that ingest
+  simply replaces the earlier order; neither counts as an unprocessed inbox note.
+- **Maintenance report.** `brain pflege` (also the **Maintenance** tab) lists, each with a count, a short
+  list and a next step in plain language: expired/soon-expiring pages, open conflicts (and incomplete
+  conflict boxes) and decisions, open suggestions, lessons and upkeep tasks, orphaned pages, pages nobody has read in 30 days, likely duplicates, pages over
+  150 lines, unworked imports, and the benchmark trend. Once a week, the session start names what's open in
+  one line ("Brain week: 3 expired · 1 conflict · 2 duplicates — see Maintenance in the brain"); the line
+  can be turned off (`wochenbericht`).
+- **Opt-in AI maintenance run** (`pflegeLauf`, off by default; weekly or on demand via a button). Feeds the
+  maintenance report plus the usual review candidates to a lean, headless Haiku run (same sandboxing as the
+  background harvest) and writes up to 8 suggestions (merge, split, outdated, contradiction, gap) — it never
+  edits the wiki itself. Cost shown measured, like the harvest. An accepted suggestion becomes an upkeep
+  task in `inbox/_pflege/` — a task to check, never a source: the **review**/**ingest** skills verify it
+  against the page's real raw sources, and it is never cited in `quellen:`.
+- **Local benchmark.** `brain messlatte` runs the existing search evaluation (kit questions plus your own
+  `_messlatte.json`) through the real hint hook and logs a run; the analysis tab shows the trend.
+- **Lesson suggestions from Claude Code sessions** (`lektionen`, default `lokal`, no AI call). Spots a
+  correction repeated about the same thing, or the same tool failing the same way twice, in your session
+  transcripts, and turns each into a suggestion to save as a lesson — in **Memory** (Claude Code, feedback
+  format) or `wiki/_lektionen.md` (other agents, short list, read by `AGENTS.md`), or a skill draft under
+  review. With `mit-ki`, Haiku words the rule/why/how; with the switch `aus`, nothing is collected. The new
+  **lektion** skill (`brain-lektion`) files an accepted suggestion at the right place and archives it.
+  Session start names how many lessons are waiting.
+- **MCP servers get their real logo.** ~46 Simple Icons (CC0), matched to a server by its normalized name,
+  with a monogram fallback for anything unmatched; drawn locally into a texture atlas, no network access.
+  Servers in the brain stem are grouped by where they're configured (Claude.ai, Claude Code, Desktop,
+  Cursor, Codex, Gemini).
+- **A more readable brain.** Each area gets a soft color glow on its own pages (stronger on hover/selection,
+  others dimmed); point size now reflects a page's importance (links plus how often it's read) and shape
+  reflects its type; connections between two areas bundle into a single weighted arc instead of a tangle,
+  while connections inside the selection stay fully drawn; what's labeled changes smoothly with zoom (areas
+  far out, titles at medium range, everything up close).
+
+### Changed
+- `brain-lint`'s `VERFALL` finding is now `ABGELAUFEN` (covers both `pruefen_bis` and `verfall`, same
+  not-blocking behaviour). Decision, lesson and upkeep orders in `inbox/_entscheidungen/`,
+  `inbox/_lektionen/` and `inbox/_pflege/` no longer count as unprocessed inbox notes — they're tasks for the
+  **ingest**/**lektion**/**review** skills, not raw material to work in.
+- The **ingest** skill works through any open decision orders before the actual source, and sets
+  `pruefen_bis` for fast-changing facts as it writes a page.
+
+### Security
+- Decisions and the maintenance run reuse the existing secrets filter and path/id checks (fail closed, same
+  rules as suggestions); a decision note over 300 characters or containing something that looks like a
+  credential is rejected before it's written.
+
+### Breaking changes
+- None expected. Existing pages, settings and suggestions keep working unchanged; the new `automatik` keys
+  (`wochenbericht` on, `pflegeLauf` and `lektionen`'s AI step off) are added the first time any setting is
+  saved. `migrations/0.4.0.md` re-renders `AGENTS.md` and re-runs the Claude Code adapter if it is installed
+  — no data migration.
+
 ## [0.3.0] - 2026-10-02
 "Control center" — the 3D brain becomes the place where you steer it. Everything new that uses AI is off by
 default; with all switches off, the brain behaves like 0.2.

@@ -152,6 +152,15 @@ else {
   zeile("OK", "Vorschläge", n > 0 ? `${n} offen — in der Ansicht prüfen („zeig mir mein Brain“).` : "keine offen");
 }
 
+// 14. Pflege (v0.4): wie viel der Pflegebericht zu tun meldet — reine Information, blockiert nie.
+{
+  let bericht = null;
+  try { bericht = (await import("./pflege.mjs")).pflegebericht(vault); } catch { bericht = null; }
+  if (!bericht) zeile("OK", "Pflege", "Bericht nicht verfügbar — „brain pflege“ später erneut versuchen.");
+  else if (bericht.zuTun > 0) zeile("OK", "Pflege", `${bericht.zuTun} ${bericht.zuTun === 1 ? "Sache" : "Sachen"} zu tun — „brain pflege“ oder im Gehirn unter Pflege.`);
+  else zeile("OK", "Pflege", "nichts zu tun");
+}
+
 // Update-Hinweis (Spec §3.9) — eigene Zeile, kein OK/FEHLT/WARN, blockiert nie.
 let updateZeile = null;
 try { updateZeile = hinweisZeile(await pruefeUpdate(vault), vault); } catch { /* offline/Fehler → still */ }

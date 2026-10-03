@@ -24,6 +24,9 @@ export const SECRET_TEILMUSTER = [
   // Passwort/Kennwort in Alltagssprache (lautet / ist / is / Doppelpunkt, gefolgt von einem Wert)
   new RegExp(`(passw(?:or)?[td]|kennwort)\\s*(?:[=:]|\\blautet\\b\\s*:?|\\b(?:ist|is)\\b\\s*:?)\\s*(?!(?:${KEIN_WERT})(?![\\p{L}\\p{N}]))[^\\s.,;]{3,}`, "u"),
   /\bpin\s*[=:]\s*\d{4,}/,
+  // Nutzer und Passwort auf der Befehlszeile (curl mit -u oder --user) und Schlüssel-Header (-H mit Key im Namen)
+  /(?:^|\s)(?:-u\s*|--user[ =])[^\s:'"]+:\S+/,
+  /-H\s+['"]?[\w-]*(?:key|token|auth)[\w-]*\s*:/,
   // Bekannte Schlüssel-Präfixe (auch nackt, ohne key=)
   /\bsk-ant-[A-Za-z0-9_-]{8,}/,
   /\bsk-(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{20,}/,
@@ -71,6 +74,13 @@ export function findeSecrets(text) {
     if (out.length < 5 && SECRET_MUSTER.test(z)) out.push({ zeile: i + 1, text: z });
   });
   return out;
+}
+
+// Zugangsdaten auch über Zeilengrenzen hinweg (Schlüsselwort am Zeilenende, Wert in der Folgezeile): roh
+// zeilenweise UND mit zusammengezogenem Leerraum geprüft (wie entscheidungen.mjs bei der Notiz). → true, wenn irgendwo etwas anschlägt.
+export function hatSecretsImKontext(text) {
+  const s = String(text ?? "");
+  return findeSecrets(s).length > 0 || findeSecrets(s.replace(/\s+/g, " ")).length > 0;
 }
 
 // Text ohne jede Zeile mit Zugangsdaten (ganze PEM-Blöcke fallen weg). Zeilenenden → "\n".

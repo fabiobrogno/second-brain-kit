@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qmdToRel, shouldQuery, decide, format, countSuppressed, suchtext, istFolgefrage } from "../hint-core.mjs";
+import { qmdToRel, shouldQuery, decide, format, countSuppressed, suchtext, istFolgefrage, ablaufZusatz } from "../hint-core.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,4 +99,23 @@ test("format: echter Vault-Pfad statt fest ~/brain; Home wird als ~ abgekürzt",
   assert.match(format(hit, { vault: "/srv/wissen" }), /^- \/srv\/wissen\/wiki\/a\.md — d$/m);
   assert.doesNotMatch(format(hit, { vault: "/srv/wissen" }), /~\/brain/);
   assert.ok(!h.endsWith("/"));
+});
+
+test("format: Treffer auf abgelaufene Seiten tragen „(abgelaufen seit N Tagen)“ (Spec A, W1-Review #8)", () => {
+  const v = mkdtempSync(join(tmpdir(), "hint ablauf, Ü "));
+  mkdirSync(join(v, "09_wiki"), { recursive: true });
+  writeFileSync(join(v, "09_wiki", "alt.md"), "\uFEFF---\r\nname: alt\r\npruefen_bis: 2026-09-30\r\n---\r\n# Alt\r\n");
+  writeFileSync(join(v, "09_wiki", "frisch.md"), "---\nname: frisch\npruefen_bis: 2026-12-01\n---\n# Frisch\n");
+  writeFileSync(join(v, "09_wiki", "text.md"), "# Text\n\npruefen_bis: 2020-01-01\n");
+  writeFileSync(join(v, "09_wiki", "eins.md"), "---\npruefen_bis: 2026-10-02\n---\n");
+  const jetzt = new Date(2026, 9, 3, 12).getTime();
+  const out = format([
+    { page: "09_wiki/alt.md", description: "Alte Seite" }, { page: "09_wiki/frisch.md", description: "Frisch" },
+  ], { vault: v, jetzt });
+  assert.match(out, /alt\.md \(abgelaufen seit 3 Tagen\) — Alte Seite/);
+  assert.doesNotMatch(out.split("\n")[2], /abgelaufen/);
+  assert.equal(ablaufZusatz(v, "09_wiki/text.md", { jetzt }), "", "ohne Frontmatter kein Zusatz");
+  assert.equal(ablaufZusatz(v, "09_wiki/eins.md", { jetzt }), " (abgelaufen seit 1 Tag)");
+  assert.equal(ablaufZusatz(v, "09_wiki/gibtsnicht.md", { jetzt }), "");
+  assert.equal(ablaufZusatz(null, "09_wiki/alt.md", { jetzt }), "");
 });

@@ -17,6 +17,11 @@ grep -F "\"$V/.tools/brain.mjs\" search" "$V/AGENTS.md" | grep -qE 'node(\.exe)?
 echo '{"automatik":{"updateHinweis":false}}' > "$V/brain.config.json"; rm -f "$V/.logs/hooks.log"
 node "$H"
 grep -q 'Update-Check:' "$V/.logs/hooks.log" 2>/dev/null && { echo "FAIL: Update-Check trotz updateHinweis=false"; exit 1; }
+# v0.4: Pflegebericht wird im Hintergrund gerechnet (Cache für die Wochen-Zeile); Schalter wochenbericht=false → nicht
+[ -f "$V/.logs/pflege-bericht.json" ] || { echo "FAIL: Pflegebericht-Cache fehlt"; exit 1; }
+rm -f "$V/.logs/pflege-bericht.json"; echo '{"automatik":{"updateHinweis":false,"wochenbericht":false}}' > "$V/brain.config.json"
+node "$H"
+[ -f "$V/.logs/pflege-bericht.json" ] && { echo "FAIL: Pflegebericht-Cache trotz wochenbericht=false"; exit 1; }
 
 # ---------- v0.3: session-start — Ich-Karte, Projektseite, Vorschläge (Temp-HOME, eigener Temp-Vault) ----------
 S="$(pwd)/../adapters/claude-code/session-start.mjs"

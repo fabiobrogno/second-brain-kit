@@ -57,6 +57,10 @@ Migrations in this release:
   background harvest arrive with the system files (all AI-based extras off by default). `AGENTS.md` is
   generated again, the "me" card template `ich.md` is added only if it is missing, and the Claude Code
   adapter (if installed) is re-run so it registers the new hooks.
+- `migrations/0.4.0.md` — no data migration at all: notes, wiki and settings stay exactly as they are.
+  `AGENTS.md` is generated again (so every agent knows "what needs doing in the brain"), and the Claude Code
+  adapter (if installed) is re-run so the new maintenance-run and lesson-suggestion triggers are registered
+  (they do nothing while their switches are off).
 
 Placeholders in a migration (`<vault>`, `<kit-klon>`) are always filled in as absolute paths, without `~`.
 From 0.2.0 on, the **update** skill also regenerates `AGENTS.md` (and `.agents/skills/` for Codex) every time

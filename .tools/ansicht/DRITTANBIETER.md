@@ -1,12 +1,24 @@
 # Drittanbieter in der 3D-Ansicht (`.tools/ansicht/`)
 
-Die Ansicht läuft vollständig lokal (auch über `file://`), ohne CDN. Mitgeliefert werden drei fremde Bestandteile:
+Die Ansicht läuft vollständig lokal (auch über `file://`), ohne CDN. Mitgeliefert werden vier fremde Bestandteile:
 
 | Bestandteil | Datei(en) | Lizenz | Quelle |
 |---|---|---|---|
 | three.js r170 (gebündelt mit OrbitControls, EffectComposer, UnrealBloomPass, OutputPass, MarchingCubes) | `vendor/three.bundle.js` | MIT | https://github.com/mrdoob/three.js · Lizenztext: `vendor/three.LICENSE.txt` |
 | Geist / Geist Mono (Schriften) | `vendor/fonts/Geist-Variable.woff2`, `vendor/fonts/GeistMono-Variable.woff2` | SIL Open Font License 1.1 | https://github.com/vercel/geist-font · Lizenztext: `vendor/fonts/OFL.txt` |
 | Gehirnoberfläche (abgeleitet aus MRT-Daten AOMIC-ID1000, OpenNeuro ds003097, sub-0001) | `vendor/brain-mesh/brain-mesh.js` | CC0 1.0 (gemeinfrei) | https://openneuro.org/datasets/ds003097 · DOI https://doi.org/10.18112/openneuro.ds003097.v1.2.1 · Herkunft: `vendor/brain-mesh/LICENSE-SOURCE.md` |
+| MCP-Logos (Simple Icons, Version 16.33.0, 46 Symbole) | `vendor/icons/*.svg`, `vendor/icons/zuordnung.json` | CC0 1.0 (gemeinfrei) | https://github.com/simple-icons/simple-icons · Lizenztext + Monogramm-Fälle: `vendor/icons/LIZENZ.md` |
+
+## MCP-Logos — CC0 1.0 Universal (Simple Icons)
+
+Die Symbole unter `vendor/icons/` stammen aus Simple Icons (Version 16.33.0, gepinnt), vollständig unter
+CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/). CC0 gilt für die SVG-Zeichnungen — die
+dargestellten Markennamen und -logos bleiben Marken ihrer jeweiligen Inhaber; die Nutzung hier dient
+ausschließlich der Kennzeichnung von MCP-Servern in der eigenen, lokalen Ansicht. Marken, die Simple Icons
+inzwischen entfernt hat (u. a. Microsoft, Slack, Canva, Klaviyo, OpenAI, Playwright, Amazon, Salesforce,
+Twilio), bekommen statt eines Logos ein Monogramm — Details und vollständige Liste: `vendor/icons/LIZENZ.md`.
+Zur Laufzeit lädt die Ansicht die SVGs per `fetch` ausschließlich vom eigenen Ursprung (CSP `img-src 'self'
+data:`), nie von einem fremden Host.
 
 ## Gehirnoberfläche — CC0 1.0 Universal
 

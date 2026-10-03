@@ -277,6 +277,13 @@ test("steuer: jedes Einstellungs-Schema-Feld hat Titel, Satz und Kosten — und 
   const { SCHEMA } = await import("../einstellungen.mjs");
   const felder = [...BrainSteuer.hilfen.FELDER.map(f => f.schluessel)].sort();
   assert.deepEqual(felder, Object.keys(SCHEMA).sort(), "Maske deckt genau das Schema ab");
+  // Stufen-Felder bieten genau die Werte des Schemas an
+  for (const f of BrainSteuer.hilfen.FELDER.filter(x => x.art === "stufen")) {
+    assert.deepEqual([...f.werte], SCHEMA[f.schluessel].werte, `Stufen von ${f.schluessel}`);
+  }
+  for (const f of BrainSteuer.hilfen.FELDER.filter(x => "standard" in x)) {
+    assert.deepEqual(f.standard, SCHEMA[f.schluessel].standard, `Standard von ${f.schluessel}`);
+  }
   const code = quelle("steuer.js");
   const benutzt = new Set([...code.matchAll(/\bt\("([A-Za-z0-9_]+)"\s*[,)]/g)].map(m => m[1]));
   for (const f of BrainSteuer.hilfen.FELDER) {
@@ -296,4 +303,155 @@ test("steuer/api/texte: kein innerHTML, kein eval, keine Inline-Handler", () => 
     assert.ok(!/\beval\(|new Function\(/.test(c), `${d}: kein eval`);
     assert.ok(!/setAttribute\(\s*["']on/i.test(c), `${d}: keine Inline-Handler`);
   }
+});
+
+// ------------------------------------------------------------------------------- v0.4: Pflege-Reiter
+test("steuer: Reiter-Reihenfolge — Pflege zwischen Vorschläge und Analyse", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  assert.deepEqual([...BrainSteuer.hilfen.REITER], ["einstellungen", "vorschlaege", "pflege", "analyse"]);
+});
+
+test("steuer: allesAus() schaltet die v0.4-Automatiken nur ab, wenn der Dienst sie kennt", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const h = BrainSteuer.hilfen;
+  const mit = h.allesAus({ hinweise: "mittel", wochenbericht: true, pflegeLauf: "woechentlich", lektionen: "mit-ki" });
+  assert.equal(mit.wochenbericht, false);
+  assert.equal(mit.pflegeLauf, "aus");
+  assert.equal(mit.lektionen, "aus");
+  assert.equal(mit.hinweise, "mittel");
+  const ohne = h.allesAus({ hinweise: "mittel" });
+  assert.ok(!("wochenbericht" in ohne) && !("pflegeLauf" in ohne) && !("lektionen" in ohne), "unbekannte Schlüssel nicht mitschicken (400)");
+});
+
+test("steuer: konfliktPfad() kodiert die Seiten-ID als ein Segment (Umlaut, Leerzeichen, Komma, Apostroph)", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const p = BrainSteuer.hilfen.konfliktPfad({ seite: "09_wiki/geräte/Ab, c'd e.md", nr: 2 });
+  assert.equal(p, "/api/konflikte/" + encodeURIComponent("09_wiki/geräte/Ab, c'd e.md") + "/2");
+  assert.equal(p.split("/").length, 5, "kein roher Schrägstrich in der Seiten-ID");
+  assert.ok(!p.slice("/api/konflikte/".length).includes("/09_wiki"));
+});
+
+test("steuer: ordneKonflikte() — offen zuerst, dann entschieden; zurückgestellte getrennt; Kaputtes fällt weg", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const k = (seite, nr, entschieden = null) => ({ seite, nr, a: { text: "x", quelle: null }, b: { text: "y", quelle: null }, entschieden });
+  const liste = [k("w/a.md", 1, "a"), k("w/b.md", 1), k("w/c.md", 2), null, { seite: "w/d.md", nr: 1 }, k("w/e.md", 1, "beide")];
+  const r = BrainSteuer.hilfen.ordneKonflikte(liste, { "w/c.md#2": true });
+  assert.deepEqual(r.sichtbar.map(x => x.seite), ["w/b.md", "w/a.md", "w/e.md"]);
+  assert.deepEqual(r.zurueck.map(x => x.seite), ["w/c.md"]);
+  // eine Entscheidung schlägt „später“
+  assert.equal(BrainSteuer.hilfen.ordneKonflikte([k("w/a.md", 1, "b")], { "w/a.md#1": true }).sichtbar.length, 1);
+  assert.deepEqual(BrainSteuer.hilfen.ordneKonflikte(undefined).sichtbar.length, 0);
+});
+
+test("steuer: quellKandidaten() — Link-Ziel, mit .md, neben der Seite, im Wiki-Ordner", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const q = BrainSteuer.hilfen.quellKandidaten;
+  assert.deepEqual([...q("01_raw/notiz", "09_wiki/geräte/x.md")],
+    ["01_raw/notiz", "01_raw/notiz.md", "09_wiki/geräte/01_raw/notiz.md", "09_wiki/01_raw/notiz.md"]);
+  assert.deepEqual([...q("09_wiki/y.md", "09_wiki/x.md")], ["09_wiki/y.md", "09_wiki/09_wiki/y.md"], "ohne Doppelte");
+  assert.deepEqual([...q("", "09_wiki/x.md")], []);
+  assert.deepEqual([...q(null, "09_wiki/x.md")], []);
+});
+
+test("steuer: notizText() kürzt auf 300 Zeichen, vorschlagArt() fällt auf Fakt zurück", () => {
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const h = BrainSteuer.hilfen;
+  assert.equal(h.notizText("  kurz  "), "kurz");
+  assert.equal(h.notizText("x".repeat(400)).length, 300);
+  assert.equal(h.notizText(undefined), "");
+  // Entscheidungs-Körper: Fingerabdruck nur, wenn gültig; Notiz getrimmt
+  const ek = (...a) => JSON.parse(JSON.stringify(h.entscheidungsKoerper(...a)));
+  assert.deepEqual(ek({ fp: "0123456789ab" }, "a", "  n  "), { wahl: "a", notiz: "n", fingerabdruck: "0123456789ab" });
+  assert.deepEqual(ek({ fp: "<b>" }, "b", null), { wahl: "b", notiz: "" });
+  assert.deepEqual(ek(null, "beide", "x"), { wahl: "beide", notiz: "x" });
+  assert.equal(h.vorschlagArt({ art: "lektion" }), "lektion");
+  assert.equal(h.vorschlagArt({ art: "pflege" }), "pflege");
+  assert.equal(h.vorschlagArt({ art: "stand" }), "stand");
+  assert.equal(h.vorschlagArt({ art: "<b>" }), "fakt");
+  assert.equal(h.vorschlagArt(null), "fakt");
+});
+
+test("steuer: jeder Posten des Pflegeberichts hat Titel und nächsten Schritt (de/en), Reihenfolge wie pflege.mjs", async () => {
+  const { BrainTexte } = ladeIn({}, "texte.js");
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const { POSTEN } = await import("../pflege.mjs");
+  assert.deepEqual([...BrainSteuer.hilfen.POSTEN], POSTEN);
+  for (const k of POSTEN) for (const s of ["de", "en"]) {
+    assert.ok(BrainTexte.tabelle[s]["posten_" + k], `${s}: posten_${k}`);
+    assert.ok(BrainTexte.tabelle[s]["schritt_" + k], `${s}: schritt_${k}`);
+    assert.ok(BrainTexte.tabelle[s]["thema_" + k], `${s}: thema_${k}`);
+  }
+});
+
+test("steuer: Vorschlags-Befunde und Lektions-Ziele aus vorschlaege.mjs haben Texte", async () => {
+  const { BrainTexte } = ladeIn({}, "texte.js");
+  const { PFLEGE_BEFUNDE, LEKTION_ZIELE } = await import("../vorschlaege.mjs");
+  for (const s of ["de", "en"]) {
+    for (const b of PFLEGE_BEFUNDE) assert.ok(BrainTexte.tabelle[s]["befund_" + b], `${s}: befund_${b}`);
+    for (const z of LEKTION_ZIELE) assert.ok(BrainTexte.tabelle[s]["ziel_" + z], `${s}: ziel_${z}`);
+  }
+});
+
+test("steuer: Wahlen der Konflikt-Knöpfe sind genau die des Dienstes", async () => {
+  const { WAHLEN } = await import("../entscheidungen.mjs");
+  const code = quelle("steuer.js");
+  const m = code.match(/const WAHLEN = (\[[^\]]*\]);/);
+  assert.ok(m, "WAHLEN in steuer.js");
+  assert.deepEqual([...JSON.parse(m[1]), "spaeter"].sort(), [...WAHLEN].sort());
+});
+
+// T6-Bedenken 2: Listeneinträge des Pflegeberichts kommen strukturiert (pflege.mjs) und werden hier übersetzt.
+test("steuer: postenEintrag übersetzt strukturierte Einträge (de/en) und zeigt alte Text-Einträge weiter", async () => {
+  const { POSTEN: BACKEND_POSTEN } = await import("../pflege.mjs");
+  const BEISPIEL = {
+    abgelaufen: { seite: "09_wiki/a/x.md", tage: 5, frist: "2026-09-28", grund: "pruefen_bis" },
+    bald: { seite: "09_wiki/a/y.md", frist: "2026-10-10" },
+    konflikte: { seite: "09_wiki/a/z.md", anzahl: 2 },
+    konflikteKaputt: { seite: "09_wiki/a/k.md", anzahl: 2 },
+    entscheidungen: { seite: "09_wiki/a/z.md", konflikt: 1, wahl: "a" },
+    vorschlaege: { titel: "Testgerät hat Port 4711" },
+    lektionen: { name: "lektion-erst-pruefen" },
+    pflegeAuftraege: { name: "20261002-090000-pflege-abc123" },
+    verwaist: { seite: "09_wiki/a/o.md" },
+    nieGelesen: { seite: "09_wiki/a/n.md" },
+    luecken: { frage: "preis widget" },
+    dubletten: { seiten: ["09_wiki/a/d1.md", "09_wiki/a/d2.md"], aehnlichkeit: 0.83, grund: "aehnlich" },
+    zuLang: { seite: "09_wiki/a/l.md", zeilen: 167 },
+    importe: { quelle: "notizen-x", notizen: 3 },
+    messlatte: { datum: "2026-10-01", positiv: "4/5", still: "2/2", ok: false },
+  };
+  assert.deepEqual(Object.keys(BEISPIEL), BACKEND_POSTEN, "jeder Posten hat ein Beispiel");
+  for (const sprache of ["de-DE", "en-GB"]) {
+    const { BrainSteuer } = ladeIn({ navigator: { language: sprache } }, "texte.js", "steuer.js");
+    const pe = (k, e) => JSON.parse(JSON.stringify(BrainSteuer.hilfen.postenEintrag(k, e)));
+    for (const [k, e] of Object.entries(BEISPIEL)) {
+      const r = pe(k, e);
+      const sichtbar = `${r.zusatz || ""} ${r.text || ""}`;
+      assert.ok(r.seite || r.text, `${sprache} ${k}: leer`);
+      assert.doesNotMatch(sichtbar, /undefined|NaN|\{|\[object/, `${sprache} ${k}: ${sichtbar}`);
+    }
+    const de = sprache.startsWith("de");
+    assert.match(pe("abgelaufen", BEISPIEL.abgelaufen).zusatz, de ? /seit 5 Tagen/ : /5 days ago/);
+    assert.match(pe("entscheidungen", BEISPIEL.entscheidungen).zusatz, de ? /Widerspruch 1: A gilt/ : /Conflict 1: /);
+    assert.match(pe("messlatte", BEISPIEL.messlatte).text, de ? /unter Ziel/ : /below target/);
+    assert.match(pe("dubletten", BEISPIEL.dubletten).zusatz, /^↔ d2 · /);
+    assert.equal(pe("konflikte", { seite: "09_wiki/a/z.md", anzahl: 1 }).zusatz, "");
+    // Final-Review #7: bei verfall kein „prüfen bis“; #3: kaputte Kästen als eigener Posten
+    const verfall = pe("abgelaufen", { seite: "09_wiki/a/x.md", tage: 62, frist: "2026-08-02", grund: "verfall" }).zusatz;
+    assert.match(verfall, de ? /seit 62 Tagen · verfall/ : /62 days ago · verfall/);
+    assert.doesNotMatch(verfall, de ? /prüfen bis/ : /review by/);
+    assert.match(pe("konflikteKaputt", BEISPIEL.konflikteKaputt).zusatz, de ? /2 unvollständige Kästen/ : /2 incomplete boxes/);
+    // ältere Dienste: fertige Sätze
+    assert.deepEqual(pe("abgelaufen", "09_wiki/a/x.md — seit 5 Tagen (prüfen bis 2026-09-28)"), { seite: "09_wiki/a/x.md", zusatz: "seit 5 Tagen (prüfen bis 2026-09-28)", text: "09_wiki/a/x.md — seit 5 Tagen (prüfen bis 2026-09-28)" });
+    assert.deepEqual(pe("messlatte", "2026-10-01: positiv 4/5"), { text: "2026-10-01: positiv 4/5" });
+  }
+});
+
+test("steuer: Übernehmen eines Pflege-Vorschlags meldet den nächsten Schritt statt nur den Ablageort (Final-Review #1)", () => {
+  const { BrainTexte } = ladeIn({}, "texte.js");
+  assert.match(BrainTexte.tabelle.de.uebernommenPflege, /arbeite die Pflege-Aufträge ab/);
+  assert.match(BrainTexte.tabelle.en.uebernommenPflege, /work through the upkeep tasks/);
+  const code = quelle("steuer.js");
+  assert.match(code, /war\.art === "pflege"/);
+  assert.match(code, /pflege \? t\("uebernommenPflege"\)/);
 });

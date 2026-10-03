@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, realpathSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { behandle, vaultIdVon, MAX_KOERPER } from "../ansicht/dienst-lib.mjs";
+import { behandle, vaultIdVon, MAX_KOERPER, laufErgebnis } from "../ansicht/dienst-lib.mjs";
 
 const PORT = 41234;
 const HOST = `127.0.0.1:${PORT}`;
@@ -32,6 +32,9 @@ const stubs = () => ({
   vorschlaegeListe: async () => ({ vorschlaege: [] }),
   vorschlagEntscheiden: async (v, id, aktion) => { aufrufe.push(["entscheide", id, aktion]); return { ok: true }; },
   gelesen: async (v, seit) => { aufrufe.push(["gelesen", seit]); return { seiten: [] }; },
+  pflege: async () => ({ erstellt: "2026-10-03T12:00:00Z", posten: [], zuTun: 0, konflikte: [] }),
+  konfliktEntscheiden: async (v, seite, nr, wahl, notiz, fp) => { aufrufe.push(fp ? ["konflikt", seite, nr, wahl, notiz, fp] : ["konflikt", seite, nr, wahl, notiz]); return { id: "x" }; },
+  pflegeLauf: async () => { aufrufe.push(["lauf"]); return { ok: true, gestartet: true }; },
 });
 const kontext = (extra = {}) => ({ vault: VAULT, "token": SCHLUESSEL, port: PORT, handler: stubs(), ansichtDir: ANSICHT, version: "0.3.0", ...extra });
 const anfrage = (methode, pfad, headers = {}, body) => {
@@ -258,4 +261,108 @@ test("fehlender Handler (Modul nicht da) → 503 nicht verfügbar", async () => 
   h.analyse = async () => { throw Object.assign(new Error("nicht verfügbar"), { code: 503 }); };
   const r = await behandle(api("GET", "/api/analyse"), kontext({ handler: h }));
   assert.equal(r.status, 503);
+});
+
+// ---- v0.4: Pflege, Konflikt-Entscheidungen, Pflege-Lauf
+const SEITE_URI = encodeURIComponent("09_wiki/geräte/thema_test, 'x'.md");
+test("GET /api/pflege → Handler; POST → 405", async () => {
+  const r = await behandle(api("GET", "/api/pflege"), kontext());
+  assert.equal(r.status, 200);
+  assert.deepEqual(json(r), { erstellt: "2026-10-03T12:00:00Z", posten: [], zuTun: 0, konflikte: [] });
+  assert.equal((await behandle(schreibend("POST", "/api/pflege", "{}"), kontext())).status, 405);
+  const h = stubs(); delete h.pflege;
+  assert.equal((await behandle(api("GET", "/api/pflege"), kontext({ handler: h }))).status, 503);
+});
+test("POST /api/konflikte/<seite-uri>/<nr> → Handler mit dekodierter Seite, Zahl, Wahl, Notiz", async () => {
+  aufrufe.length = 0;
+  const r = await behandle(schreibend("POST", `/api/konflikte/${SEITE_URI}/2`, JSON.stringify({ wahl: "beide", notiz: "innen/außen" })), kontext());
+  assert.equal(r.status, 200);
+  assert.deepEqual(json(r), { id: "x" });
+  await behandle(schreibend("POST", `/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "spaeter" })), kontext());
+  assert.deepEqual(aufrufe, [["konflikt", "09_wiki/geräte/thema_test, 'x'.md", 2, "beide", "innen/außen"], ["konflikt", "09_wiki/geräte/thema_test, 'x'.md", 1, "spaeter", ""]]);
+  aufrufe.length = 0;
+  await behandle(schreibend("POST", `/api/konflikte/${SEITE_URI}/2`, JSON.stringify({ wahl: "a", fingerabdruck: "0123456789ab" })), kontext());
+  assert.deepEqual(aufrufe, [["konflikt", "09_wiki/geräte/thema_test, 'x'.md", 2, "a", "", "0123456789ab"]], "Fingerabdruck wird durchgereicht");
+});
+test("POST /api/konflikte: ungültige Seite/Nummer/Wahl/Notiz → 400, nie an den Handler", async () => {
+  aufrufe.length = 0;
+  const gut = JSON.stringify({ wahl: "a" });
+  const faelle = [
+    [`/api/konflikte/${encodeURIComponent("../geheim.md")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki/../00_inbox/x.md")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki\\x.md")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki/.x.md")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki//x.md")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki/x.txt")}/1`, gut],
+    [`/api/konflikte/${encodeURIComponent("09_wiki/x\u0000.md")}/1`, gut],
+    ["/api/konflikte/%E0%A4%A/1", gut],
+    [`/api/konflikte/${SEITE_URI}/0`, gut],
+    [`/api/konflikte/${SEITE_URI}/01`, gut],
+    [`/api/konflikte/${SEITE_URI}/x`, gut],
+    [`/api/konflikte/${SEITE_URI}/10000`, gut],
+    [`/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "c" })],
+    [`/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a", notiz: "x".repeat(301) })],
+    [`/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a", notiz: { x: 1 } })],
+    [`/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a", fingerabdruck: "XYZ" })],
+    [`/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a", fingerabdruck: 12 })],
+    [`/api/konflikte/${SEITE_URI}/1`, undefined],
+    [`/api/konflikte/${SEITE_URI}/1`, "kein json"],
+  ];
+  for (const [pfad, body] of faelle) {
+    const r = await behandle(schreibend("POST", pfad, body), kontext());
+    assert.equal(r.status, 400, `${pfad} ${body}`);
+  }
+  assert.deepEqual(aufrufe, []);
+});
+test("POST /api/konflikte: fremde Herkunft/ohne Token → 403, GET → 405, rohe Schrägstriche → 404, Handler fehlt → 503", async () => {
+  aufrufe.length = 0;
+  const body = Buffer.from(JSON.stringify({ wahl: "a" }));
+  assert.equal((await behandle(api("POST", `/api/konflikte/${SEITE_URI}/1`, {}, body), kontext())).status, 403);
+  assert.equal((await behandle(anfrage("POST", `/api/konflikte/${SEITE_URI}/1`, { origin: `http://${HOST}` }, body), kontext())).status, 403);
+  assert.equal((await behandle(api("POST", `/api/konflikte/${SEITE_URI}/1`, { origin: "http://evil.example" }, body), kontext())).status, 403);
+  assert.equal((await behandle(api("GET", `/api/konflikte/${SEITE_URI}/1`), kontext())).status, 405);
+  assert.equal((await behandle(schreibend("POST", "/api/konflikte/09_wiki/x.md/1", JSON.stringify({ wahl: "a" })), kontext())).status, 404);
+  assert.deepEqual(aufrufe, []);
+  const h = stubs(); delete h.konfliktEntscheiden;
+  assert.equal((await behandle(schreibend("POST", `/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a" })), kontext({ handler: h }))).status, 503);
+  const h2 = stubs();
+  h2.konfliktEntscheiden = async () => { throw Object.assign(new Error("Zu diesem Konflikt liegt schon eine Entscheidung vor."), { code: 409 }); };
+  const r = await behandle(schreibend("POST", `/api/konflikte/${SEITE_URI}/1`, JSON.stringify({ wahl: "a" })), kontext({ handler: h2 }));
+  assert.equal(r.status, 409);
+  assert.match(json(r).fehler, /schon eine Entscheidung/);
+});
+test("POST /api/pflege/lauf → Handler; GET → 405; ohne Origin → 403; Modul fehlt → 503", async () => {
+  aufrufe.length = 0;
+  const r = await behandle(schreibend("POST", "/api/pflege/lauf"), kontext());
+  assert.equal(r.status, 200);
+  assert.deepEqual(json(r), { ok: true, gestartet: true });
+  assert.deepEqual(aufrufe, [["lauf"]]);
+  assert.equal((await behandle(api("GET", "/api/pflege/lauf"), kontext())).status, 405);
+  assert.equal((await behandle(api("POST", "/api/pflege/lauf"), kontext())).status, 403);
+  const h = stubs(); delete h.pflegeLauf;
+  assert.equal((await behandle(schreibend("POST", "/api/pflege/lauf"), kontext({ handler: h }))).status, 503);
+  const h2 = stubs(); h2.pflegeLauf = async () => { throw Object.assign(new Error("nicht verfügbar"), { code: 503 }); };
+  assert.equal((await behandle(schreibend("POST", "/api/pflege/lauf"), kontext({ handler: h2 }))).status, 503);
+});
+
+test("POST /api/pflege/lauf: nicht gestartet → 409 (läuft schon) / 503 (claude fehlt) / 500 (sonst), jeweils mit grund (W1-Review #15)", async () => {
+  const mit = (r) => { const h = stubs(); h.pflegeLauf = async () => laufErgebnis(r); return kontext({ handler: h }); };
+  const faelle = [
+    [{ gestartet: false, grund: "läuft schon" }, 409],
+    [{ gestartet: false, grund: "claude fehlt" }, 503],
+    [{ gestartet: false, grund: "Start fehlgeschlagen" }, 500],
+    [{ gestartet: false }, 500],
+  ];
+  for (const [ergebnis, status] of faelle) {
+    const r = await behandle(schreibend("POST", "/api/pflege/lauf"), mit(ergebnis));
+    assert.equal(r.status, status, JSON.stringify(ergebnis));
+    assert.equal(json(r).grund, ergebnis.grund || "nicht gestartet");
+    assert.equal(json(r).fehler, ergebnis.grund || "nicht gestartet");
+  }
+  const ok = await behandle(schreibend("POST", "/api/pflege/lauf"), mit({ gestartet: true }));
+  assert.equal(ok.status, 200);
+  assert.deepEqual(json(ok), { gestartet: true });
+  // Modul fehlt (ohne grund) bleibt „nicht verfügbar“
+  const h = stubs(); h.pflegeLauf = async () => { throw Object.assign(new Error("x"), { code: 503 }); };
+  assert.deepEqual(json(await behandle(schreibend("POST", "/api/pflege/lauf"), kontext({ handler: h }))), { fehler: "nicht verfügbar" });
 });

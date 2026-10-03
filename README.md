@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-4F46E5"></a>
-  <a href="CHANGELOG.md"><img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-4F46E5"></a>
+  <a href="CHANGELOG.md"><img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-4F46E5"></a>
   <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0E7490">
   <img alt="Claude · Codex · Gemini · Cursor" src="https://img.shields.io/badge/Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20Cursor-0E7490">
 </p>
@@ -31,9 +31,10 @@ stay visible instead of being quietly overwritten, and nothing leaves your machi
 | **Upkeep** | Manual gardening — or none. | Checks for drift, decay and conflicts; new knowledge arrives as suggestions you accept with one click. |
 | **Quality measured** | Never. | Analysis tab: how often hints hit, whether the AI actually read them, pages nobody reads, gaps. |
 
-> **Status:** v0.3 — an early public release, now with a control center inside the 3D brain, an importer
-> for old brains and an opt-in background harvest. It works and is tested on all three systems, but expect
-> rough edges. Feedback is very welcome.
+> **Status:** v0.4 — an early public release. The control center now also keeps the brain itself in shape:
+> knowledge gets an expiry date, contradictions are resolved with one click, and a maintenance report tells
+> you in plain language what to do. It works and is tested on all three systems, but expect rough edges.
+> Feedback is very welcome.
 
 ## Quick start — for everyone
 
@@ -59,6 +60,8 @@ When it's done, you only need four sentences:
 - *"Remember this: …"* — saves something.
 - *"What do I know about …?"* — searches your brain and answers with the source.
 - *"Show me my brain."* — opens your brain in 3D, with the control center.
+- *"What needs doing in my brain?"* — a short maintenance report: what's expired, what's in conflict, what's
+  waiting for a decision.
 - *"Update my brain."* — installs a new version when one is out.
 
 Coming from Obsidian, Notion or Logseq? *"Import my old brain from <folder>."*
@@ -96,14 +99,45 @@ The 3D brain is also where you steer it. Everything here runs locally and costs 
 - **Analysis** — how often a hint was found, whether the AI really read the page afterwards, the latest
   benchmark run, pages nobody reads, pages without links, open conflicts, and a token estimate for today and
   the last 7 days. Also as `brain analyse`.
+- **Maintenance** — what the brain itself has noticed needs attention (see [Self-maintenance](#self-maintenance)
+  below) and any open contradictions to resolve with one click. Also as `brain pflege`.
 - **MCP area** — the MCP servers your AI apps know (Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI)
-  and the connectors they actually use, as their own region of the brain, linked to your pages about them.
-  Only names are read — never commands, keys, URLs or headers.
+  and the connectors they actually use, as their own region of the brain ("brain stem"), grouped by where
+  they're configured and shown with their real logo, linked to your pages about them. Only names are read —
+  never commands, keys, URLs or headers.
 - **Live glow** — while you work, the pages and tools your AI reads light up for a few seconds (Claude Code).
 
 The service only answers on `127.0.0.1`, needs a random key that changes on every start, and refuses other
 websites in the same browser. If it can't start, the view opens read-only from a file, as in v0.2. The
 interface speaks English and German.
+
+## Self-maintenance
+
+The brain watches its own health, locally and for 0 tokens, so you don't have to remember to check.
+
+- **Knowledge gets an expiry date.** When your AI writes a fast-changing fact (a price, a version, a
+  status), it adds `pruefen_bis: <date>` to that page — 90 days out by default, 30 for prices. Once that
+  date passes (or the older, relative `verfall: <days>` runs out), the page is marked **expired**: an amber
+  ring in the 3D brain, a note in the page panel, a finding from `lint`. Pages that never got these fields
+  behave exactly as before — neither expired nor "checked".
+- **Contradictions, resolved with one click.** Every `[!KONFLIKT]` box your AI ever wrote shows up in the
+  **Maintenance** tab with both claims side by side and a link to each source. Click *A is right*, *B is
+  right*, *both apply (different cases)*, or *later* — optionally with a short note. That click never
+  touches the wiki itself; it writes a decision for your AI to carry out on the next ingest (which now works
+  through any waiting decisions first, before the actual new source). Changing your mind before that ingest
+  just replaces the earlier choice.
+- **One report, in plain language.** *"What needs doing in my brain?"* (or `brain pflege`) lists — each with
+  a count and a next step — expired pages, open conflicts and decisions, duplicates, pages nobody links to,
+  pages nobody has read in a month, pages that have grown past 150 lines, and imports still waiting to be
+  worked in. Once a week, the session start names what's open in one line, only if there's something to do;
+  turn that line off with the `wochenbericht` setting.
+- **An optional AI pass, opt-in and off by default.** Turn on *"check my brain weekly"* (`pflegeLauf`) or
+  click "check now" in the Maintenance tab, and a lean Haiku run reads the maintenance report plus the usual
+  review candidates and writes up to 8 suggestions — merge these two pages, this one looks outdated, these
+  two contradict each other. It only ever writes suggestions, never the wiki; cost is shown measured, like
+  the background harvest below.
+- **A benchmark you can watch improve.** `brain messlatte` runs the same local search evaluation used during
+  development against your own brain and logs the result; the analysis tab shows the trend over time.
 
 ## Import old brains
 
@@ -144,6 +178,31 @@ control center.
   after the first one. If Claude Code closes before the run is done (possible on Windows), the next session
   start finishes it.
 
+## Lessons from your sessions
+
+Opt-in, Claude Code only (other apps don't expose a readable transcript), local-only by default. The brain
+notices two patterns in your own session history, without any AI call: you correcting it about the same
+thing twice, or the same tool failing the same way twice. Each becomes a **lesson suggestion** — save it to
+**Memory** (so Claude Code itself remembers, in the usual feedback format) or to `wiki/_lektionen.md` (a
+short list other agents read via `AGENTS.md`), or as a skill draft for you to look over, never installed
+automatically. A single correction, or a one-off "merk dir", never turns into a lesson by itself.
+
+- `lektionen: lokal` (the default) finds candidates and lets you confirm the wording yourself; `mit-ki` adds
+  a lean Haiku run to word the rule, why and how to apply it (same sandboxing and secrets filter as the
+  background harvest); `aus` turns it off entirely.
+- The session start names how many lesson suggestions and how many already-accepted lessons are waiting;
+  the **lektion** skill (`brain-lektion` in Claude Code) files an accepted one at the right place and
+  archives it.
+
+## MCP logos
+
+Server tiles in the brain stem show the real logo of well-known services (Gmail, GitHub, Shopify, Notion,
+Slack, n8n, MongoDB and around 40 more) instead of an anonymous dot — drawn locally from a bundled icon set,
+never fetched over the network. Anything not in that set gets a one- or two-letter monogram instead. The
+icons are [Simple Icons](https://simpleicons.org), released under CC0 (public domain) — but **the names and
+logos themselves stay trademarks of their respective owners**; showing a server's logo here is only a label,
+never a claim of endorsement. Full license text: [`DRITTANBIETER.md`](.tools/ansicht/DRITTANBIETER.md).
+
 ## Token costs
 
 Out of the box, the kit itself puts **0 tokens** into your conversations except where noted below; every
@@ -153,6 +212,9 @@ summed up, in the analysis tab.
 | Switch | Default | Cost |
 |---|---|---|
 | Control center, analysis, MCP area, suggestions, import check | always | 0 tokens — plain Node on your computer |
+| Maintenance report, benchmark, conflict resolution (`brain pflege`, `brain messlatte`) | always | 0 tokens |
+| Weekly maintenance line at session start (`wochenbericht`) | on | ~25 tokens, once a week, only when something is open |
+| Lesson suggestions from Claude Code sessions (`lektionen: lokal`) | on (local-only) | 0 tokens — pattern matching only, no AI call |
 | Live glow (`liveAufleuchten`, Claude Code) | on | 0 tokens — the hook only writes a local log |
 | Remember searches without results (`luecken`) | off | 0 tokens |
 | Hints before a prompt (`hinweise`, Claude Code) | normal | ~60 tokens per hint, only when a page matches |
@@ -162,6 +224,8 @@ summed up, in the analysis tab.
 | "Me" card `wiki/ich.md` at session start (`ichKarte`) | off | ~250 tokens per session |
 | Save the state every X hours (`staendeIntervallStunden`, Claude Code) | off | one Haiku run per save (measured: ~8k input, ~0.8k output tokens, about 1 cent), outside the session |
 | Collect facts at session end (`ernteSitzungsende`, Claude Code) | off | one Haiku run per session (measured: ~8k input, ~0.8k output tokens, about 1 cent), outside the session |
+| Weekly/on-click AI maintenance pass (`pflegeLauf`) | off | one Haiku run per pass (measured, shown in the analysis tab), outside the session, never edits the wiki |
+| Wording lesson suggestions with AI (`lektionen: mit-ki`) | off | one Haiku run per accepted batch (measured), outside the session |
 | Working an import package into the wiki | asked per package | estimate shown per package before you say yes |
 
 
@@ -210,7 +274,7 @@ flowchart LR
     C["brain CLI<br/>search · lint · doctor · backup"]
     G["git + pre-commit checks<br/>secrets · revisions · log"]
   end
-  A["AGENTS.md + skills<br/>ingest · lint · review · update · backup"]
+  A["AGENTS.md + skills<br/>ingest · lint · review · update · backup · lektion"]
   D["Adapters (optional)<br/>Claude Code: hints, status line"]
   M["Control center<br/>3D brain · settings · analysis"]
   core --> A & D & M
@@ -271,8 +335,11 @@ automatically at the start of each session (currently only there).
 |---|---|---|
 | **Correct** | Answers come with a source you can check. | Every wiki page lists its sources with a fingerprint; when a source changes, the page is flagged *needs review* (`PRÜFBEDÜRFTIG`). |
 | | Contradictions are never silently "fixed". | A `[!KONFLIKT]` box keeps both claims and both sources until you decide. |
-| | Old knowledge doesn't pass as fresh. | `lint` finds drift, decay, orphans and open conflicts; `review` (about every 30 days) re-checks only what changed. |
+| | Old knowledge doesn't pass as fresh. | `lint` finds drift, decay, orphans and open conflicts; `review` (about every 30 days) re-checks only what changed; pages can carry an expiry date (`pruefen_bis`). |
 | | Passwords and keys stay out. | Secrets check before every ingest and again in the git pre-commit hook — for every AI, with or without hooks. |
+| **Maintains itself** | You don't have to remember to check it. | `brain pflege`: a plain-language report of what's expired, in conflict, duplicated or waiting — plus a weekly line and an opt-in AI pass that only ever suggests. |
+| | Contradictions get resolved, not ignored. | The Maintenance tab shows both sides of a conflict with their sources; one click writes the decision for the next ingest to carry out. |
+| | Repeated corrections turn into lessons. | Claude Code session transcripts: a correction repeated twice, or the same tool failing twice, becomes a lesson suggestion for Memory or the wiki. |
 | **Complete** | Saving is one sentence. | "Remember this …" → inbox → ingest; sources can be notes, files or text. |
 | | Nothing gets lost. | Full git history, a log of every ingest (`_log.md`), backup to GitHub or a folder. |
 | | Mistakes in hints get fixed. | `feedback` records a wrong or missing hint in one line, so search can be tuned. |
@@ -356,7 +423,7 @@ Delete your brain folder (after a last backup, if you want to keep it) and the `
 you used the Claude Code adapter, remove the brain entries from `~/.claude/settings.json` — the installer
 saved a backup of the original file next to it (`settings.json.bak-…`) — and delete the commands it added
 to `~/.claude/commands/` (`ingest.md`, `handoff.md`, `brain-lint.md`, `brain-review.md`, `brain-feedback.md`,
-`brain-update.md`, `brain-backup.md`, `brain-import.md`; if one of your own files had the same name, it was saved next to it as
+`brain-update.md`, `brain-backup.md`, `brain-import.md`, `brain-lektion.md`; if one of your own files had the same name, it was saved next to it as
 `….bak-…`). The search keeps its index and models in `~/.cache/qmd/`; delete that folder too if no other
 tool of yours uses qmd. Nothing else is installed — everything else lives in `~/.brain-kit/` (private
 Node.js copy, search engine, downloaded kit versions, install log) and in your brain folder.
@@ -368,11 +435,12 @@ Node.js copy, search engine, downloaded kit versions, install log) and in your b
 - **v0.2 — done:** the **3D brain view** (`brain zeig`) — an anatomically shaped, glowing brain with your pages
   as points of light, live search that flies to the best match, conflicts and pages that need review
   highlighted, a timeline. 100 % local.
-- **v0.3 — now:** the **control center** in the 3D brain (settings, suggestions, analysis, MCP area, live
+- **v0.3 — done:** the **control center** in the 3D brain (settings, suggestions, analysis, MCP area, live
   glow), **import of old brains** with duplicate and contradiction check, the opt-in **background harvest**.
-- **v0.4 — next: self-maintenance.** Expiry dates for knowledge that goes stale, resolving conflicts right
-  in the brain, a weekly maintenance run, a weekly report, and an answer benchmark that measures whether
-  answers get better.
+- **v0.4 — now: self-maintenance and looks.** Expiry dates for knowledge that goes stale, resolving
+  conflicts right in the brain, a weekly maintenance report and an opt-in AI maintenance pass, a local
+  answer benchmark, lesson suggestions from your own corrections, MCP servers with their real logo, and a
+  brain that's easier to read at a glance (areas, node size and shape, bundled connections, zoom levels).
 - **Later:** an optional local MCP server for chat-only apps (never the default), adapters for Gemini CLI
   and Cursor, effortless capture from anywhere.
 

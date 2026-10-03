@@ -7,13 +7,44 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "../pfade.mjs";
 import { walk } from "../vault-dateien.mjs";
 import { wikilinks, resolveLink } from "../wiki-pfade.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
 import { inventar, quellDateien } from "./mcp-inventar.mjs";
+import { gueltigkeit } from "../gueltigkeit.mjs";
+import { konfliktKaesten } from "../konflikte.mjs";
+import { leseZeilen } from "../logs.mjs";
+
+// MCP-Logos (Task 4, optional): Zuordnung `vendor/icons/zuordnung.json` + `iconFuer(name, zuordnung)` aus
+// `icons-zuordnung.mjs`. Fehlt eins davon oder ist es kaputt, bekommt jeder MCP-Knoten `icon: null` (Monogramm).
+const HIER = dirname(fileURLToPath(import.meta.url));
+let iconFuer = null, iconZuordnung = null;
+try {
+  const modul = join(HIER, "icons-zuordnung.mjs"), tabelle = join(HIER, "vendor", "icons", "zuordnung.json");
+  if (existsSync(modul) && existsSync(tabelle)) {
+    const m = await import(pathToFileURL(modul).href);
+    if (typeof m.iconFuer === "function") { iconZuordnung = JSON.parse(entferneBom(readFileSync(tabelle, "utf8"))); iconFuer = m.iconFuer; }
+  }
+} catch { iconFuer = null; iconZuordnung = null; }
+export function mcpIcon(name, fn = iconFuer, zuordnung = iconZuordnung) {
+  if (typeof fn !== "function" || !zuordnung) return null;
+  try { const slug = fn(name, zuordnung); return typeof slug === "string" && slug ? slug : null; } catch { return null; }
+}
+
+// Bedeutung je Knoten: log(1+Verbindungen) + log(1+Lesezahl), auf das Maximum des Vaults normiert (0..1).
+// Stufe 1/2/3 für die Knotengröße der Ansicht: ab 2/3 → 3, ab 1/3 → 2, sonst 1.
+export function bedeutungen(knoten) {
+  const roh = knoten.map((k) => Math.log1p(Math.max(0, k.verbindungen || 0)) + Math.log1p(Math.max(0, k.lesezahl || 0)));
+  const max = Math.max(0, ...roh);
+  return roh.map((r) => {
+    const b = max > 0 ? Math.round((r / max) * 1000) / 1000 : 0;
+    return { bedeutung: b, bedeutungStufe: b >= 2 / 3 ? 3 : b >= 1 / 3 ? 2 : 1 };
+  });
+}
+export const MCP_GRUPPE = (name, quellen = []) => /^claude_ai_/i.test(name) ? "Claude.ai" : (quellen[0] || null);
 
 export const REGIONEN = ["frontal", "temporal", "parietal", "tief", "okzipital"];
 export const FARBEN = ["blau", "orange", "gruen", "gelb", "rot", "lila", "grau", "tuerkis"];
@@ -73,7 +104,7 @@ function ersterAbsatz(body) {
 
 // Reine Datenaufbereitung — liest nur, schreibt nie. `erzeugeAnsichtsDaten` (unten) nutzt dies und schreibt
 // zusätzlich <vault>/.logs/ansicht/data.js. Der Dienst (Task 1, `./dienst.mjs`) ruft NUR diese Funktion auf.
-export function baueAnsichtsDaten(vault) {
+export function baueAnsichtsDaten(vault, { jetzt = Date.now() } = {}) {
   // Tippfehler im Pfad darf nie still einen Ordnerbaum anlegen — klare Meldung statt leerem Gehirn
   let istOrdner = false; try { istOrdner = statSync(vault).isDirectory(); } catch {}
   if (!istOrdner) throw new Error(`Brain-Ordner nicht gefunden: ${vault} — bitte den Pfad prüfen.`);
@@ -91,11 +122,23 @@ export function baueAnsichtsDaten(vault) {
   // Dateien wie Indexer/Lint (vault-dateien.mjs: ohne Punkt-Pfade, generierte Dateien, .brainignore), zusätzlich
   // ohne Vorlagen-Ordner und ohne Wiki-Systemseiten (_log.md, _schema.md, …)
   const dateien = walk(vault, { wikiDir: o.wiki });
+  // Nur Dateien, deren echter Pfad im echten Vault liegt (Wiki-Seiten: im echten Wiki) — Symlinks nach außen
+  // fließen weder in Knoten noch in Konflikte ein (W1-Review #16).
+  const normP = (x) => { const f = String(x).split("\\").join("/").replace(/\/+$/, ""); return process.platform === "darwin" || process.platform === "win32" ? f.toLowerCase() : f; };
+  let vaultEcht = null, wikiEcht = null;
+  try { vaultEcht = normP(realpathSync(vault)); } catch {}
+  try { wikiEcht = normP(realpathSync(join(vault, o.wiki))); } catch {}
+  const echtDrin = (voll, imWiki) => {
+    const basis = imWiki ? wikiEcht : vaultEcht;
+    if (!basis) return false;
+    try { return normP(realpathSync(voll)).startsWith(basis + "/"); } catch { return false; }
+  };
   const files = [];
   for (const f of dateien) {
     const id = f.rel.split(/[\\/]/).join("/"), p = id.split("/");
     if (p.length > 1 && istVorlage(p[0])) continue;
     if (p[0] === o.wiki && p[p.length - 1].startsWith("_")) continue;
+    if (!echtDrin(f.full || join(vault, ...p), p[0] === o.wiki)) continue;
     files.push({ ...f, id, p });
   }
   const ids = files.map(f => f.id), idSet = new Set(ids);
@@ -121,18 +164,18 @@ export function baueAnsichtsDaten(vault) {
   };
 
   // git (nur lesend): erstes Hinzufügen + letzte Änderung je Datei. Ohne git/Repo: keine Zeitleiste.
-  const added = {}, changed = {};
+  const added = {}, changed = {}, changedMs = {};
   if (files.length) {
     try {
-      const out = execFileSync(gitBefehl({ cfg }), ["-C", vault, "-c", "core.quotepath=false", "log", "--format=@%as", "--name-only", "--relative"],
+      const out = execFileSync(gitBefehl({ cfg }), ["-C", vault, "-c", "core.quotepath=false", "log", "--format=@%as %ct", "--name-only", "--relative"],
         // ohne GIT_*-Umgebung (im pre-commit gesetzt): -C vault soll das Repo des Vaults lesen, kein fremdes
         { encoding: "utf8", maxBuffer: 256 << 20, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
           env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))) });
-      let d = null;
+      let d = null, ms = 0;
       for (const line of out.split(/\r?\n/)) {
-        if (line.startsWith("@")) { d = line.slice(1); continue; }
+        if (line.startsWith("@")) { const [tag, ct] = line.slice(1).split(" "); d = tag; ms = Number(ct) * 1000 || 0; continue; }
         const f = line.trim(); if (!f || !idSet.has(f)) continue;
-        if (!changed[f]) changed[f] = d; // neuester zuerst
+        if (!changed[f]) { changed[f] = d; changedMs[f] = ms; } // neuester zuerst
         added[f] = d;                     // ältester zuletzt
       }
     } catch { /* kein git oder kein Repo */ }
@@ -151,6 +194,15 @@ export function baueAnsichtsDaten(vault) {
     }
   }
 
+  // Lesezahl der letzten 30 Tage aus dem Werkzeug-Protokoll (art=lesen: Vault-Pfad, art=mcp: "<server>/<werkzeug>")
+  const lesen = new Map(), mcpAufrufe = new Map();
+  for (const z of leseZeilen(join(vault, ".logs", "werkzeug.log"), { seitMs: jetzt - 30 * 86400000 })) {
+    if (typeof z.ziel !== "string") continue;
+    if (z.art === "lesen") lesen.set(z.ziel, (lesen.get(z.ziel) || 0) + 1);
+    else if (z.art === "mcp") { const s = z.ziel.split("/")[0]; mcpAufrufe.set(s, (mcpAufrufe.get(s) || 0) + 1); }
+  }
+  const alleKonflikte = [];
+
   const sha16 = (rel) => createHash("sha256").update(readFileSync(join(vault, ...rel.split("/")))).digest("hex").slice(0, 16);
   const nodes = [], links = new Map();
   const mcpFrontmatter = new Map(); // Seiten-ID → [Servername, …] (Frontmatter `mcp: [..]`)
@@ -164,9 +216,15 @@ export function baueAnsichtsDaten(vault) {
     const quellen = arr("quellen"), shas = arr("quellen_sha");
     const pruef = [];
     quellen.forEach((q, i) => { try { if (shas[i] && idSet.has(q) && sha16(q) !== shas[i]) pruef.push(q); } catch {} });
-    const konflikte = (raw.match(/\[!KONFLIKT\] offen/g) || []).length;
+    // Knotenzahl aus demselben Parser wie die Entscheidungsliste (W1-Review #13): ein Ring im Gehirn hat immer
+    // einen Eintrag zum Entscheiden; unvollständige Kästen (A oder B fehlt) zählen getrennt als „kaputt“.
+    const kaesten = /\[!KONFLIKT\]/i.test(raw) ? konfliktKaesten(raw) : { konflikte: [], kaputt: 0 };
+    const konflikte = kaesten.konflikte.length, konflikteKaputt = kaesten.kaputt;
+    if (isWiki) for (const k of kaesten.konflikte) alleKonflikte.push({ seite: f.id, nr: k.nr, fp: k.fp, zeile: k.zeile, a: k.a, b: k.b });
+    // Gültigkeit nur aus dem Frontmatter — ohne Frontmatter zählt ein „pruefen_bis:“ im Text nicht (W1-Review #12)
+    const g = gueltigkeit(raw.startsWith("---\n") ? raw : "", { letzterCommitMs: changedMs[f.id] || null, jetzt });
     const statusLine = /als PRÜFBEDÜRFTIG behandeln|Status:\s*\*\*nicht bestätigt/.test(raw);
-    const status = konflikte || lintConflict.has(f.id) ? "konflikt" : (pruef.length || lintReview.has(f.id) || statusLine) ? "pruef" : "ok";
+    const status = konflikte || konflikteKaputt || lintConflict.has(f.id) ? "konflikt" : (pruef.length || lintReview.has(f.id) || statusLine) ? "pruef" : "ok";
     const name = f.p[f.p.length - 1].replace(/\.md$/, "");
     const titel = ((body.match(/^#\s+(.+)$/m) || [])[1] || str("name") || name).trim().replace(/\s+[–—-]\s+geprüft \d{2}\.\d{2}\.\d{4}$/, "");
     const wl = wikilinks(body);
@@ -183,7 +241,8 @@ export function baueAnsichtsDaten(vault) {
       rev: Number(str("rev")) || null, quellen: quellen.filter((q) => idSet.has(q)), usedIn: [],
       body: body.replace(/^\s+/, ""),
       added: added[f.id] || null, changed: changed[f.id] || null, status,
-      statusNote: konflikte ? `${konflikte} offene${konflikte > 1 ? "" : "r"} Konflikt` : pruef.length ? `Quelle geändert seit Einarbeitung: ${pruef.join(", ")}` : statusLine ? "Seite ist als nicht bestätigt markiert" : null,
+      statusNote: konflikte ? `${konflikte} offene${konflikte > 1 ? "" : "r"} Konflikt` : konflikteKaputt ? `${konflikteKaputt} unvollständige${konflikteKaputt > 1 ? "" : "r"} Konflikt-Kasten (A oder B fehlt)` : pruef.length ? `Quelle geändert seit Einarbeitung: ${pruef.join(", ")}` : statusLine ? "Seite ist als nicht bestätigt markiert" : null,
+      gueltigkeit: g.status, pruefenBis: g.pruefenBis, stand: g.stand, konflikte, konflikteKaputt, lesezahl: lesen.get(f.id) || 0,
     });
   }
   const byId = new Map(nodes.map(n => [n.id, n]));
@@ -202,6 +261,8 @@ export function baueAnsichtsDaten(vault) {
         desc: s.quellen.join(", ") + (s.benutzt ? ` · ${s.benutzt}×` : ""), beschreibung: "", linkZiele: Object.create(null),
         size: 0, rev: null, quellen: [], usedIn: [], body: "",
         added: null, changed: s.zuletzt || null, status: "ok", statusNote: null,
+        gueltigkeit: "ohne", pruefenBis: null, stand: null, konflikte: 0, konflikteKaputt: 0, lesezahl: mcpAufrufe.get(s.name) || 0,
+        gruppe: MCP_GRUPPE(s.name, s.quellen), icon: mcpIcon(s.name),
       });
     }
   }
@@ -222,11 +283,17 @@ export function baueAnsichtsDaten(vault) {
     }
   }
 
+  // Bedeutung aus Verbindungen (alle Kantenarten, je Knoten gezählt) + Lesezahl
+  const grad = new Map();
+  for (const e of edges) { grad.set(e.s, (grad.get(e.s) || 0) + 1); grad.set(e.t, (grad.get(e.t) || 0) + 1); }
+  const bd = bedeutungen(nodes.map((n) => ({ verbindungen: grad.get(n.id) || 0, lesezahl: n.lesezahl })));
+  nodes.forEach((n, i) => { n.bedeutung = bd[i].bedeutung; n.bedeutungStufe = bd[i].bedeutungStufe; });
+
   const dates = nodes.map((n) => n.added).filter(Boolean).sort();
   const daten = {
     built: new Date().toISOString().slice(0, 10), first: dates[0] || null, last: dates[dates.length - 1] || null,
     areas, nodes, edges, inbox: nodes.filter(n => n.area === "inbox").length,
-    mcp: mcpServer, warnungen,
+    mcp: mcpServer, konflikte: alleKonflikte, warnungen,
   };
   // Oberflächensprache aus der Config (nur "de"/"en"; sonst entscheidet die Ansicht selbst)
   const sprache = cfg.ansicht?.sprache;
@@ -279,7 +346,9 @@ export function datenSchluessel(vault) {
   const hash = createHash("sha256");
   baumAbdruck(vault, hash);
   const mtime = (p) => { try { const st = statSync(p); return `${st.mtimeMs}:${st.size}`; } catch { return "0"; } };
-  const teile = [mtime(join(vault, "brain.config.json"))];
+  // Gültigkeit („bald“/„abgelaufen“) und das 30-Tage-Lesefenster hängen am Kalendertag → lokales Datum in den Schlüssel
+  const d = new Date();
+  const teile = [`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`, mtime(join(vault, "brain.config.json"))];
   try {
     const head = execFileSync(gitBefehl({ cfg }), ["-C", vault, "rev-parse", "HEAD"], {
       encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true,

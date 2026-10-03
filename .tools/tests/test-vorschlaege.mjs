@@ -164,3 +164,78 @@ test("Vorschlag mit BOM wird gelistet", () => {
   assert.deepEqual(listeVorschlaege(v).map(x => x.titel), ["Mit BOM"]);
   assert.equal(entscheide(v, "bom-1", "uebernehmen").ok, true);
 });
+
+// ---------- v0.4: Arten lektion und pflege ----------
+test("lektion: Felder ziel/regel/warum/wie in Frontmatter und Liste; ungültiges Ziel, zu lang, Secret → 400", () => {
+  const v = neuerVault();
+  const id = schreibeVorschlag(v, vorschlag({ art: "lektion", titel: "Abends gießen", text: "**Regel:** Tomaten abends gießen.", ziel: "skill", regel: "Tomaten abends gießen.", warum: "Zweimal korrigiert.", wie: "Beim Gießplan." }), new Date(Date.UTC(2026, 9, 3)));
+  assert.match(id, /^20261003-000000-lektion-[0-9a-f]{6}$/);
+  assert.match(readFileSync(join(vorschlagOrdner(v), `${id}.md`), "utf8"), /\nziel: skill\nregel: "Tomaten abends gießen\."\nwarum: "Zweimal korrigiert\."\nwie: "Beim Gießplan\."\nerstellt: /);
+  const [l] = listeVorschlaege(v);
+  assert.deepEqual({ art: l.art, ziel: l.ziel, regel: l.regel, warum: l.warum, wie: l.wie }, { art: "lektion", ziel: "skill", regel: "Tomaten abends gießen.", warum: "Zweimal korrigiert.", wie: "Beim Gießplan." });
+  assert.equal(code(() => schreibeVorschlag(v, vorschlag({ art: "lektion", ziel: "wiki" }))), 400);
+  assert.equal(code(() => schreibeVorschlag(v, vorschlag({ art: "lektion", regel: "x".repeat(601) }))), 400);
+  assert.equal(code(() => schreibeVorschlag(v, vorschlag({ art: "lektion", wie: `Nutze ${KOEDER_PW}` }))), 400);
+  assert.equal(listeVorschlaege(v).length, 1);
+  assert.ok(!("ziel" in listeVorschlaege(neuerVault())), "fakt/stand behalten ihre Felder");
+});
+
+test("pflege: Feld befund; unbekannter Befund → 400; Übernehmen einer Lektion → <inbox>/_lektionen/, Pflege → <inbox>/_pflege/", () => {
+  const v = neuerVault();
+  const p = schreibeVorschlag(v, vorschlag({ art: "pflege", befund: "zusammenlegen" }));
+  assert.equal(listeVorschlaege(v)[0].befund, "zusammenlegen");
+  assert.equal(code(() => schreibeVorschlag(v, vorschlag({ art: "pflege", befund: "loeschen" }))), 400);
+  const l = schreibeVorschlag(v, vorschlag({ art: "lektion" }));
+  assert.equal(entscheide(v, l, "uebernehmen").ziel, `00_inbox/_lektionen/${l}.md`);
+  // Final-Review #1: ein Pflege-Vorschlag ist ein Prüfauftrag, keine Rohquelle — nie lose in der Inbox
+  assert.equal(entscheide(v, p, "uebernehmen").ziel, `00_inbox/_pflege/${p}.md`);
+  assert.equal(existsSync(join(v, "00_inbox", `${p}.md`)), false);
+  assert.match(readFileSync(join(v, "00_inbox", "_pflege", `${p}.md`), "utf8"), /^---\ntyp: vorschlag\nart: pflege\n/);
+  // fakt bleibt Rohquelle in der Inbox, Verwerfen eines Pflege-Vorschlags archiviert wie bisher
+  const f = schreibeVorschlag(v, vorschlag());
+  assert.equal(entscheide(v, f, "uebernehmen").ziel, `00_inbox/${f}.md`);
+  const p2 = schreibeVorschlag(v, vorschlag({ art: "pflege", befund: "veraltet" }));
+  assert.equal(entscheide(v, p2, "verwerfen").ziel, `90_archiv/vorschlaege-verworfen/${p2}.md`);
+  assert.equal(anzahlVorschlaege(v), 0);
+});
+
+test("pflege: _pflege als Symlink (etwa ins Wiki) → 400, Vorschlag bleibt liegen (Final-Review #1)", (t) => {
+  const v = neuerVault();
+  mkdirSync(join(v, "09_wiki"), { recursive: true });
+  mkdirSync(join(v, "00_inbox"), { recursive: true });
+  try { symlinkSync(join("..", "09_wiki"), join(v, "00_inbox", "_pflege"), "dir"); }
+  catch { t.skip("Symlinks hier nicht möglich"); return; }
+  const p = schreibeVorschlag(v, vorschlag({ art: "pflege", befund: "aufteilen" }));
+  assert.equal(code(() => entscheide(v, p, "uebernehmen")), 400);
+  assert.deepEqual(readdirSync(join(v, "09_wiki")), [], "nichts im Wiki gelandet");
+  assert.equal(listeVorschlaege(v).length, 1);
+});
+
+test("Inbox im Wiki (ordner.inbox im Wiki) → übernehmen 400, Vorschlag bleibt liegen (W1-Review #14)", () => {
+  const v = neuerVault();
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki/eingang" } }));
+  mkdirSync(join(v, "09_wiki", "eingang"), { recursive: true });
+  const fakt = schreibeVorschlag(v, vorschlag({ titel: "fakt" }));
+  const lektion = schreibeVorschlag(v, vorschlag({ titel: "lektion", art: "lektion" }));
+  assert.equal(code(() => entscheide(v, fakt, "uebernehmen")), 400);
+  assert.equal(code(() => entscheide(v, lektion, "uebernehmen")), 400);
+  assert.equal(existsSync(join(v, "09_wiki", "eingang", "_lektionen")), false, "kein Lektionsordner im Wiki angelegt");
+  assert.equal(listeVorschlaege(v).length, 2);
+});
+
+test("übernommener Pflege-Vorschlag: Lint zählt <inbox>/_pflege nicht als Inbox, eine lose Inbox-Datei schon (Final-Review #1)", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const T = fileURLToPath(new URL("..", import.meta.url));
+  const home = mkdtempSync(join(tmpdir(), "brain vor home "));
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && k !== "BRAIN_VAULT")), HOME: home, USERPROFILE: home };
+  const lint = (v) => { try { return execFileSync(process.execPath, [join(T, "brain-lint.mjs"), v], { encoding: "utf8", env, windowsHide: true }); } catch (e) { return String(e.stdout || ""); } };
+  const v = neuerVault();
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ clusters: [] }));
+  mkdirSync(join(v, "09_wiki"), { recursive: true });
+  const p = schreibeVorschlag(v, vorschlag({ art: "pflege", befund: "veraltet" }));
+  entscheide(v, p, "uebernehmen");
+  assert.doesNotMatch(lint(v), /INBOX:/);
+  writeFileSync(join(v, "00_inbox", "notiz.md"), "# Notiz\n");
+  assert.match(lint(v), /INBOX: 1 Datei\(en\) warten/);
+});

@@ -5,7 +5,11 @@ Dieses Verzeichnis ist ein Second Brain. Gilt für jeden Agenten (Claude Code, C
 ## Wissensfragen (Brain-First)
 {{WENN:ichKarte}}Lies zuerst `{{WIKI}}/ich.md` — wer die Person ist, woran sie arbeitet, was ihr wichtig ist (entfällt, wenn sie schon als „Brain-Ich-Karte" im Kontext steht).
 
-{{/WENN}}1. `{{NODE}} "{{VAULT}}/.tools/brain.mjs" search "<frage>"` → beste Datei lesen. Nie das ganze Brain breit einlesen.
+{{/WENN}}Gibt es `{{WIKI}}/_lektionen.md`, einmal kurz hineinschauen — gelernte Lektionen aus wiederholten Korrekturen
+oder Fehlschlägen (kurze Liste, je Eintrag ≤ 3 Zeilen). Bei Claude Code liegen diese stattdessen im eigenen
+Memory (Skill **lektion** schreibt sie dorthin); diese Datei ist für andere Werkzeuge.
+
+1. `{{NODE}} "{{VAULT}}/.tools/brain.mjs" search "<frage>"` → beste Datei lesen. Nie das ganze Brain breit einlesen.
 2. Liefert dein Werkzeug schon einen „Brain-Treffer" (Hook), diese Seite nur lesen, wenn sie zur Aufgabe passt.
 3. Rohquelle nur öffnen, wenn eine Seite PRÜFBEDÜRFTIG ist oder eine Entscheidung an einer Aussage hängt.
 
@@ -24,6 +28,8 @@ Dieses Verzeichnis ist ein Second Brain. Gilt für jeden Agenten (Claude Code, C
 - „importiere mein altes Brain aus <Ordner>" (Obsidian, Notion-Export, Logseq, Ordner mit Notizen) → Skill **import**
   (`{{VAULT}}/.tools/skills/import/SKILL.md`), kurz: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import <ordner|zip> [--name x]`.
 - „wie gut ist mein Brain" → `{{NODE}} "{{VAULT}}/.tools/brain.mjs" analyse`.
+- „was ist im Brain zu tun" / „was muss gepflegt werden" → `{{NODE}} "{{VAULT}}/.tools/brain.mjs" pflege` (abgelaufene
+  Seiten, offene Konflikte und Entscheidungen, Dubletten, je mit nächstem Schritt in Alltagssprache).
 - „mach die Suche besser" (Vorschlag aus `brain doctor`) → qmd nachrüsten: `npm i -g --prefix ~/.brain-kit @tobilu/qmd`
   (dieselbe Logik wie `sorgeFuerQmd` in der Installation; lädt aus dem Internet), danach `suche.profil` in
   `brain.config.json` auf `leicht` setzen und `{{NODE}} "{{VAULT}}/.tools/brain.mjs" refresh` ausführen.
@@ -37,4 +43,4 @@ Dieses Verzeichnis ist ein Second Brain. Gilt für jeden Agenten (Claude Code, C
 - Zeit, Lock und Prüfsumme nie per Shell-Werkzeug, sondern: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" jetzt` · `… lock` · `… unlock` · `… sha <datei>`.
 
 ## Skills
-ingest · import · lint · review · feedback · handoff · update · backup — je `{{VAULT}}/.tools/skills/<name>/SKILL.md`. Kann dein Werkzeug keine Skills laden, lies die Datei und arbeite sie ab.
+ingest · import · lint · review · feedback · handoff · update · backup · lektion — je `{{VAULT}}/.tools/skills/<name>/SKILL.md`. Kann dein Werkzeug keine Skills laden, lies die Datei und arbeite sie ab.

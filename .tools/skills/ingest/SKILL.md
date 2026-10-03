@@ -21,7 +21,24 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    Exit 3 → ABBRUCH: Fundstellen nennen, NICHTS schreiben, User fragen. Exit 0 → weiter.
 2b. **Lock setzen (Parallel-Sicherheit):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" lock`. Exit 1 (eine andere Sitzung arbeitet
    gerade, Lock jünger als 30 min) → NICHT einarbeiten, User informieren. Lock am Ende (Schritt 8) und bei
-   JEDEM Abbruch entfernen: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" unlock`.
+   JEDEM Abbruch entfernen: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" unlock`. Lock NICHT doppelt setzen — Schritt 2c
+   arbeitet unter demselben Lock weiter.
+2c. **Offene Entscheidungen zuerst** (nur falls `{{INBOX}}/_entscheidungen/` Dateien enthält): jede einzeln
+   abarbeiten, bevor die eigentliche Quelle drankommt. Je Auftrag: betroffene Seite öffnen, zuerst die QUELLE
+   präzisieren (nie den Kasten blind nach `wahl` umschreiben), dann den `[!KONFLIKT]`-Kasten entfernen
+   (`wahl: beide` behält beide Aussagen, aber als zwei normale Sätze statt Kasten — je mit Quelle), rev um 1
+   erhöhen, Entscheidung mit `notiz` (falls vorhanden) in {{WIKI}}/_log.md protokollieren, den Auftrag nach
+   `{{ARCHIV}}/entscheidungen-erledigt/` verschieben (anlegen falls nötig). Liegt zum selben Konflikt inzwischen
+   eine neuere Entscheidung vor (Meinung geändert, bevor eingearbeitet wurde), gilt nur die neueste — die
+   ältere wurde beim Entscheiden bereits ersetzt. Erst wenn keine Aufträge mehr offen sind, weiter mit Schritt 3.
+2d. **Pflege-Aufträge sind keine Quellen** (`{{INBOX}}/_pflege/`, Frontmatter `typ: vorschlag`, `art: pflege`): ein
+   übernommener Pflege-Vorschlag ist ein **Auftrag zur Prüfung**, ein KI-Ratschlag (zusammenlegen, aufteilen, veraltet,
+   Widerspruch, Lücke) — nie ein Beleg. Er wird NIE als Quelle eingearbeitet, NIE in einen Cluster einsortiert und
+   steht NIE in `quellen:`/`quellen_sha` einer Wiki-Seite. Abarbeiten nur auf ausdrücklichen Wunsch („arbeite die
+   Pflege-Aufträge ab“) und wie im Skill review: die genannten Seiten öffnen und jede Aussage gegen die ECHTEN
+   Rohquellen der Seite (ihre `quellen:`) prüfen; was die Rohquellen nicht tragen, wird nicht geändert, sondern der
+   Person als offene Frage vorgelegt. Danach den Auftrag nach `{{ARCHIV}}/pflege-erledigt/` verschieben (anlegen
+   falls nötig). Landet eine Datei mit `art: pflege` direkt in {{INBOX}}, gilt dasselbe — nicht als Quelle einarbeiten.
 3. **Betroffene Seiten finden:** {{WIKI}}/_index.md lesen (nach Ordnern gruppiert); bei Bedarf die
    `_<ordner>.md` des Themenordners. Nur die berührten Seiten öffnen (typisch 5–15). NIE das ganze Wiki laden.
 4. **Einarbeiten nach den 3 Riegeln** (_schema.md): gegen Originalquellen schreiben; Widersprüche
@@ -29,6 +46,9 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    (Frontmatter-Pflicht!) im passenden Ordner nach _schema.md „Ordner“ (neuer Themenordner erst ab 2 Seiten;
    Basename muss im ganzen Brain eindeutig sein — Lint prüft), Querverweise setzen. Beweisbindung: quellen + quellen_sha
    (`{{NODE}} "{{VAULT}}/.tools/brain.mjs" sha <quelle>`) auf den eingearbeiteten Stand setzen, rev um 1 erhöhen.
+   **Gültigkeit:** bei schnell veränderlichen Tatsachen (Preise, Versionen, Stände, Personen-Rollen) `stand: <heutiges Datum>`
+   und `pruefen_bis` setzen — Standard 90 Tage ab heute, bei Preisen 30 Tage (Datum selbst ausrechnen, nicht schätzen).
+   Andere Seiten brauchen diese Felder nicht.
 5. **Quelle einsortieren:** Von {{INBOX}} in den passenden Cluster verschieben (Cluster-Definitionen
    in brain.config.json); Wahl im Report nennen. WICHTIG: quellen-Pfade im Frontmatter zeigen auf
    den NEUEN Ort, Hash NACH dem Verschieben berechnen.

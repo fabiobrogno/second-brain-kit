@@ -160,15 +160,16 @@ function leseMesslatte(vault) {
 // --- Seiten: Gesamtzahl, nie gelesen, meistgelesen, verwaist/prüfbedürftig/konflikt aus lint-cache.txt -
 // lint-cache.txt: "- <ART>: <pfad> — <grund>". Der Pfad darf Leerzeichen tragen und kommt unter Windows mit "\\".
 export function lintPfade(text) {
-  const verwaist = new Set(), pruefbeduerftig = new Set(), konflikt = new Set();
+  const verwaist = new Set(), pruefbeduerftig = new Set(), konflikt = new Set(), abgelaufen = new Set();
   const pfad = (s) => s.trim().split("\\").join("/");
   for (const z of String(text ?? "").split(/\r?\n/)) {
     let m;
     if ((m = z.match(/^- VERWAIST:\s*(.+?)(?: — |$)/))) verwaist.add(pfad(m[1]));
     else if ((m = z.match(/^- PRÜFBEDÜRFTIG[^:]*:\s*(.+?)(?: — |$)/))) pruefbeduerftig.add(pfad(m[1]));
     else if ((m = z.match(/^- KONFLIKT[^:]*:\s*(.+?)(?: — |$)/))) konflikt.add(pfad(m[1]));
+    else if ((m = z.match(/^- ABGELAUFEN[^:]*:\s*(.+?)(?: — |$)/))) abgelaufen.add(pfad(m[1]));
   }
-  return { verwaist, pruefbeduerftig, konflikt };
+  return { verwaist, pruefbeduerftig, konflikt, abgelaufen };
 }
 
 // „Nie gelesen“ und „meistgelesen“ gelten im Analyse-Fenster (seitMs), nicht über die ganze (rotierende) Log-Datei.
@@ -190,7 +191,7 @@ function leseSeiten(vault, cfg, o, seitMs) {
     .map(([seite, mal]) => ({ seite, mal }));
 
   const mitWiki = (s) => (s.startsWith(`${o.wiki}/`) ? s : `${o.wiki}/${s}`);
-  let verwaist = new Set(), pruefbeduerftig = new Set(), konflikt = new Set();
+  let verwaist = new Set(), pruefbeduerftig = new Set(), konflikt = new Set(), abgelaufen = new Set();
   const lintCache = join(vault, ".logs", "lint-cache.txt");
   if (existsSync(lintCache)) {
     let roh = "";
@@ -199,6 +200,7 @@ function leseSeiten(vault, cfg, o, seitMs) {
     verwaist = new Set([...l.verwaist].map(mitWiki));
     pruefbeduerftig = new Set([...l.pruefbeduerftig].map(mitWiki));
     konflikt = new Set([...l.konflikt].map(mitWiki));
+    abgelaufen = new Set([...l.abgelaufen].map(mitWiki));
   }
   return {
     gesamt: seiten.length,
@@ -207,6 +209,8 @@ function leseSeiten(vault, cfg, o, seitMs) {
     verwaist: [...verwaist].sort(),
     pruefbeduerftig: [...pruefbeduerftig].sort(),
     konflikt: [...konflikt].sort(),
+    // Spec A: „abgelaufen“ auch in der Analyse (Quelle wie die übrigen Befunde: der Lint-Cache)
+    abgelaufen: [...abgelaufen].sort(),
   };
 }
 

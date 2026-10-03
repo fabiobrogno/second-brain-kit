@@ -4,7 +4,7 @@
 // HOME/USERPROFILE zeigen auf ein Temp-Home, PATH auf einen leeren Temp-Ordner, keine geerbten GIT_*.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,12 @@ const FAKE_DIR = mkdtempSync(join(tmpdir(), "fake-ernte-"));
 const FAKE_ERNTE = join(FAKE_DIR, "fake-ernte.mjs");
 writeFileSync(FAKE_ERNTE, `import { writeFileSync } from "node:fs";
 writeFileSync(process.env.FAKE_ERNTE_LOG, JSON.stringify({ args: process.argv.slice(2), ernte: process.env.BRAIN_ERNTE || "", vault: process.env.BRAIN_VAULT || "" }));
+`);
+
+// Fake-Session-Auswerter (v0.4): schreibt Argumente nach $FAKE_LEKTIONEN_LOG.
+const FAKE_LEKTIONEN = join(FAKE_DIR, "fake-lektionen.mjs");
+writeFileSync(FAKE_LEKTIONEN, `import { writeFileSync } from "node:fs";
+writeFileSync(process.env.FAKE_LEKTIONEN_LOG, JSON.stringify({ args: process.argv.slice(2), vault: process.env.BRAIN_VAULT || "" }));
 `);
 
 function basisEnv(extra = {}) {
@@ -136,6 +142,85 @@ test("Schalter aus (Standard): keine Ernte, keine Ausgabe", async () => {
   assert.ok(await sicherNichts(log));
 });
 
+// ---------- v0.4: Session-Auswerter (Lektionen) am Sitzungsende ----------
+test("Lektionen: SessionEnd startet den Session-Auswerter losgelöst (Standard lokal) — auch ohne Ernte-Schalter, still", async () => {
+  const v = neuerVault({}), tr = transkript(), log = join(FAKE_DIR, "l1.json"), ernteLog = join(FAKE_DIR, "l1-ernte.json");
+  const r = starte(AUSLOESER, ["--art", "fakt"], hookEingabe(tr), basisEnv({ BRAIN_VAULT: v, BRAIN_LEKTIONEN_SKRIPT: FAKE_LEKTIONEN, FAKE_LEKTIONEN_LOG: log, BRAIN_ERNTE_SKRIPT: FAKE_ERNTE, FAKE_ERNTE_LOG: ernteLog }));
+  assert.equal(r.status, 0); assert.equal(r.stdout + r.stderr, "");
+  assert.ok(r.ms < 300, `Auslöser brauchte ${r.ms} ms`);
+  const lauf = await warteAuf(log);
+  assert.ok(lauf, "Session-Auswerter wurde nicht gestartet");
+  assert.deepEqual(lauf.args, ["--transkript", tr, "--sid", "sitzung-abc123", "--cwd", "/projekte/garten", v]);
+  assert.equal(lauf.vault, v);
+  assert.ok(await sicherNichts(ernteLog), "Ernte-Schalter aus → keine Ernte");
+});
+
+test("Lektionen: Schalter aus, --art stand, kaputte Config oder fehlendes Transkript → kein Session-Auswerter", async () => {
+  const tr = transkript();
+  const faelle = [
+    [neuerVault({ lektionen: "aus", ernteSitzungsende: true }), ["--art", "fakt"], hookEingabe(tr)],
+    [neuerVault({ staendeIntervallStunden: 2 }), ["--art", "stand"], hookEingabe(tr)],
+    [neuerVault({}), ["--art", "fakt"], hookEingabe(join(FAKE_DIR, "gibt-es-nicht.jsonl"))],
+  ];
+  const kaputt = mkdtempSync(join(tmpdir(), "ausloeser-kaputt-"));
+  writeFileSync(join(kaputt, "brain.config.json"), "{ kaputt");
+  faelle.push([kaputt, ["--art", "fakt"], hookEingabe(tr)]);
+  for (const [i, [v, args, eingabe]] of faelle.entries()) {
+    const log = join(FAKE_DIR, `l2-${i}.json`);
+    starte(AUSLOESER, args, eingabe, basisEnv({ BRAIN_VAULT: v, BRAIN_LEKTIONEN_SKRIPT: FAKE_LEKTIONEN, FAKE_LEKTIONEN_LOG: log, BRAIN_ERNTE_SKRIPT: FAKE_ERNTE, FAKE_ERNTE_LOG: join(FAKE_DIR, `l2-e-${i}.json`) }));
+    assert.ok(await sicherNichts(log), `Fall ${i}: Session-Auswerter gestartet`);
+  }
+});
+
+test("Lektionen Ende-zu-Ende: echte lektionen.mjs, zwei gleiche Korrekturen → ein Vorschlag art lektion (0 Tokens)", async () => {
+  const v = neuerVault({}), d = mkdtempSync(join(tmpdir(), "ausloeser-lektion-"));
+  const tr = join(d, "sitzung.jsonl");
+  const z = (type, content) => JSON.stringify({ type, cwd: "/projekte/garten", message: { role: type, content } });
+  writeFileSync(tr, [
+    z("user", "Erstelle den Saatplan für das Beet."), z("assistant", [{ type: "text", text: "Saatplan: Möhren im März." }]),
+    z("user", "Nein, Möhren im Saatplan erst im April säen."), z("assistant", [{ type: "text", text: "Ok, März bleibt." }]),
+    z("user", "Schon wieder falsch: Möhren im Saatplan erst April!"), z("assistant", [{ type: "text", text: "Korrigiert." }]),
+  ].join("\n") + "\n");
+  starte(AUSLOESER, ["--art", "fakt"], hookEingabe(tr), basisEnv({ BRAIN_VAULT: v }));
+  const dir = join(v, "00_inbox", "_vorschlaege");
+  const ende = Date.now() + 10000;
+  while (Date.now() < ende && !(existsSync(dir) && readdirSync(dir).length)) await new Promise(r => setTimeout(r, 50));
+  const dateien = existsSync(dir) ? readdirSync(dir) : [];
+  assert.equal(dateien.length, 1, "genau ein Lektions-Vorschlag");
+  assert.match(readFileSync(join(dir, dateien[0]), "utf8"), /^---\ntyp: vorschlag\nart: lektion\n/);
+});
+
+test("session-start (v0.4): Zeilen für wartende Lektionen und Entscheidungen; Vorschläge ohne Lektionen; keine Zeile für übernommene Lektionen; still ohne Anlass", async () => {
+  const { schreibeVorschlag } = await import("../vorschlaege.mjs");
+  // Wochen-Zeile aus (die prüft test-pflegelauf.mjs) — sonst hinge diese Probe vom Pflegebericht ab.
+  const v = neuerVault({ projektAutomatik: false, wochenbericht: false });
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "letzter-review"), "");
+  const ss = (env = {}) => starte(join(ADAPTER, "session-start.mjs"), [], {}, basisEnv({ BRAIN_VAULT: v, BRAIN_SESSION_NUR_STATUS: "1", ...env }));
+  let r = ss();
+  assert.equal(r.status, 0); assert.equal(r.stdout, "", "ohne Anlass still");
+  schreibeVorschlag(v, { art: "fakt", titel: "Beet", text: "Das Beet liegt im Süden." });
+  schreibeVorschlag(v, { art: "lektion", titel: "Gießen", text: "Rohkandidat" });
+  schreibeVorschlag(v, { art: "lektion", titel: "Säen", text: "Rohkandidat" });
+  mkdirSync(join(v, "00_inbox", "_entscheidungen"), { recursive: true });
+  writeFileSync(join(v, "00_inbox", "_entscheidungen", "e1.md"), "---\ntyp: entscheidung\n---\n");
+  mkdirSync(join(v, "00_inbox", "_lektionen"), { recursive: true });
+  writeFileSync(join(v, "00_inbox", "_lektionen", "l1.md"), "x");
+  writeFileSync(join(v, "00_inbox", "_lektionen", "skill-entwurf.md"), "x");
+  // Final-Review #1: übernommene Pflege-Vorschläge sind Prüfaufträge, keine Inbox-Quellen
+  mkdirSync(join(v, "00_inbox", "_pflege"), { recursive: true });
+  writeFileSync(join(v, "00_inbox", "_pflege", "p1.md"), "---\ntyp: vorschlag\nart: pflege\n---\n");
+  r = ss();
+  const zeilen = r.stdout.trim().split(/\r?\n/);
+  assert.deepEqual(zeilen, [
+    "1 neuer Vorschlag — im Gehirn prüfen („zeig mir mein Brain“)",
+    "1 Entscheidung wartet auf Umsetzung — /ingest",
+    "2 Lektionen warten auf Übernahme — im Gehirn unter Vorschläge",
+  ], r.stdout);
+  assert.ok(!/übernommene Lektion/.test(r.stdout), "nicht in der Spec (0-Token-Regel, W1-Review #7)");
+  assert.ok(!/Brain-Inbox/.test(r.stdout), "_entscheidungen/_lektionen/_pflege zählen nicht als Inbox");
+});
+
 test("--art stand nur mit staendeIntervallStunden > 0; fehlendes Transkript → nichts; kaputtes stdin → Exit 0 still", async () => {
   const tr = transkript();
   const aus = neuerVault({ ernteSitzungsende: true }), logAus = join(FAKE_DIR, "c1.json");
@@ -233,4 +318,50 @@ test("BRAIN_ERNTE=1: alle Hooks geben nichts aus, Exit 0, starten nichts und sch
   assert.ok(await sicherNichts(log));
   assert.ok(!existsSync(join(v, ".logs")), `Logs geschrieben: ${existsSync(join(v, ".logs")) ? readdirSync(join(v, ".logs")) : ""}`);
   assert.ok(!existsSync(join(v, "AGENTS.md")), "session-hintergrund lief trotzdem");
+});
+
+test("session-start (v0.4): Wochen-Zeile nur aus dem Cache (0 Wartezeit); ohne Vorschläge/Entscheidungen, mit übernommenen Lektionen; Konfliktzeile ohne entschiedene Kästen und ohne Symlinks; nie doppelt", async (t) => {
+  const { schreibeBerichtCache } = await import("../pflege.mjs");
+  const { schreibeEntscheidung } = await import("../entscheidungen.mjs");
+  const v = neuerVault({ projektAutomatik: false });
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "letzter-review"), "");
+  mkdirSync(join(v, "09_wiki", "geräte"), { recursive: true });
+  const kasten = (a, b) => `> [!KONFLIKT] offen — Du entscheidest\n> A: "${a}"\n> B: "${b}"\n`;
+  writeFileSync(join(v, "09_wiki", "geräte", "drucker.md"), "# Drucker\n\n" + kasten("Port 1", "Port 2") + "\n" + kasten("rot", "blau"));
+  const ss = () => starte(join(ADAPTER, "session-start.mjs"), [], {}, basisEnv({ BRAIN_VAULT: v, BRAIN_SESSION_NUR_STATUS: "1" }));
+  // ohne Cache: keine Wochen-Zeile, keine Marke — aber die Konfliktzeile
+  let r = ss();
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.stdout.trim().split(/\r?\n/), ["Brain-Wiki: offene Konflikte auf 1 Seite(n) — Entscheidung nötig (/brain-lint)."]);
+  assert.ok(!existsSync(join(v, ".logs", "pflege-woche")), "ohne Cache keine Marke");
+  // beide Kästen entschieden → keine Konfliktzeile mehr (Auftrag wartet, eigene Zeile)
+  schreibeEntscheidung(v, { seite: "09_wiki/geräte/drucker.md", nr: 1, wahl: "a" });
+  schreibeEntscheidung(v, { seite: "09_wiki/geräte/drucker.md", nr: 2, wahl: "b" });
+  r = ss();
+  assert.deepEqual(r.stdout.trim().split(/\r?\n/), ["2 Entscheidungen warten auf Umsetzung — /ingest"]);
+  // Symlink-Seite nach außen zählt nicht
+  const aussen = mkdtempSync(join(tmpdir(), "ausloeser-aussen-"));
+  writeFileSync(join(aussen, "fremd.md"), kasten("x", "y"));
+  let symlinks = true;
+  try { symlinkSync(join(aussen, "fremd.md"), join(v, "09_wiki", "link.md")); } catch { symlinks = false; }
+  if (symlinks) assert.ok(!/offene Konflikte/.test(ss().stdout), "Symlink nach außen zählt nicht");
+  // Cache mit Arbeit → genau eine Wochen-Zeile ohne Vorschläge/Entscheidungen (eigene Zeilen), aber mit übernommenen
+  // Lektionen (keine eigene Zeile, Final-Review #4); Konfliktzeile entfällt
+  writeFileSync(join(v, "09_wiki", "neu.md"), "# Neu\n\n" + kasten("eins", "zwei"));
+  schreibeBerichtCache(v, { erstellt: "2026-10-03T00:00:00Z", zuTun: 9, posten: [
+    { schluessel: "abgelaufen", anzahl: 2 }, { schluessel: "konflikte", anzahl: 1 }, { schluessel: "entscheidungen", anzahl: 2 },
+    { schluessel: "vorschlaege", anzahl: 3 }, { schluessel: "lektionen", anzahl: 1 }, { schluessel: "dubletten", anzahl: 1 },
+  ] });
+  const t0 = Date.now();
+  r = ss();
+  assert.ok(Date.now() - t0 < 5000);
+  const zeilen = r.stdout.trim().split(/\r?\n/);
+  assert.deepEqual(zeilen, ["Brain-Woche: 2 abgelaufen · 1 Konflikt · 1 Lektion wartet — im Gehirn unter Pflege", "2 Entscheidungen warten auf Umsetzung — /ingest"], r.stdout);
+  assert.ok(existsSync(join(v, ".logs", "pflege-woche")), "Marke nach Ausgabe");
+  // innerhalb der Woche: wieder die Konfliktzeile statt der Wochen-Zeile
+  r = ss();
+  assert.match(r.stdout, /^Brain-Wiki: offene Konflikte auf 1 Seite\(n\)/m);
+  assert.ok(!/Brain-Woche/.test(r.stdout));
+  void t;
 });

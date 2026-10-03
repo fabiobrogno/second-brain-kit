@@ -209,4 +209,83 @@ RC=0; OUT=$(eval "${B[9]}" 2>&1) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: 0.3.0 Done-Prüfung (einstellungen) rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -q '^liveAufleuchten=true' || { echo "FAIL: 0.3.0 Done-Prüfung ohne liveAufleuchten: $OUT"; exit 1; }
 
+# 5) Migration 0.4.0, Block für Block in der Reihenfolge der Datei — eigenes Temp-Home (0.3-Stand: die
+# Hook-Dateien ernte-ausloeser.mjs/session-start.mjs sind seit 0.3 registriert, 0.4.0 bringt keine neue
+# Hook-Datei, nur neue interne Trigger — der Test prüft deshalb nur den idempotenten Rerun), eigener Vault
+# mit alter AGENTS.md. Keine Datenmigration zu prüfen (Spec: „keine Datenmigration").
+M4="$REPO/migrations/0.4.0.md"
+[ -f "$M4" ] || { echo "FAIL: migrations/0.4.0.md fehlt"; exit 1; }
+H4="$T/home4"; mkdir -p "$H4"; export HOME="$H4" USERPROFILE="$H4"
+V4="$T/Deniz's Brain, v0.4"
+cp -R "$D/fixture" "$V4"; printf 'alte AGENTS.md (0.3.0)\n' > "$V4/AGENTS.md"
+B=(); while IFS= read -r -d '' b; do B+=("$b"); done < <(bloecke "$M4" "$V4" "$KK" "node"; printf '\0')
+[ "${#B[@]}" = 10 ] || { echo "FAIL: 0.4.0.md hat ${#B[@]} node-Blöcke statt 10 (Step 1, Step 2 ×2 + Prüfung, Step 3 Erkennung + Adapter + Prüfung, Step 4 + Prüfung, Done)"; exit 1; }
+
+# Step 1: Kit vollständig / Kit fehlt
+RC=0; eval "${B[0]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 1 Prüfung scheitert bei vorhandenem Kit (rc=$RC): ${B[0]}"; exit 1; }
+RC=0; eval "${B[0]//"$KK"/$T/gibt-es-nicht}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.4.0 Step 1 Prüfung meldet fehlendes Kit nicht (rc=$RC)"; exit 1; }
+
+# Step 2: AGENTS.md neu rendern (+ Codex-Skills)
+RC=0; eval "${B[3]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.4.0 Step-2-Prüfung erkennt die alte AGENTS.md nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[1]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 2 (AGENTS.md rendern) rc=$RC: $OUT"; exit 1; }
+RC=0; OUT=$(eval "${B[2]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 2 (Codex-Skills rendern) rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[3]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step-2-Prüfung nach dem Rendern rc=$RC"; exit 1; }
+grep -qF 'brain.mjs" pflege' "$V4/AGENTS.md" || { echo "FAIL: AGENTS.md kennt pflege nicht"; exit 1; }
+
+# Step 3: ohne Adapter (andere KI) → Erkennung 1, Schritt samt Prüfung entfällt
+RC=0; eval "${B[4]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.4.0 Step 3 erkennt einen Adapter, obwohl keiner installiert ist (rc=$RC)"; exit 1; }
+# 0.3-Stand: Adapter-Command mit Marke, settings.json noch ohne jeden Brain-Hook, fremder Hook muss bleiben
+mkdir -p "$H4/.claude/commands"
+printf -- '---\ndescription: alt\n---\n<!-- brain-kit -->\nUpdate-Skill 0.3\n' > "$H4/.claude/commands/brain-update.md"
+printf '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "echo fremd" } ] } ] } }\n' > "$H4/.claude/settings.json"
+RC=0; eval "${B[4]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 3 erkennt den installierten Adapter nicht (rc=$RC)"; exit 1; }
+RC=0; eval "${B[6]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.4.0 Step-3-Prüfung erkennt die fehlenden Hooks nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[5]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 3 (Adapter aus <kit-klon>) rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[6]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step-3-Prüfung nach dem Adapter-Lauf rc=$RC"; exit 1; }
+grep -qF "echo fremd" "$H4/.claude/settings.json" || { echo "FAIL: 0.4.0 fremder Hook in settings.json verloren"; exit 1; }
+V4F="$(printf '%s' "$V4" | tr '\\' '/')"
+grep -qF "$V4F/.tools/adapters/claude-code/ernte-ausloeser.mjs" "$H4/.claude/settings.json" || { echo "FAIL: 0.4.0 ernte-ausloeser zeigt nicht auf <vault>/.tools"; exit 1; }
+grep -qF "$KK" "$H4/.claude/settings.json" && { echo "FAIL: 0.4.0 settings.json verweist auf den Kit-Klon"; exit 1; }
+# Zweiter Lauf: idempotent (ernte-ausloeser steht für PreCompact UND SessionEnd — 2 ist korrekt, nicht dupliziert)
+RC=0; OUT=$(eval "${B[5]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 3 zweiter Lauf rc=$RC: $OUT"; exit 1; }
+N=$(grep -o 'ernte-ausloeser.mjs' "$H4/.claude/settings.json" | wc -l | tr -d ' ')
+[ "$N" = 2 ] || { echo "FAIL: ernte-ausloeser nach zweitem Lauf $N-mal statt 2-mal (PreCompact+SessionEnd)"; exit 1; }
+
+# Step 4 (Final-Review #6): ohne _schema.md nichts zu tun; alte _schema.md ohne pruefen_bis → Absatz ergänzt,
+# zweiter Lauf ändert nichts; eine Schema-Datei, die pruefen_bis schon erklärt, bleibt byte-gleich.
+RC=0; eval "${B[8]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step-4-Prüfung ohne _schema.md rc=$RC"; exit 1; }
+RC=0; eval "${B[7]}" || RC=$?
+[ "$RC" = 0 ] && [ ! -e "$V4/09_wiki/_schema.md" ] || { echo "FAIL: 0.4.0 Step 4 ohne _schema.md (rc=$RC) oder legt eine an"; exit 1; }
+printf '# Wiki-Schema (0.3)\n\n## Frontmatter\nname, description\n' > "$V4/09_wiki/_schema.md"
+RC=0; eval "${B[8]}" || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: 0.4.0 Step-4-Prüfung erkennt das alte Schema nicht (rc=$RC)"; exit 1; }
+RC=0; OUT=$(eval "${B[7]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step 4 rc=$RC: $OUT"; exit 1; }
+RC=0; eval "${B[8]}" || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Step-4-Prüfung nach dem Ergänzen rc=$RC"; exit 1; }
+grep -q '^# Wiki-Schema (0.3)' "$V4/09_wiki/_schema.md" && grep -q '^- Gültigkeit: `stand: YYYY-MM-DD`' "$V4/09_wiki/_schema.md" \
+  || { echo "FAIL: 0.4.0 Step 4 hat den Absatz nicht (oder den alten Inhalt nicht behalten)"; exit 1; }
+VORHER=$(cksum < "$V4/09_wiki/_schema.md")
+RC=0; eval "${B[7]}" || RC=$?
+[ "$RC" = 0 ] && [ "$(cksum < "$V4/09_wiki/_schema.md")" = "$VORHER" ] || { echo "FAIL: 0.4.0 Step 4 zweiter Lauf ändert das Schema (rc=$RC)"; exit 1; }
+
+# Done: .tools ersetzt → Pflegebericht lesbar
+kopiere_tools "$KK" "$V4"
+RC=0; OUT=$(eval "${B[9]}" 2>&1) || RC=$?
+[ "$RC" = 0 ] || { echo "FAIL: 0.4.0 Done-Prüfung (pflege) rc=$RC: $OUT"; exit 1; }
+echo "$OUT" | grep -q '^Pflegebericht' || { echo "FAIL: 0.4.0 Done-Prüfung ohne Pflegebericht-Zeile: $OUT"; exit 1; }
+
 echo "OK test-migrationen"

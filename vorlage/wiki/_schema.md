@@ -17,7 +17,7 @@
   der Übersicht jenes Ordners.
 - Dateinamen behalten das Typ-Präfix und sind im ganzen Brain eindeutig; Links immer als `[[basename]]`.
 - Schnell veränderliche Tatsachen (Zählungen, Status, Listen, Ports) tragen „Stand <Datum>" oder verweisen
-  auf das führende System. Momentaufnahmen dürfen `verfall: <Tage>` tragen.
+  auf das führende System. Gültigkeit per Frontmatter (siehe „Optionale Frontmatter").
 - Gute Chat-Antworten: als Rohquelle nach inbox → /ingest. Eigene `synthese_`-Seite nur, wenn sie ≥ 2 Seiten
   verbindet und keine bestehende Seite erweitert werden kann.
 
@@ -37,7 +37,12 @@ rev: 1
   (sonst reicht Namensgleichheit ab 4 Zeichen).
 - `repo: ["<repo-name>", ...]` / `pfade: ["<ordnername>", ...]` — macht die Seite zur „Projektseite": trifft der
   Ordnername von `cwd` bzw. der Git-Repo-Name darauf zu, nennt der Sitzungsstart genau diese Seite.
-- Beide sind rein additiv — ohne sie funktioniert die Seite wie bisher.
+- Gültigkeit: `stand: YYYY-MM-DD` (Wissensstand), `pruefen_bis: YYYY-MM-DD` (feste Frist) und/oder `verfall: <Tage>`
+  (Momentaufnahme, gezählt ab dem letzten Commit der Seite). Abgelaufen = `pruefen_bis` liegt vor heute oder der
+  Verfall ist überschritten → Lint meldet `ABGELAUFEN`, das Gehirn zeigt die Seite markiert. Beim Einarbeiten
+  schnell veränderlicher Tatsachen (Preise, Versionen, Stände, Rollen) `pruefen_bis` setzen: Standard 90 Tage,
+  Preise 30 Tage. Seiten ohne diese Felder gelten weder als abgelaufen noch als gültig geprüft.
+- Alle optionalen Felder sind rein additiv — ohne sie funktioniert die Seite wie bisher.
 
 ## Beweisbindung
 quellen_sha bindet die Seite an den eingearbeiteten Quellenstand. Ändert sich die Quelle
@@ -52,6 +57,8 @@ Hash berechnen: `shasum -a 256 <datei> | cut -c1-16` · rev bei jedem Re-Ingest 
    > B: "<Aussage>" — Quelle: [[pfad-b]]
    Auflösung nur nach User-Entscheidung: zuerst die QUELLE präzisieren, dann Kasten
    entfernen, Entscheidung in _log.md protokollieren.
+   Das Format genau so halten (Kopfzeile, dann je eine Zeile `A:` und `B:` im selben Zitatblock) — das Gehirn
+   liest die Kästen daraus und zeigt A und B zum Entscheiden nebeneinander.
 3. Jeder Lauf wird in _log.md protokolliert (Format siehe dort).
 
 ## Regeln

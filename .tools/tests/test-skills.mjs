@@ -79,7 +79,7 @@ test("Claude-Commands: update/backup heißen brain-update/brain-backup, alle tra
   const v = mkdtempSync(join(tmpdir(), "v-")); writeFileSync(join(v, "brain.config.json"), "{}");
   execFileSync(process.execPath, [build, v, "--ziel", "claude-commands", z]);
   const dateien = readdirSync(z).sort();
-  assert.deepEqual(dateien, ["brain-backup.md", "brain-feedback.md", "brain-import.md", "brain-lint.md", "brain-review.md", "brain-update.md", "handoff.md", "ingest.md"]);
+  assert.deepEqual(dateien, ["brain-backup.md", "brain-feedback.md", "brain-import.md", "brain-lektion.md", "brain-lint.md", "brain-review.md", "brain-update.md", "handoff.md", "ingest.md"]);
   for (const d of dateien) assert.match(readFileSync(join(z, d), "utf8"), /^---\n[\s\S]*?\n---\n<!-- brain-kit -->\n/, d);
 });
 test("Gleichnamiger fremder Command ohne Marke: Backup .bak-<zeit> + ersetzt + Meldung; eigener wird still überschrieben", () => {
@@ -119,4 +119,14 @@ test("Import-Skill Schritt 4: Notizen mit Zugangsdaten sind NICHT übernommen �
   assert.match(schritt4, /Nie eine Datei unter `\{\{INBOX\}\}\/_import\/` bearbeiten/);
   assert.ok(!/liegen jetzt nur als unveränderte Rohquelle/.test(schritt4), "alte, falsche Aussage");
   assert.match(schritt4, /Original-Notiz \(in der Quelle\)/);
+});
+test("ingest und review: Pflege-Aufträge (<inbox>/_pflege) sind Prüfaufträge, keine Quellen (Final-Review #1)", () => {
+  for (const s of ["ingest", "review"]) {
+    const raw = readFileSync(join(T, "skills", s, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
+    assert.match(raw, /\{\{INBOX\}\}\/_pflege\//, `${s}: Ordner genannt`);
+    assert.match(raw, /\*\*Auftrag zur Prüfung/, `${s}: Auftrag zur Prüfung`);
+    assert.match(raw, /nie\s+als\s+`quellen:`|NIE\s+in\s+`quellen:`/i, `${s}: nie als quellen`);
+    assert.match(raw, /echten Rohquellen|ECHTEN\s+Rohquellen/, `${s}: Prüfung gegen echte Rohquellen`);
+    assert.match(raw, /\{\{ARCHIV\}\}\/pflege-erledigt\//, `${s}: danach archivieren`);
+  }
 });

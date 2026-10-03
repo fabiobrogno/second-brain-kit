@@ -129,10 +129,13 @@ export function istAusgeschlossen(cwd, liste, { plattform = process.platform, ho
 
 // ---------- Transkript ----------
 
+// Gemeinsame Helfer (v0.4): Session-Auswerter (lektionen.mjs) und Pflege-Lauf (pflegelauf.mjs) nutzen denselben
+// JSONL-Leser, denselben schlanken Haiku-Aufruf (rufeHaiku) und dieselbe Usage-Auswertung (leseClaudeAntwort).
+
 // Ab Byte `ab` (Zeilengrenze eines früheren Laufs; 0 = Anfang), höchstens die letzten MAX_LESEN Bytes.
 // → { zeilen, bis }: bis = Byte hinter der letzten vollständigen Zeile (eine unvollständige letzte Zeile, die
 // gerade geschrieben wird, zählt erst beim nächsten Lauf). Ist die Datei kürzer als `ab` (ersetzt), gilt 0.
-function leseEnde(pfad, ab = 0) {
+export function leseEnde(pfad, ab = 0) {
   const fd = openSync(pfad, "r");
   try {
     const groesse = fstatSync(fd).size;
@@ -221,9 +224,12 @@ export function leseClaudeAntwort(stdout) {
 // Die Argumente für claude: Prompt kommt über stdin. --tools "" = keine eingebauten Werkzeuge,
 // --strict-mcp-config + leere --mcp-config = keine MCP-Server (auch nicht aus ~/.claude.json/Connectors),
 // --system-prompt ersetzt den Claude-Code-Systemprompt, --no-session-persistence legt kein Sitzungsprotokoll an.
-export function claudeArgs(art) {
+export function haikuArgs(systemPrompt) {
   return ["-p", "--model", "haiku", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-    "--system-prompt", auftrag(art), "--no-session-persistence", "--setting-sources", "project", "--output-format", "json"];
+    "--system-prompt", systemPrompt, "--no-session-persistence", "--setting-sources", "project", "--output-format", "json"];
+}
+export function claudeArgs(art) {
+  return haikuArgs(auftrag(art));
 }
 
 // ---------- Marken ----------
@@ -242,7 +248,7 @@ function schreibeFaktStand(vault, sid, bis) {
 
 // ---------- Lock ----------
 
-function nimmLock(datei, jetzt) {
+export function nimmLock(datei, jetzt) {
   mkdirSync(dirname(datei), { recursive: true });
   for (let versuch = 0; versuch < 2; versuch++) {
     try { writeFileSync(datei, `${process.pid}\n`, { flag: "wx" }); return true; }
@@ -262,25 +268,33 @@ function nimmLock(datei, jetzt) {
 // Fester, leerer Arbeitsordner je Vault (Final-Review #9): claude legt je Arbeitsordner einen Projekteintrag an —
 // mit einem festen Ordner bleibt es bei einem statt einem je Lauf. Vor dem Lauf frisch angelegt (nur wir, 0700);
 // gelingt das nicht (z. B. fremder Ordner gleichen Namens im geteilten /tmp), Rückfall auf einen Zufallsordner.
-export function arbeitsOrdner(vault) {
-  return join(tmpdir(), `brain-ernte-${createHash("sha256").update(fwd(vault)).digest("hex").slice(0, 12)}`);
+// `zweck` (v0.4): eigener fester Ordner je Aufgabe (z. B. "lektion", "pflege"), damit parallele Läufe von Ernte,
+// Session-Auswerter und Pflege-Lauf einander den Arbeitsordner nicht wegräumen. Ohne zweck: wie bisher.
+export function arbeitsOrdner(vault, zweck = "") {
+  const z = String(zweck || "").replace(/[^a-z0-9]/g, "").slice(0, 20);
+  return join(tmpdir(), `brain-ernte-${createHash("sha256").update(fwd(vault)).digest("hex").slice(0, 12)}${z ? `-${z}` : ""}`);
 }
-function legeArbeitsOrdnerAn(vault) {
-  const fest = arbeitsOrdner(vault);
+function legeArbeitsOrdnerAn(vault, zweck = "") {
+  const fest = arbeitsOrdner(vault, zweck);
   try { rmSync(fest, { recursive: true, force: true }); mkdirSync(fest, { mode: 0o700 }); return fest; } catch {}
   return mkdtempSync(join(tmpdir(), "brain-ernte-"));
 }
 
 function rufeClaude(claudeBefehl, art, eingabe, vault) {
+  return rufeHaiku(claudeBefehl, auftrag(art), eingabe, vault);
+}
+
+// Schlanker Haiku-Aufruf mit eigenem Systemprompt; Eingabe über stdin. → { ausgabe } | { fehler }.
+export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = "" } = {}) {
   return new Promise((resolve) => {
     let arbeitsDir;
-    try { arbeitsDir = legeArbeitsOrdnerAn(vault); }
+    try { arbeitsDir = legeArbeitsOrdnerAn(vault, zweck); }
     catch { resolve({ fehler: "kein Temp-Ordner" }); return; }
     const aufraeumen = () => { try { rmSync(arbeitsDir, { recursive: true, force: true }); } catch {} };
     let kind;
     try {
       kind = execFile(claudeBefehl.befehl,
-        [...claudeBefehl.args, ...claudeArgs(art)],
+        [...claudeBefehl.args, ...haikuArgs(systemPrompt)],
         { cwd: arbeitsDir, env: kindUmgebung(), timeout: ZEITLIMIT_MS,
           windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" },
         (err, stdout) => {

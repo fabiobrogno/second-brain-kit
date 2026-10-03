@@ -1,6 +1,9 @@
 // .tools/vorschlaege.mjs — Vorschläge (aus der Hintergrund-Ernte) schreiben, auflisten, übernehmen, verwerfen.
 // Ablage: <inbox>/_vorschlaege/<id>.md. Übernehmen → <inbox>/<id>.md (normale Rohquelle), Verwerfen →
 // <archiv>/vorschlaege-verworfen/<id>.md. Nie löschen. Fehler tragen `code` (400/404/500) für den Dienst.
+// v0.4: Art „lektion" (Session-Auswerter; Felder ziel/regel/warum/wie — Übernehmen → <inbox>/_lektionen/, dort
+// schreibt der Skill „lektion" sie an den richtigen Ort) und Art „pflege" (Pflege-Lauf; Feld befund — Übernehmen
+// → <inbox>/_pflege/: ein Prüfauftrag, keine Rohquelle; er darf nie als `quellen:` ins Wiki).
 // Nur Node-Standardbibliothek.
 import {
   readdirSync, readFileSync, writeFileSync, mkdirSync, lstatSync, realpathSync, linkSync,
@@ -13,7 +16,10 @@ import { findeSecrets } from "./secrets-muster.mjs";
 
 // Einzige Quelle für gültige Vorschlags-IDs (auch der Dienst prüft damit, dienst-lib.mjs).
 export const ID_MUSTER = /^[a-z0-9-]{1,80}$/;
-const ARTEN = new Set(["fakt", "stand"]);
+const ARTEN = new Set(["fakt", "stand", "lektion", "pflege"]);
+export const LEKTION_ZIELE = ["memory", "skill"];
+export const PFLEGE_BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "sonstiges"];
+const MAX_FELD = 600;
 const MAX_TITEL = 80, MAX_TEXT = 6000, MAX_META = 1000;
 
 const fehlerMit = (code, meldung) => Object.assign(new Error(meldung), { code });
@@ -50,14 +56,27 @@ function zeitId(d) {
 }
 
 // Schreibt einen Vorschlag; gibt die id zurück. Secret in irgendeinem Feld → 400, es wird nichts geschrieben.
-export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdner = "", sitzung = "" } = {}, jetzt = new Date()) {
+export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdner = "", sitzung = "", ziel = "memory", regel = "", warum = "", wie = "", befund = "sonstiges" } = {}, jetzt = new Date()) {
   if (!ARTEN.has(art)) throw fehlerMit(400, "Unbekannte Vorschlags-Art.");
   const t = einzeilig(titel).slice(0, MAX_TITEL);
   const inhalt = String(text ?? "").replace(/\r\n?/g, "\n").trim();
   if (!t || !inhalt) throw fehlerMit(400, "Vorschlag ohne Titel oder Text.");
   if (inhalt.length > MAX_TEXT) throw fehlerMit(400, "Vorschlag ist zu lang.");
   const qo = einzeilig(quelleOrdner).slice(0, MAX_META), qs = einzeilig(sitzung).slice(0, MAX_META);
-  if ([t, inhalt, qo, qs].some(hatZugangsdaten)) throw fehlerMit(400, "Vorschlag enthält vermutlich Zugangsdaten — nicht gespeichert.");
+  const extra = [];
+  if (art === "lektion") {
+    if (!LEKTION_ZIELE.includes(ziel)) throw fehlerMit(400, "Unbekanntes Ziel der Lektion.");
+    const felder = { regel, warum, wie };
+    for (const [k, w] of Object.entries(felder)) {
+      felder[k] = einzeilig(w);
+      if (felder[k].length > MAX_FELD) throw fehlerMit(400, "Lektion ist zu lang.");
+    }
+    extra.push(`ziel: ${ziel}`, `regel: ${JSON.stringify(felder.regel)}`, `warum: ${JSON.stringify(felder.warum)}`, `wie: ${JSON.stringify(felder.wie)}`);
+  } else if (art === "pflege") {
+    if (!PFLEGE_BEFUNDE.includes(befund)) throw fehlerMit(400, "Unbekannter Pflege-Befund.");
+    extra.push(`befund: ${befund}`);
+  }
+  if ([t, inhalt, qo, qs, ...extra].some(hatZugangsdaten)) throw fehlerMit(400, "Vorschlag enthält vermutlich Zugangsdaten — nicht gespeichert.");
 
   const dir = vorschlagOrdner(vault);
   mkdirSync(dir, { recursive: true });
@@ -69,6 +88,7 @@ export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdne
     `titel: ${JSON.stringify(t)}`,
     `quelle_ordner: ${JSON.stringify(qo)}`,
     `quelle_sitzung: ${JSON.stringify(qs)}`,
+    ...extra,
     `erstellt: ${erstellt}`,
     "---",
     "",
@@ -86,6 +106,8 @@ export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdne
 }
 
 // Einfacher Frontmatter-Leser (nur die eigenen, oben geschriebenen Felder). Wirft bei kaputter Datei.
+// Auch für übernommene Lektionen unter <inbox>/_lektionen/ (lektionen.mjs).
+export function leseVorschlagDatei(inhalt) { return leseDatei(inhalt); }
 function leseDatei(inhalt) {
   const zeilen = entferneBom(inhalt).split(/\r?\n/);
   if (zeilen[0] !== "---") throw new Error("kein Frontmatter");
@@ -105,7 +127,10 @@ function leseDatei(inhalt) {
   let titel = fm.titel || "";
   if (rumpf[0]?.startsWith("# ")) { titel = titel || rumpf[0].slice(2).trim(); rumpf = rumpf.slice(1); }
   const text = rumpf.join("\n").trim();
-  return { art: fm.art, titel, text, quelleOrdner: fm.quelle_ordner || "", quelleSitzung: fm.quelle_sitzung || "", erstellt: fm.erstellt || "" };
+  const v = { art: fm.art, titel, text, quelleOrdner: fm.quelle_ordner || "", quelleSitzung: fm.quelle_sitzung || "", erstellt: fm.erstellt || "" };
+  if (fm.art === "lektion") Object.assign(v, { ziel: LEKTION_ZIELE.includes(fm.ziel) ? fm.ziel : "memory", regel: fm.regel || "", warum: fm.warum || "", wie: fm.wie || "" });
+  if (fm.art === "pflege") v.befund = PFLEGE_BEFUNDE.includes(fm.befund) ? fm.befund : "sonstiges";
+  return v;
 }
 
 // Neueste zuerst; Unterordner, Symlinks und kaputte Dateien werden übersprungen.
@@ -130,6 +155,25 @@ export function listeVorschlaege(vault) {
 
 export function anzahlVorschlaege(vault) {
   return listeVorschlaege(vault).length;
+}
+
+// Ordner der übernommenen Lektionen (Auftrag für den Skill „lektion").
+export function lektionOrdner(vault) {
+  return join(vault, ordner(vault).inbox, "_lektionen");
+}
+
+// Ordner der übernommenen Pflege-Aufträge (Final-Review #1): Aufträge zur Prüfung, keine Quellen — zählen nicht
+// als Inbox, der Skill review/ingest prüft sie gegen die echten Rohquellen.
+export function pflegeOrdner(vault) {
+  return join(vault, ordner(vault).inbox, "_pflege");
+}
+
+// Liegt ein (echter) Pfad im Wiki oder ist er das Wiki selbst? Übernommene Vorschläge, Lektionen und Aufträge
+// dürfen nie dort landen — auch nicht, wenn die Inbox ein Symlink ins Wiki ist oder ordner.inbox im Wiki steht.
+export function liegtImWiki(vault, pfadEcht) {
+  let wikiEcht;
+  try { wikiEcht = echt(join(vault, ordner(vault).wiki)); } catch { return false; }
+  return gleicherPfad(pfadEcht, wikiEcht) || liegtIn(pfadEcht, wikiEcht);
 }
 
 // Verschieben OHNE Überschreiben: harter Link (scheitert atomar mit EEXIST, wenn das Ziel inzwischen belegt
@@ -167,13 +211,28 @@ export function entscheide(vault, id, aktion) {
     throw fehlerMit(400, "Vorschlag liegt außerhalb des erlaubten Ordners.");
   }
   // Nur echte Vorschläge (Frontmatter typ: vorschlag) werden verschoben.
-  try { leseDatei(readFileSync(quelleEcht, "utf8")); }
+  let gelesen;
+  try { gelesen = leseDatei(readFileSync(quelleEcht, "utf8")); }
   catch { throw fehlerMit(400, "Das ist kein Vorschlag."); }
 
-  const zielDir = aktion === "uebernehmen" ? join(vault, o.inbox) : join(vault, o.archiv, "vorschlaege-verworfen");
+  // Lektionen und Pflege-Aufträge landen nicht als Rohquelle in der Inbox, sondern in einem eigenen Auftragsordner
+  // (Lektion → Skill „lektion“, Pflege → Prüfauftrag für review/ingest, Final-Review #1).
+  const auftragsOrdner = gelesen.art === "lektion" ? "_lektionen" : gelesen.art === "pflege" ? "_pflege" : null;
+  const zielDir = aktion === "uebernehmen"
+    ? (auftragsOrdner ? join(vault, o.inbox, auftragsOrdner) : join(vault, o.inbox))
+    : join(vault, o.archiv, "vorschlaege-verworfen");
+  // Ziel im Wiki (Inbox als Symlink ins Wiki, ordner.inbox im Wiki)? Vor dem Anlegen abweisen (W1-Review #14).
+  try { if (liegtImWiki(vault, echt(join(vault, o.inbox)))) throw fehlerMit(400, "Zielordner liegt im Wiki."); }
+  catch (e) { if (e.code === 400) throw e; }
   mkdirSync(zielDir, { recursive: true });
   const zielDirEcht = echt(zielDir);
   if (!liegtIn(zielDirEcht, vaultEcht)) throw fehlerMit(400, "Zielordner liegt außerhalb des Brains.");
+  if (liegtImWiki(vault, zielDirEcht)) throw fehlerMit(400, "Zielordner liegt im Wiki.");
+  // _lektionen/_pflege muss ein echter Ordner genau unter der Inbox sein (kein Symlink, etwa ins Wiki).
+  if (aktion === "uebernehmen" && auftragsOrdner
+    && (lstatSync(zielDir).isSymbolicLink() || !gleicherPfad(zielDirEcht, join(inboxEcht, auftragsOrdner)))) {
+    throw fehlerMit(400, gelesen.art === "lektion" ? "Lektionsordner ist kein normaler Ordner." : "Pflegeordner ist kein normaler Ordner.");
+  }
 
   for (let n = 1; n <= 999; n++) {
     const ziel = join(zielDirEcht, n === 1 ? `${id}.md` : `${id}-${n}.md`);

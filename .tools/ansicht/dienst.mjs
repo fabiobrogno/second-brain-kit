@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { behandle, vaultIdVon, MAX_KOERPER } from "./dienst-lib.mjs";
+import { behandle, vaultIdVon, MAX_KOERPER, laufErgebnis } from "./dienst-lib.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const vault = process.argv[2] || process.env.BRAIN_VAULT || join(HIER, "..", "..");
@@ -93,6 +93,31 @@ const handler = {
     return r;
   },
   gelesen: async (v, seitMs) => (await exportVon("../werkzeug-log.mjs", "leseGelesen"))(v, seitMs),
+  // Pflegebericht (aus dem Cache .logs/pflege-bericht.json, neu nur bei geändertem Schlüssel — W1-Review #6) +
+  // offene Konflikte (aus den Ansichtsdaten D.konflikte; fehlen sie dort, liest pflege.mjs selbst) + Status des
+  // Pflege-Laufs (claude da? läuft gerade? Kosten des letzten Laufs — T6-Bedenken 1).
+  pflege: async (v) => {
+    const mod = await ladeModul("../pflege.mjs");
+    if (typeof mod.pflegebericht !== "function") throw nichtVerfuegbar();
+    const bericht = typeof mod.aktuellerBericht === "function" ? await mod.aktuellerBericht(v) : await mod.pflegebericht(v);
+    let konflikte = null;
+    try { const d = await daten(v); if (Array.isArray(d?.konflikte)) konflikte = d.konflikte; } catch {}
+    if (!konflikte) konflikte = typeof mod.offeneKonflikte === "function" ? mod.offeneKonflikte(v) : [];
+    if (typeof mod.markiereEntschieden === "function") konflikte = mod.markiereEntschieden(v, konflikte);
+    let lauf = null;
+    try { lauf = (await exportVon("../pflegelauf.mjs", "pflegeLaufStatus"))(v); } catch { lauf = null; }
+    return { ...bericht, konflikte, lauf };
+  },
+  konfliktEntscheiden: async (v, seite, nr, wahl, notiz, fingerabdruck = null) => {
+    const r = await (await exportVon("../entscheidungen.mjs", "schreibeEntscheidung"))(v, { seite, nr, wahl, notiz, fingerabdruck });
+    datenCache = null;
+    return r;
+  },
+  // Pflege-Lauf mit KI (Task 3) losgelöst starten — fehlt pflegelauf.mjs, meldet die Route 503 „nicht verfügbar“.
+  // Nicht gestartet (W1-Review #15): „läuft schon“ → 409, „claude fehlt“ → 503, sonst → 500 — jeweils mit grund.
+  pflegeLauf: async (v) => {
+    return laufErgebnis(await (await exportVon("../pflegelauf.mjs", "starteLosgeloest"))(v));
+  },
 };
 
 // ---- Lebensdauer

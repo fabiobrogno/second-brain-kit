@@ -413,3 +413,15 @@ test("fester Arbeitsordner: je Vault derselbe Pfad, nach dem Lauf wieder weg; an
   assert.equal(JSON.parse(readFileSync(fake.argsLog, "utf8")).cwd, erst);
   assert.ok(!existsSync(arbeitsOrdner(v)), "aufgeräumt");
 });
+
+// v0.4: gemeinsame Helfer ohne Verhaltensänderung der Ernte.
+test("Helfer (v0.4): claudeArgs = haikuArgs(auftrag), arbeitsOrdner ohne Zweck unverändert, mit Zweck eigener Ordner", async () => {
+  const E = await import("../ernte.mjs");
+  for (const art of ["stand", "fakt"]) assert.deepEqual(E.claudeArgs(art), E.haikuArgs(E.auftrag(art)));
+  const v = neuerVault({});
+  assert.match(basename(E.arbeitsOrdner(v)), /^brain-ernte-[0-9a-f]{12}$/);
+  assert.equal(E.arbeitsOrdner(v, ""), E.arbeitsOrdner(v));
+  assert.equal(basename(E.arbeitsOrdner(v, "lektion")), `${basename(E.arbeitsOrdner(v))}-lektion`);
+  assert.notEqual(E.arbeitsOrdner(v, "pflege"), E.arbeitsOrdner(v, "lektion"));
+  assert.equal(typeof E.rufeHaiku, "function"); assert.equal(typeof E.leseEnde, "function"); assert.equal(typeof E.nimmLock, "function");
+});

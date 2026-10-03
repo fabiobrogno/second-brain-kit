@@ -11,6 +11,7 @@ import { istWikiSeite, resolveLink, wikilinks, doppelteNamen } from "./wiki-pfad
 import { walk } from "./vault-dateien.mjs";
 import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
+import { gueltigkeit } from "./gueltigkeit.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
@@ -64,12 +65,16 @@ for (const p of pages) {
   // verwaist (keine eingehende Kante; _index zählt nicht — generiert)
   if (!struktur && !linked.has(p) && p !== "ueberblick.md") findings.push(`VERWAIST: ${p} — keine eingehenden Links`);
   if (cfg.wiki?.ordnerPflicht && !p.includes("/") && p !== "ueberblick.md") findings.push(`ORDNER: ${p} liegt direkt in ${wikiName} — in Bereich/Thema-Ordner einsortieren (_schema.md)`);
-  // Verfall: Momentaufnahmen mit `verfall: <tage>` — maßgeblich ist der letzte Commit der Seite, nicht die mtime
-  const verfall = Number((fm.match(/^verfall:\s*(\d+)/m) || [])[1]);
-  if (!struktur && verfall) {
-    let ct = 0; try { ct = Number(execFileSync(GIT, ["-C", vault, "log", "-1", "--follow", "--format=%ct", "--", join(wikiName, p)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim()) * 1000; } catch {}
-    const tage = ct ? Math.floor((Date.now() - ct) / 86400000) : 0;
-    if (ct && tage > verfall) findings.push(`VERFALL: ${p} — ${tage - verfall} Tage über Verfall (${verfall} Tage) — prüfen/aktualisieren`);
+  // Gültigkeit (gueltigkeit.mjs): `pruefen_bis` (absolute Frist) und `verfall: <tage>` (Momentaufnahme — maßgeblich
+  // ist der letzte Commit der Seite, nicht die mtime). Seiten ohne diese Felder bleiben still (rückwärtskompatibel).
+  if (!struktur && /^(pruefen_bis|verfall):/m.test(fm)) {
+    let ct = 0;
+    if (/^verfall:/m.test(fm)) try { ct = Number(execFileSync(GIT, ["-C", vault, "log", "-1", "--follow", "--format=%ct", "--", join(wikiName, p)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim()) * 1000; } catch {}
+    const g = gueltigkeit(fm, { letzterCommitMs: ct || null });
+    if (g.status === "abgelaufen") {
+      const grund = g.grund === "verfall" ? `verfall ${(fm.match(/^verfall:\s*(\d+)/m) || [])[1]} Tage` : `pruefen_bis ${g.pruefenBis}`;
+      findings.push(`ABGELAUFEN: ${p} — seit ${g.tageUeber} ${g.tageUeber === 1 ? "Tag" : "Tagen"} (${grund}) — prüfen/aktualisieren`);
+    }
   }
   // Team-Drift — nur wenn module.teamWissen aktiv; Frontmatter team_id + saved_at
   if (teamWissen && /team_id:/.test(fm)) {
@@ -109,7 +114,7 @@ const fbDatei = join(vault, ".logs", "feedback.log");
 if (existsSync(fbDatei)) { const offen = readFileSync(fbDatei, "utf8").split("\n").filter(z => z && new Date(z.slice(0, 19)).getTime() > reviewMs).length;
   if (offen) findings.push(`FEEDBACK: ${offen} offene Rückmeldung(en) seit dem letzten Review — /brain-review`); }
 const inboxDir = join(vault, inboxName);
-const inbox = existsSync(inboxDir) ? readdirSync(inboxDir).filter(f => !f.startsWith(".") && f !== "_vorschlaege" && f !== "_import") : [];
+const inbox = existsSync(inboxDir) ? readdirSync(inboxDir).filter(f => !f.startsWith(".") && !["_vorschlaege", "_import", "_entscheidungen", "_lektionen", "_pflege"].includes(f)) : [];
 if (inbox.length) findings.push(`INBOX: ${inbox.length} Datei(en) warten auf /ingest`);
 
 // Memory-Routing-Wächter: fette project_*.md im Claude-Memory = Fakten-Wissen am falschen Ort

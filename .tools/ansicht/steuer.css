@@ -29,7 +29,7 @@
 .st-zu { width: 30px; height: 30px; border-radius: 8px; background: transparent; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 /* Reiter */
-.st-reiter { display: flex; gap: 20px; padding: 12px 20px 0; border-bottom: 1px solid var(--line); }
+.st-reiter { display: flex; gap: 18px; padding: 12px 20px 0; border-bottom: 1px solid var(--line); }
 .st-reiter button { position: relative; background: none; border: 0; padding: 4px 0 11px; margin-bottom: -1px; font-size: 13.5px; font-weight: 500; color: var(--fg-3); cursor: pointer; border-bottom: 1.5px solid transparent; display: inline-flex; align-items: center; gap: 6px; }
 .st-reiter button:hover { color: var(--fg-2); }
 .st-reiter button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); }
@@ -50,7 +50,7 @@
 .st-btn.st-ghost { background: transparent; }
 .st-btn.st-primaer { background: var(--fg); color: var(--bg); border-color: transparent; }
 .st-btn.st-primaer:hover:not([disabled]) { background: color-mix(in srgb, var(--fg) 86%, var(--accent)); }
-.steuer button:focus-visible, .steuer input:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; }
+.steuer button:focus-visible, .steuer input:focus-visible, .steuer textarea:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; }
 
 /* Leer-/Hinweiszustände */
 .st-leer { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 48px 18px 30px; }
@@ -187,6 +187,84 @@
 .st-l-text { font-size: 12.5px; color: var(--fg); overflow-wrap: anywhere; }
 .st-l-meta, .st-i-zahlen { font: 10.5px var(--mono); color: var(--fg-3); }
 .st-i-name { font-size: 13px; font-weight: 500; }
+
+/* Vorschläge: Lektion und Pflege */
+.st-v-marken { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.st-art.lektion { color: var(--c-orange); background: color-mix(in srgb, var(--c-orange) 14%, transparent); }
+.st-art.pflege { color: var(--c-tuerkis); background: color-mix(in srgb, var(--c-tuerkis) 14%, transparent); }
+.st-v-ziel { font: 500 10px var(--mono); letter-spacing: .04em; color: var(--fg-3); border: 1px dashed var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.st-lektion { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 4px 0 8px; font-size: 12.5px; line-height: 1.5; }
+.st-lektion dt { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); padding-top: 3px; }
+.st-lektion dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+.st-lektion dt:first-of-type + dd { font-weight: 600; }
+.st-v-auszug-titel { margin: 8px 0 4px; font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+.st-v-text.auszug { font: 11.5px/1.55 var(--mono); color: var(--fg-3); }
+
+/* Pflege */
+.st-p-summe { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 0 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass-2); font-size: 13px; color: var(--fg-2); line-height: 1.45; }
+.st-p-summe-zahl { font: 500 26px var(--font); letter-spacing: -.02em; color: var(--fg); font-variant-numeric: tabular-nums; }
+.st-p-summe.ok strong { color: var(--fg); font-weight: 600; }
+.st-p-haken { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--st-gruen) 14%, transparent); }
+.st-p-haken svg, .st-ko-chip svg { width: 15px; height: 15px; fill: none; stroke: var(--st-gruen); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.st-konflikte > .st-muted { margin-bottom: 12px; }
+.st-konflikt { padding: 12px 12px 10px; margin: 0 0 10px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--st-rot) 32%, var(--line)); background: var(--glass-2); transition: opacity .2s; }
+.st-konflikt.entschieden { border-color: var(--line); }
+.st-konflikt.zurueck { border-style: dashed; }
+.st-konflikt.beschaeftigt { opacity: .55; }
+.st-ko-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.st-ko-seite { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.st-ko-seite .st-s-name { font-size: 13.5px; font-weight: 600; }
+.st-ko-seite:hover .st-s-name { text-decoration: underline; text-underline-offset: 3px; }
+.st-ko-nr { flex: none; font: 10.5px var(--mono); color: var(--fg-3); }
+.st-ab { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.st-aussage { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 10px 9px; border-radius: 10px; border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 40%, transparent); transition: opacity .2s, border-color .2s; }
+.st-aussage.gilt { border-color: color-mix(in srgb, var(--st-gruen) 55%, transparent); background: color-mix(in srgb, var(--st-gruen) 7%, transparent); }
+.st-aussage.gilt-nicht { opacity: .5; }
+.st-ab-marke { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font: 600 11px var(--mono); color: var(--fg-2); background: var(--glass-2); border: 1px solid var(--line-2); }
+.st-aussage.gilt .st-ab-marke { color: var(--bg); background: var(--st-gruen); border-color: transparent; }
+.st-ab-text { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; flex: 1; }
+.st-quelle { align-self: flex-start; max-width: 100%; padding: 0; border: 0; background: none; font: 10.5px var(--mono); color: var(--accent); cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-quelle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.st-quelle.leer { color: var(--fg-3); cursor: default; }
+.st-ko-wahl { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.st-ko-ab { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.st-ko-ab .st-btn, .st-ko-beide { width: 100%; }
+.st-ko-a:hover:not([disabled]), .st-ko-b:hover:not([disabled]) { border-color: color-mix(in srgb, var(--st-gruen) 60%, transparent); background: color-mix(in srgb, var(--st-gruen) 10%, transparent); }
+.st-konflikt .st-btn.aktiv { border-color: color-mix(in srgb, var(--st-gruen) 60%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-gruen) 40%, transparent); }
+.st-ko-notiz { position: relative; margin-top: 8px; }
+.st-notiz { display: block; width: 100%; box-sizing: border-box; min-height: 52px; resize: vertical; padding: 8px 10px 18px; border-radius: 9px; border: 1px solid var(--line-2); background: transparent; color: var(--fg); font: 12.5px/1.45 var(--font); outline: none; }
+.st-notiz::placeholder { color: var(--fg-3); }
+.st-notiz:focus { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.st-ko-zaehler { position: absolute; right: 9px; bottom: 5px; font: 10px var(--mono); color: var(--fg-3); pointer-events: none; }
+.st-ko-fuss { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.st-ko-leise { color: var(--fg-3); }
+.st-ko-stand { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 10px; font-size: 12px; color: var(--fg-3); }
+.st-ko-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 6px; border-radius: 6px; font-size: 12px; font-weight: 600; color: color-mix(in srgb, var(--st-gruen) 75%, var(--fg)); background: color-mix(in srgb, var(--st-gruen) 12%, transparent); }
+.st-ko-chip svg { width: 13px; height: 13px; }
+.st-ko-stand-text { flex: 1; min-width: 140px; }
+.st-p-mehr { margin-top: 2px; }
+.st-posten { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.st-posten:last-of-type { border-bottom: 0; }
+.st-p-zahl { font: 500 18px var(--font); letter-spacing: -.02em; text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; line-height: 22px; }
+.st-posten.bernstein .st-p-zahl { color: var(--st-bernstein); }
+.st-posten.hinweis .st-p-zahl { color: var(--fg-3); }
+.st-p-text { min-width: 0; }
+.st-p-titel { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; line-height: 22px; }
+.st-p-titel .st-badge { height: 18px; font-size: 10px; }
+.st-p-schritt { margin: 2px 0 4px; color: var(--fg-2); font-size: 12.5px; line-height: 1.5; }
+.st-p-aktionen { display: flex; gap: 14px; }
+.st-p-aktionen:empty { display: none; }
+.st-p-liste { margin-top: 6px; }
+.st-p-eintrag { padding: 4px 0; font-size: 12px; color: var(--fg-2); overflow-wrap: anywhere; }
+.st-p-ohne { margin: 10px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--fg-3); }
+.st-lauf { margin-top: 22px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass-2); }
+.st-lauf-kopf { display: flex; gap: 12px; align-items: flex-start; }
+.st-lauf-icon { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--line-2); }
+.st-lauf-icon svg { width: 17px; height: 17px; fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
+.st-lauf .st-info { margin: 10px 0 0; }
+.st-lauf .st-toast { margin: 10px 0 0; }
+.st-lauf-fuss { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.st-lauf-letzter { font: 10.5px var(--mono); color: var(--fg-3); min-width: 0; }
 
 /* Handy: als Blatt von unten */
 @media (max-width: 720px) {

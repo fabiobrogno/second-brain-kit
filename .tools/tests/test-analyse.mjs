@@ -145,9 +145,11 @@ test("seiten: gesamt aus dem Wiki, nieGelesen/meistGelesen aus werkzeug.log, ver
     "- VERWAIST: firma/thema_b.md — keine eingehenden Links",
     "- PRÜFBEDÜRFTIG: firma/thema_a.md — Quelle geändert seit Einarbeitung",
     "- KONFLIKT offen (1×): firma/thema_b.md — Entscheidung des Users nötig",
+    "- ABGELAUFEN: firma/thema_a.md — seit 3 Tagen (pruefen_bis 2026-09-30) — prüfen/aktualisieren",
   ].join("\n") + "\n");
 
   const e = analyse(vault, { jetzt: ANKER });
+  assert.deepEqual(e.seiten.abgelaufen, ["09_wiki/firma/thema_a.md"], "Spec A: abgelaufen auch in der Analyse");
   assert.equal(e.seiten.gesamt, 3);
   assert.deepEqual(e.seiten.nieGelesen, ["09_wiki/firma/thema_b.md", "09_wiki/ueberblick.md"]);
   assert.deepEqual(e.seiten.meistGelesen, [{ seite: "09_wiki/firma/thema_a.md", mal: 2 }]);
@@ -379,7 +381,9 @@ test("seiten: lint-cache mit Leerzeichen im Pfad und Windows-Backslash", () => {
     "- VERWAIST: ordner/thema b.md — keine eingehenden Links",
     "- PRÜFBEDÜRFTIG: ordner\\thema c.md — Quelle 00_inbox/x y.md geändert seit Einarbeitung (Re-Ingest anbieten)",
     "- KONFLIKT offen (2×): a b\\c d.md — Entscheidung des Users nötig",
+    "- ABGELAUFEN: x y\\z.md — seit 1 Tag (verfall 30 Tage) — prüfen/aktualisieren",
   ].join("\r\n"));
+  assert.deepEqual([...l.abgelaufen], ["x y/z.md"]);
   assert.deepEqual([...l.verwaist], ["ordner/thema b.md"]);
   assert.deepEqual([...l.pruefbeduerftig], ["ordner/thema c.md"]);
   assert.deepEqual([...l.konflikt], ["a b/c d.md"]);

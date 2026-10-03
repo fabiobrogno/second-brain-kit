@@ -22,6 +22,7 @@
   --c-neutral: #dfe6ff;
   --konflikt: #ff4f61;
   --pruef: #ffd03d;
+  --abgelaufen: #ffa53d;
   --shadow: 0 18px 60px rgba(0,0,0,.45);
   --r: 14px;
   --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -49,6 +50,7 @@
   --c-neutral: #3a4260;
   --konflikt: #e02a40;
   --pruef: #c79300;
+  --abgelaufen: #c86a00;
   --shadow: 0 18px 50px rgba(30,40,70,.14);
   color-scheme: light;
 }
@@ -298,3 +300,25 @@ body.bare .top, body.bare .filters, body.bare .timeline, body.bare .hint, body.b
 .banner { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 6; max-width: min(560px, calc(100% - 28px)); padding: 11px 16px; font-size: 13px; line-height: 1.45; color: var(--fg); border-color: color-mix(in srgb, var(--pruef) 45%, transparent); }
 .load-fail { color: var(--fg-2); font: 14px var(--font); max-width: 520px; padding: 0 20px; text-align: center; line-height: 1.5; }
 @media (max-width: 720px) { .banner { top: 120px; } }
+
+/* ---------- v0.4: Gehirn-Optik (Bereiche, Bedeutung, Bündel, Zoom-Stufen, MCP-Logos) ---------- */
+.region { pointer-events: auto; cursor: pointer; padding: 3px 6px; margin: -3px -6px; border-radius: 6px; display: inline-flex; align-items: center; }
+.region .sw { width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 8px; box-shadow: 0 0 10px currentColor; opacity: .8; }
+.region:hover, .region.an { background: color-mix(in srgb, currentColor 12%, transparent); }
+.lbl.amb { font-size: 11px; font-weight: 450; color: var(--fg-2); background: transparent; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 2px 4px; text-shadow: 0 0 8px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); }
+.lbl.amb.wichtig { font-size: 12px; font-weight: 550; color: var(--fg); }
+.mcp-grp { position: absolute; left: 0; top: 0; font: 500 9.5px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--c-tuerkis); white-space: nowrap; transition: opacity .4s; will-change: transform; text-shadow: 0 0 10px var(--bg), 0 0 3px var(--bg); pointer-events: none; }
+.tip { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; padding: 6px 10px; border-radius: 8px; font: 500 12px var(--font); color: var(--fg); background: var(--glass); border: 1px solid var(--line-2); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: var(--shadow); white-space: nowrap; }
+.tip[hidden] { display: none; }
+.chip .form { display: inline-grid; place-items: center; width: 12px; height: 12px; margin-right: 7px; vertical-align: -1px; }
+.chip .form svg { width: 11px; height: 11px; fill: currentColor; stroke: currentColor; opacity: .85; }
+.chip.wide .sw + * { margin-left: 0; }
+.status-box.abgelaufen { background: color-mix(in srgb, var(--abgelaufen) 11%, transparent); color: color-mix(in srgb, var(--abgelaufen) 66%, var(--fg)); }
+.mcp-kopf { display: grid; grid-template-columns: 64px 1fr; gap: 16px; align-items: center; margin: 2px 0 16px; }
+.mcp-kopf h2 { margin: 0 0 4px; }
+.mcp-kopf .desc { margin: 0; }
+.mcp-logo { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--glass-2); border: 1.5px solid color-mix(in srgb, var(--c-tuerkis) 70%, transparent); box-shadow: 0 0 24px color-mix(in srgb, var(--c-tuerkis) 22%, transparent); }
+.mcp-logo img { width: 30px; height: 30px; }
+:root:not([data-theme="light"]) .mcp-logo img { filter: invert(1) brightness(1.05); }
+.mcp-logo .mono { font: 600 22px var(--font); letter-spacing: -.02em; }
+.mcp-logo.still { opacity: .55; box-shadow: none; }

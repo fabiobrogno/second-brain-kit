@@ -30,6 +30,20 @@ const TYPEN = {
 // .html nur als Startseite (index.html), nicht als beliebige Datei
 const ERLAUBTE_ENDUNGEN = new Set([".js", ".css", ".woff2", ".woff", ".ttf", ".png", ".svg", ".json", ".txt", ".md"]);
 const AKTIONEN = new Set(["uebernehmen", "verwerfen"]);
+// Konflikt-Entscheidungen (v0.4): gleiche Wahl-Werte und Notiz-Grenze wie entscheidungen.mjs (dort die volle
+// Prüfung inkl. echter Datei im Wiki); hier nur die billige Vorprüfung der Anfrage.
+const WAHLEN = new Set(["a", "b", "beide", "spaeter"]);
+const MAX_NOTIZ = 300;
+
+// Seiten-ID aus dem Pfad (URI-kodiert, "/" als %2F): dekodiert, ohne Steuerzeichen/Backslash, keine leeren,
+// Punkt- oder ..-Segmente, endet auf .md. Sonst null.
+function seitenId(roh) {
+  let s;
+  try { s = decodeURIComponent(roh); } catch { return null; }
+  if (!s || s.length > 300 || /[\\\0-\x1f\x7f]/.test(s) || !s.endsWith(".md")) return null;
+  if (s.split("/").some(t => !t || t === "." || t === ".." || t.startsWith("."))) return null;
+  return s;
+}
 
 // Vault-ID: erste 16 Hex-Zeichen von sha256(realpath(vault)) — unterscheidet Dienste verschiedener Vaults.
 export function vaultIdVon(vault) {
@@ -124,9 +138,22 @@ async function rufe(handler, name, ...args) {
   } catch (e) {
     const code = e && typeof e.code === "number" && e.code >= 400 && e.code <= 599 ? e.code : 500;
     if (code === 500 && !(e && e.code === 500)) return antwort(500, { fehler: "Interner Fehler" });
-    if (code === 503) return antwort(503, { fehler: "nicht verfügbar" });
-    return antwort(code, { fehler: String(e.message || "Fehler").split("\n")[0].slice(0, 300) });
+    // grund (kurz, einzeilig): warum etwas nicht ging — z. B. Pflege-Lauf „läuft schon“ (409) / „claude fehlt“ (503)
+    const grund = e && typeof e.grund === "string" ? { grund: e.grund.split("\n")[0].slice(0, 120) } : {};
+    if (code === 503) return antwort(503, { fehler: grund.grund ? grund.grund : "nicht verfügbar", ...grund });
+    return antwort(code, { fehler: String(e.message || "Fehler").split("\n")[0].slice(0, 300), ...grund });
   }
+}
+
+// Ergebnis von pflegelauf.mjs#starteLosgeloest → Antwort der Route POST /api/pflege/lauf (W1-Review #15):
+// gestartet → 200 { gestartet: true }; nicht gestartet → Fehler mit grund: „läuft schon“ 409, „claude fehlt“ 503,
+// alles andere 500 — die Oberfläche muss `gestartet` nicht mehr selbst auswerten.
+export function laufErgebnis(r) {
+  const erg = r && typeof r === "object" ? r : { ok: true, gestartet: r !== false };
+  if (erg.gestartet !== false) return erg;
+  const grund = String(erg.grund || "nicht gestartet").split("\n")[0].slice(0, 120);
+  const code = /läuft schon/i.test(grund) ? 409 : /claude/i.test(grund) ? 503 : 500;
+  throw Object.assign(new Error(grund), { code, grund });
 }
 
 function jsonKoerper(body) {
@@ -188,6 +215,11 @@ export async function behandle(anfrage, kontext) {
         return rufe(h, "einstellungenSchreiben", v, wert.werte, stand === undefined ? undefined : String(stand));
       }
       return antwort(405, { fehler: "Methode nicht erlaubt" });
+    case "/api/pflege":
+      return nurGet(() => rufe(h, "pflege", v));
+    case "/api/pflege/lauf":
+      if (methode !== "POST") return antwort(405, { fehler: "Methode nicht erlaubt" });
+      return rufe(h, "pflegeLauf", v);
     case "/api/stopp":
       if (methode !== "POST") return antwort(405, { fehler: "Methode nicht erlaubt" });
       return { ...antwort(200, { ok: true }), stopp: true };
@@ -197,6 +229,22 @@ export async function behandle(anfrage, kontext) {
     if (!AKTIONEN.has(teile[2])) return antwort(404, { fehler: "nicht gefunden" });
     if (!ID_MUSTER.test(teile[1])) return antwort(400, { fehler: "ungültige Vorschlags-ID" });
     return rufe(h, "vorschlagEntscheiden", v, teile[1], teile[2]);
+  }
+  if (teile[0] === "konflikte" && teile.length === 3) {
+    if (methode !== "POST") return antwort(405, { fehler: "Methode nicht erlaubt" });
+    const seite = seitenId(teile[1]);
+    if (!seite) return antwort(400, { fehler: "ungültige Seite" });
+    if (!/^[1-9]\d{0,3}$/.test(teile[2])) return antwort(400, { fehler: "ungültige Konflikt-Nummer" });
+    const { wert, fehler } = jsonKoerper(anfrage.body);
+    if (fehler) return fehler;
+    if (!WAHLEN.has(wert.wahl)) return antwort(400, { fehler: "unbekannte Wahl" });
+    const notiz = wert.notiz ?? "";
+    if (typeof notiz !== "string") return antwort(400, { fehler: "Notiz muss Text sein" });
+    if (notiz.length > MAX_NOTIZ) return antwort(400, { fehler: `Notiz ist zu lang (höchstens ${MAX_NOTIZ} Zeichen)` });
+    // Fingerabdruck des Kastens (optional): passt er nicht mehr zur nr, antwortet der Handler 409.
+    const fp = wert.fingerabdruck ?? null;
+    if (fp !== null && (typeof fp !== "string" || !/^[0-9a-f]{12}$/.test(fp))) return antwort(400, { fehler: "ungültiger Fingerabdruck" });
+    return rufe(h, "konfliktEntscheiden", v, seite, Number(teile[2]), wert.wahl, notiz, fp);
   }
   return antwort(404, { fehler: "nicht gefunden" });
 }

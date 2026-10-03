@@ -5,6 +5,9 @@
 // BRAIN_ERNTE=1 (Selbstaufruf der Ernte) → sofort Ende, keine Ausgabe, kein Hintergrund. Die Kit-Module werden
 // erst NACH dieser Prüfung geladen (dynamisches import) — statische Importe würden vorher ausgewertet.
 // Liegengebliebene Ernte-Aufträge (.logs/ernte/offen/) startet session-start losgelöst neu (ernte-ausloeser.mjs).
+// v0.4 (nur wenn zutreffend): Wochen-Zeile aus dem Cache des Pflegeberichts (Schalter wochenbericht, einmal je
+// 7 Tage, Marke .logs/pflege-woche — gerechnet wird im Hintergrund), „N Entscheidungen warten", „N Lektionen
+// warten"; Pflege-Lauf wöchentlich losgelöst anstoßen (Schalter pflegeLauf, nur im Hintergrund-Zweig).
 if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { appendFileSync, existsSync, statSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname, basename, relative, resolve } from "node:path";
@@ -13,7 +16,7 @@ import { spawn, spawnSync } from "node:child_process";
 const { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } = await import("../../pfade.mjs");
 const { leseCache, hinweisZeile, leseBereitMarke } = await import("../../update-check.mjs");
 const { leseAutomatik } = await import("../../einstellungen.mjs");
-const { anzahlVorschlaege } = await import("../../vorschlaege.mjs");
+const { listeVorschlaege } = await import("../../vorschlaege.mjs");
 const { gitBefehl } = await import("../../werkzeug.mjs");
 const { anzeigePfad } = await import("../../hint-core.mjs");
 
@@ -50,6 +53,10 @@ if (!process.env.BRAIN_SESSION_NUR_STATUS) {
   if (existsSync(join(V, ".logs", "ernte"))) {
     try { (await import("./ernte-ausloeser.mjs")).arbeiteOffeneAb(V); } catch {}
   }
+  // Pflege-Lauf mit KI (opt-in, wöchentlich): losgelöst, nie blockierend.
+  try {
+    if (leseAutomatik(V).werte.pflegeLauf === "woechentlich") (await import("../../pflegelauf.mjs")).starteWennFaellig(V);
+  } catch {}
 }
 
 if (configFehler(V)) console.log("Brain: Die Einstellungsdatei brain.config.json ist beschädigt — es gelten Standardwerte. Sag „repariere meine Brain-Einstellungen“.");
@@ -69,7 +76,9 @@ const { inbox: inboxName, wiki: wikiName } = ordner(V, cfg);
 
 // Inbox-Dateien, die auf /ingest warten — ohne _vorschlaege (eigene Zeile „N neue Vorschläge") und ohne
 // _import (wird je Paket nach Ja eingearbeitet, nicht pauschal; Final-Review #6).
-const NICHT_INGEST = new Set(["_vorschlaege", "_import"]);
+// v0.4: auch ohne _entscheidungen und _lektionen (eigene Zeilen unten) und ohne _pflege (Prüfaufträge, keine
+// Quellen — stehen im Pflegebericht; Final-Review #1).
+const NICHT_INGEST = new Set(["_vorschlaege", "_import", "_entscheidungen", "_lektionen", "_pflege"]);
 function zaehleDateien(dir, oben = true) {
   if (!existsSync(dir)) return 0;
   let n = 0;
@@ -81,23 +90,26 @@ function zaehleDateien(dir, oben = true) {
   }
   return n;
 }
-function zaehleKonflikte(dir) {
-  if (!existsSync(dir)) return 0;
-  let n = 0;
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    if (e.name.startsWith("_")) continue;
-    const full = join(dir, e.name);
-    if (e.isDirectory()) { n += zaehleKonflikte(full); continue; }
-    if (!e.name.endsWith(".md")) continue;
-    try { if (/\[!KONFLIKT\] offen/.test(readFileSync(full, "utf8"))) n += 1; } catch {}
-  }
-  return n;
-}
-
 const INBOX = zaehleDateien(join(V, inboxName));
-const KONFLIKTE = zaehleKonflikte(join(V, wikiName));
 if (INBOX !== 0) console.log(`Brain-Inbox: ${INBOX} Datei(en) warten auf /ingest.`);
-if (KONFLIKTE !== 0) console.log(`Brain-Wiki: offene Konflikte auf ${KONFLIKTE} Seite(n) — Entscheidung nötig (/brain-lint).`);
+
+// v0.4: Wochen-Zeile aus dem Cache der letzten Berechnung (session-hintergrund rechnet den Pflegebericht losgelöst
+// nach .logs/pflege-bericht.json — hier 0 Wartezeit, W1-Review #6). Schalter wochenbericht, einmal je 7 Tage.
+const WOCHE_MS = 7 * 86400000;
+const WOCHE_MARKE = join(V, ".logs", "pflege-woche");
+let WOCHE = "";
+if (automatik.wochenbericht !== false) {
+  try {
+    let faellig = true;
+    try { faellig = Date.now() - statSync(WOCHE_MARKE).mtimeMs > WOCHE_MS; } catch {}
+    if (faellig) WOCHE = await (await import("../../pflegelauf.mjs")).wochenHinweis(V);
+  } catch {}
+}
+// Konfliktzeile: nur Seiten mit noch NICHT entschiedenen Kästen, ohne Symlinks nach außen (W1-Review #7, #16);
+// in der Woche mit Wochen-Zeile entfällt sie (die nennt die Konflikte schon).
+let KONFLIKTE = 0;
+try { KONFLIKTE = (await import("../../entscheidungen.mjs")).offeneKonfliktSeiten(V); } catch {}
+if (KONFLIKTE !== 0 && !WOCHE) console.log(`Brain-Wiki: offene Konflikte auf ${KONFLIKTE} Seite(n) — Entscheidung nötig (/brain-lint).`);
 
 // Eine Sammelzeile für Pflege (direkt berechnet, nicht aus dem Lint-Cache): Review fällig, offene Rückmeldungen
 const M = join(V, ".logs", "letzter-review");
@@ -113,10 +125,25 @@ if (FB !== 0) P = P ? `${P}, ${FB} offene Rückmeldung(en)` : `${FB} offene Rüc
 if (P) console.log(`Brain-Pflege: ${P} — /brain-review`);
 
 // ---------- v0.3: Vorschläge, Ich-Karte, Projektseite ----------
+// v0.4: Lektions-Vorschläge haben eine eigene Zeile und zählen hier nicht mit.
+let LEKTIONEN_WARTEN = 0;
 try {
-  const n = anzahlVorschlaege(V);
+  const alle = listeVorschlaege(V);
+  LEKTIONEN_WARTEN = alle.filter(x => x.art === "lektion").length;
+  const n = alle.length - LEKTIONEN_WARTEN;
   if (n > 0) console.log(`${n === 1 ? "1 neuer Vorschlag" : `${n} neue Vorschläge`} — im Gehirn prüfen („zeig mir mein Brain“)`);
 } catch {}
+
+// ---------- v0.4: Wochen-Zeile, Entscheidungen, Lektionen ----------
+if (WOCHE) console.log(WOCHE);
+function zaehleMd(dir, ohne = () => false) {
+  try { return readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile() && e.name.endsWith(".md") && !ohne(e.name)).length; }
+  catch { return 0; }
+}
+const ENTSCHEIDUNGEN = zaehleMd(join(V, inboxName, "_entscheidungen"));
+if (ENTSCHEIDUNGEN > 0) console.log(`${ENTSCHEIDUNGEN === 1 ? "1 Entscheidung wartet" : `${ENTSCHEIDUNGEN} Entscheidungen warten`} auf Umsetzung — /ingest`);
+if (LEKTIONEN_WARTEN > 0) console.log(`${LEKTIONEN_WARTEN === 1 ? "1 Lektion wartet" : `${LEKTIONEN_WARTEN} Lektionen warten`} auf Übernahme — im Gehirn unter Vorschläge`);
+// (Keine eigene Zeile für übernommene Lektionen — nicht in der Spec, 0-Token-Regel; sie stehen im Pflegebericht.)
 
 const ICH_MAX = 1500;
 function ichKarte(vault, wikiOrdner) {

@@ -1,5 +1,5 @@
-// .tools/ansicht/steuer.js — Steuerzentrale der Ansicht: Zahnrad oben rechts → Seitenleiste mit drei Reitern
-// Einstellungen · Vorschläge · Analyse (klassisches Skript, kein ESM). Setzt window.BrainSteuer = { init, oeffne,
+// .tools/ansicht/steuer.js — Steuerzentrale der Ansicht: Zahnrad oben rechts → Seitenleiste mit vier Reitern
+// Einstellungen · Vorschläge · Pflege · Analyse (klassisches Skript, kein ESM). Setzt window.BrainSteuer = { init, oeffne,
 // schliesse, hilfen }.
 //
 // Braucht: texte.js (BrainTexte) und api.js (BrainApi) — vorher laden. app.js ist optional: neuLaden()/waehle(id)
@@ -19,31 +19,55 @@
 
   // ------------------------------------------------------------------------------------------ reine Hilfen
   // Reihenfolge = Reihenfolge in der Maske. kosten: Textschlüssel des Etiketts (kosten0 → grün, sonst bernstein).
+  // standard: nur für Felder, die ein älterer Dienst noch nicht kennt (dann gesperrt mit diesem Wert gezeigt).
+  // stufenText: Beschriftung der Stufen aus „stufe_<schluessel>_<wert>“ (Bindestrich → Unterstrich).
+  // brauchtClaudeWert: nur diese eine Stufe braucht den Befehl „claude“.
   const FELDER = [
     { schluessel: "staendeIntervallStunden", gruppe: "gruppeHintergrund", art: "stufen", werte: [0, 1, 2, 4], kosten: "kostenStand", nurClaude: true, brauchtClaude: true },
     { schluessel: "ernteSitzungsende", gruppe: "gruppeHintergrund", art: "schalter", kosten: "kostenErnte", nurClaude: true, brauchtClaude: true },
+    { schluessel: "lektionen", gruppe: "gruppeHintergrund", art: "stufen", werte: ["aus", "lokal", "mit-ki"], stufenText: true, standard: "lokal", kosten: "kostenLektionen", nurClaude: true, brauchtClaudeWert: "mit-ki" },
+    { schluessel: "pflegeLauf", gruppe: "gruppeHintergrund", art: "stufen", werte: ["aus", "woechentlich"], stufenText: true, standard: "aus", kosten: "kostenLauf", nurClaude: true, brauchtClaude: true },
     { schluessel: "ernteNichtIn", gruppe: "gruppeHintergrund", art: "liste", kosten: "kosten0" },
     { schluessel: "hinweise", gruppe: "gruppeSitzung", art: "stufen", werte: ["aus", "niedrig", "mittel", "hoch"], kosten: "kostenHinweis", nurClaude: true },
     { schluessel: "ichKarte", gruppe: "gruppeSitzung", art: "schalter", kosten: "kostenIch" },
     { schluessel: "projektAutomatik", gruppe: "gruppeSitzung", art: "schalter", kosten: "kostenProjekt", nurClaude: true },
+    { schluessel: "wochenbericht", gruppe: "gruppeSitzung", art: "schalter", standard: true, kosten: "kostenWoche", nurClaude: true },
     { schluessel: "liveAufleuchten", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0", nurClaude: true },
     { schluessel: "luecken", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0" },
     { schluessel: "updateHinweis", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kostenUpdate" },
     { schluessel: "sicherungTaeglich", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0" },
   ];
   const GRUPPEN = ["gruppeHintergrund", "gruppeSitzung", "gruppeAnsicht"];
-  // Was „Alles aus (wie v0.2)“ abschaltet: alles, was v0.3 neu automatisch tut. Hinweise, Update-Hinweis und
-  // tägliche Sicherung gab es schon in v0.2 — die bleiben, wie sie sind.
+  // Was „Alles aus (wie v0.2)“ abschaltet: alles, was v0.3/v0.4 neu automatisch tut. Hinweise, Update-Hinweis
+  // und tägliche Sicherung gab es schon in v0.2 — die bleiben, wie sie sind. Die v0.4-Schlüssel nur, wenn der
+  // Dienst sie kennt (sonst wiese er das Speichern mit 400 ab).
   const NEU_IN_V03 = { staendeIntervallStunden: 0, ernteSitzungsende: false, ichKarte: false, projektAutomatik: false, liveAufleuchten: false, luecken: false };
+  const NEU_IN_V04 = { wochenbericht: false, pflegeLauf: "aus", lektionen: "aus" };
+  const REITER = [["einstellungen", "reiterEinstellungen"], ["vorschlaege", "reiterVorschlaege"], ["pflege", "reiterPflege"], ["analyse", "reiterAnalyse"]];
+  const REIHE = REITER.map((r) => r[0]);
+  const WAHLEN = ["a", "b", "beide"];
+  const MAX_NOTIZ = 300;
+  // Posten des Pflegeberichts (pflege.mjs) — Titel „posten_<k>“, nächster Schritt „schritt_<k>“.
+  const POSTEN = ["abgelaufen", "bald", "konflikte", "konflikteKaputt", "entscheidungen", "vorschlaege", "lektionen", "pflegeAuftraege", "verwaist",
+    "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "messlatte"];
+  const NUR_HINWEIS = ["bald", "nieGelesen", "luecken"];
+  const BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "sonstiges"];
   // Textschlüssel, die steuer.js zusammengesetzt benutzt (für den Vollständigkeitstest).
   const TEXTSCHLUESSEL = GRUPPEN.concat([
     "hinweis_aus", "hinweis_niedrig", "hinweis_mittel", "hinweis_hoch", "art_fakt", "art_stand", "quelle_search", "quelle_hint",
     "reiterEinstellungen", "reiterVorschlaege", "reiterAnalyse", "listeMeist", "listeMeistText", "listeNie", "listeNieText",
     "listeVerwaist", "listeVerwaistText", "listePruef", "listePruefText", "listeKonflikt", "listeKonfliktText",
+    "listeAbgelaufen", "listeAbgelaufenText",
     "ordnerLeer", "ordnerDoppelt", "ordnerZuLang", "ordnerZuViele",
-  ]);
+    "reiterPflege", "art_lektion", "art_pflege", "ziel_memory", "ziel_skill", "wahl_a", "wahl_b", "wahl_beide", "wahl_spaeter",
+    "seiteGeaendert", "eintragAbgelaufen", "eintragAbgelaufen1", "eintragVerfall", "eintragVerfall1", "eintragKaputt", "uebernommenPflege", "eintragBald", "eintragKonflikte", "eintragEntscheidung",
+    "eintragGleicherTitel", "eintragAehnlich", "eintragZeilen", "eintragImport", "eintragImport1", "eintragMesslatte",
+    "eintragMesslatteUnter",
+  ], POSTEN.map((k) => "posten_" + k), POSTEN.map((k) => "schritt_" + k), POSTEN.map((k) => "thema_" + k), BEFUNDE.map((k) => "befund_" + k),
+  FELDER.filter((f) => f.stufenText).reduce((a, f) => a.concat(f.werte.map((v) => stufenSchluessel(f.schluessel, v))), []));
   const MAX_ORDNER = 20, MAX_PFAD = 300;
 
+  function stufenSchluessel(k, v) { return "stufe_" + k + "_" + String(v).replace(/-/g, "_"); }
   const kopie = (x) => JSON.parse(JSON.stringify(x));
   const gleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -55,8 +79,46 @@
   function allesAus(werte) {
     const w = kopie(werte || {});
     for (const k of Object.keys(NEU_IN_V03)) w[k] = NEU_IN_V03[k];
+    for (const k of Object.keys(NEU_IN_V04)) if (k in w) w[k] = NEU_IN_V04[k];
     return w;
   }
+  // Konflikt-Schlüssel für Zustände in der Oberfläche: Seite + Fingerabdruck der Aussagen (fp, vom Dienst), sonst
+  // die Nummer — so bleibt „später“ am richtigen Kasten, auch wenn ein anderer Kasten wegfällt.
+  const konfliktSchluessel = (k) => String(k && k.seite) + "#" + String(k && (k.fp || k.nr));
+  // Körper für POST /api/konflikte/…: Wahl, Notiz und (falls bekannt) der Fingerabdruck — passt er nicht mehr zur
+  // Nummer, antwortet der Dienst 409 statt die Wahl an einen fremden Kasten zu hängen.
+  function entscheidungsKoerper(k, wahl, notiz) {
+    const koerper = { wahl: wahl, notiz: notizText(notiz) };
+    if (k && typeof k.fp === "string" && /^[0-9a-f]{12}$/.test(k.fp)) koerper.fingerabdruck = k.fp;
+    return koerper;
+  }
+  // URL der Entscheidungs-Route: Seiten-ID als EIN Pfadsegment (Schrägstriche als %2F).
+  function konfliktPfad(k) { return "/api/konflikte/" + encodeURIComponent(String(k.seite)) + "/" + encodeURIComponent(String(k.nr)); }
+  // Offene zuerst (in Berichtsreihenfolge), dann entschiedene; „später“ zurückgestellte ans Ende und getrennt.
+  function ordneKonflikte(liste, spaeter) {
+    const alle = Array.isArray(liste) ? liste.filter((k) => k && typeof k === "object" && k.seite && k.a && k.b) : [];
+    const sp = spaeter || {};
+    const offen = alle.filter((k) => !k.entschieden && !sp[konfliktSchluessel(k)]);
+    const entschieden = alle.filter((k) => !!k.entschieden);
+    const zurueck = alle.filter((k) => !k.entschieden && !!sp[konfliktSchluessel(k)]);
+    return { sichtbar: offen.concat(entschieden), zurueck: zurueck };
+  }
+  // Wandelt einen Konflikt-Link ([[ziel]]) in mögliche Knoten-IDs der Ansicht.
+  function quellKandidaten(quelle, seite) {
+    const q = String(quelle || "").trim().replace(/^\/+/, "");
+    if (!q) return [];
+    const mitMd = /\.md$/i.test(q) ? q : q + ".md";
+    const ordner = String(seite || "").split("/").slice(0, -1).join("/");
+    const aus = [q, mitMd];
+    if (ordner) aus.push(ordner + "/" + mitMd);
+    const wiki = String(seite || "").split("/")[0];
+    if (wiki && wiki !== q.split("/")[0]) aus.push(wiki + "/" + mitMd);
+    return aus.filter((x, i) => aus.indexOf(x) === i);
+  }
+  // Notiz für die Entscheidung: getrimmt, höchstens 300 Zeichen (der Dienst prüft das noch einmal).
+  const notizText = (s) => String(s == null ? "" : s).trim().slice(0, MAX_NOTIZ);
+  // Vorschlags-Art: unbekannte Arten wie „fakt“ zeigen.
+  const vorschlagArt = (v) => (v && ["fakt", "stand", "lektion", "pflege"].indexOf(v.art) >= 0 ? v.art : "fakt");
   function neuerOrdner(liste, eingabe) {
     const pfad = String(eingabe == null ? "" : eingabe).trim();
     if (!pfad) return { ok: false, fehler: "ordnerLeer" };
@@ -66,7 +128,11 @@
     return { ok: true, pfad: pfad };
   }
 
-  const hilfen = { FELDER: FELDER, TEXTSCHLUESSEL: TEXTSCHLUESSEL, aenderungen: aenderungen, allesAus: allesAus, neuerOrdner: neuerOrdner };
+  const hilfen = {
+    FELDER: FELDER, TEXTSCHLUESSEL: TEXTSCHLUESSEL, REITER: REIHE, POSTEN: POSTEN, aenderungen: aenderungen, allesAus: allesAus,
+    neuerOrdner: neuerOrdner, konfliktPfad: konfliktPfad, ordneKonflikte: ordneKonflikte, quellKandidaten: quellKandidaten,
+    notizText: notizText, vorschlagArt: vorschlagArt, entscheidungsKoerper: entscheidungsKoerper, postenEintrag: postenEintrag, stufenSchluessel: stufenSchluessel,
+  };
 
   // ---------------------------------------------------------------------------------------- Oberfläche
   const t = (k, w) => (root.BrainTexte ? root.BrainTexte.t(k, w) : k);
@@ -88,6 +154,7 @@
     ein: { laden: false, fehler: null, daten: null, entwurf: null, meldung: null, speichert: false, ordnerFehler: null, ordnerEingabe: "" },
     tokens: null,
     vor: { laden: false, fehler: null, liste: null, meldung: null, beschaeftigt: {}, aufgeklappt: {} },
+    pfl: { laden: false, fehler: null, daten: null, meldung: null, beschaeftigt: {}, aendern: {}, notiz: {}, notizOffen: {}, spaeter: {}, zeigeSpaeter: false, offen: {}, lauf: { sendet: false, meldung: null } },
     ana: { laden: false, fehler: null, daten: null, alle: {} },
   };
 
@@ -143,6 +210,8 @@
   const ICON_SCHLOSS = () => svg(["M7 11V8a5 5 0 0 1 10 0v3", "M5.5 11h13v9h-13z"]);
   const ICON_NEU = () => svg(["M20 12a8 8 0 1 1-2.3-5.6", "M20 4v4.5h-4.5"]);
   const ICON_POST = () => svg(["M4 13l2.5-7h11L20 13v5H4z", "M4 13h4.5l1 2h5l1-2H20"]);
+  const ICON_HAKEN = () => svg(["M5 12.5l4.5 4.5L19 7.5"]);
+  const ICON_FUNKE = () => svg(["M12 3.5l1.7 5.1 5.3 1.9-5.3 1.9L12 17.5l-1.7-5.1L5 10.5l5.3-1.9z", "M18.5 15.5l.7 2 2 .8-2 .7-.7 2-.7-2-2-.7 2-.8z"]);
 
   const zahl = (n) => { try { return new Intl.NumberFormat(gebiet()).format(Math.round(n)); } catch (e) { return String(Math.round(n)); } };
   const prozent = (q) => { try { return new Intl.NumberFormat(gebiet(), { style: "percent", maximumFractionDigits: 0 }).format(q || 0); } catch (e) { return Math.round((q || 0) * 100) + " %"; } };
@@ -200,7 +269,7 @@
 
   function oeffne(reiter) {
     if (!gestartet) return;
-    if (reiter && ["einstellungen", "vorschlaege", "analyse"].indexOf(reiter) >= 0) Z.reiter = reiter;
+    if (reiter && REIHE.indexOf(reiter) >= 0) Z.reiter = reiter;
     Z.offen = true;
     leiste.hidden = false;
     knopf.setAttribute("aria-expanded", "true");
@@ -235,21 +304,22 @@
       onclick: () => { if (root.BrainTexte) root.BrainTexte.setzeSprache(s); },
     }, s.toUpperCase())));
 
-    reiterLeiste.replaceChildren(...[["einstellungen", "reiterEinstellungen"], ["vorschlaege", "reiterVorschlaege"], ["analyse", "reiterAnalyse"]].map(([id, k]) => {
+    const pflegeZahl = Z.pfl.daten && typeof Z.pfl.daten.zuTun === "number" ? Z.pfl.daten.zuTun : 0;
+    reiterLeiste.replaceChildren(...REITER.map(([id, k]) => {
       const an = Z.reiter === id;
       return h("button", {
         type: "button", role: "tab", id: "steuerReiter-" + id, "aria-selected": String(an), "aria-controls": "steuerInhalt",
         tabindex: an ? "0" : "-1",
         onclick: () => { Z.reiter = id; ladeReiter(); zeichne(); },
         onkeydown: (e) => {
-          const reihe = ["einstellungen", "vorschlaege", "analyse"];
-          const i = reihe.indexOf(id);
-          const n = e.key === "ArrowRight" ? reihe[(i + 1) % 3] : e.key === "ArrowLeft" ? reihe[(i + 2) % 3] : null;
+          const i = REIHE.indexOf(id), m = REIHE.length;
+          const n = e.key === "ArrowRight" ? REIHE[(i + 1) % m] : e.key === "ArrowLeft" ? REIHE[(i + m - 1) % m] : null;
           if (!n) return;
           e.preventDefault(); Z.reiter = n; ladeReiter(); zeichne();
           const neu = reiterLeiste.querySelector("#steuerReiter-" + n); if (neu) neu.focus();
         },
-      }, t(k), id === "vorschlaege" && Z.anzahl > 0 ? h("span", { class: "st-zahl", text: zahl(Z.anzahl) }) : null);
+      }, t(k), id === "vorschlaege" && Z.anzahl > 0 ? h("span", { class: "st-zahl", text: zahl(Z.anzahl) })
+        : id === "pflege" && pflegeZahl > 0 ? h("span", { class: "st-zahl", text: zahl(pflegeZahl) }) : null);
     }));
     inhalt.setAttribute("aria-labelledby", "steuerReiter-" + Z.reiter);
 
@@ -258,6 +328,7 @@
     else if (Z.abgelaufen) koerper = hinweisKarte(ICON_NEU(), t("neuOeffnenTitel"), t("neuOeffnen"));
     else if (Z.reiter === "einstellungen") koerper = zeichneEinstellungen();
     else if (Z.reiter === "vorschlaege") koerper = zeichneVorschlaege();
+    else if (Z.reiter === "pflege") koerper = zeichnePflege();
     else koerper = zeichneAnalyse();
     // Neu zeichnen ohne den Platz zu verlieren: Scrollstand und Fokus (Elemente mit data-fokus) bleiben.
     const aktiv = doc.activeElement;
@@ -290,6 +361,7 @@
     if (!api().verfuegbar || Z.abgelaufen) return;
     if (Z.reiter === "einstellungen") { if (!Z.ein.daten) ladeEinstellungen(); ladeTokens(); }
     else if (Z.reiter === "vorschlaege") ladeVorschlaege();
+    else if (Z.reiter === "pflege") { ladePflege(); if (!Z.ein.daten) ladeEinstellungen(); }
     else ladeAnalyse();
   }
 
@@ -330,6 +402,15 @@
       zeichne();
     } catch (e) { /* Punkt bleibt aus */ }
   }
+  async function ladePflege() {
+    const P = Z.pfl;
+    P.laden = true; P.fehler = null; zeichne();
+    try {
+      const d = await api().holeJson("/api/pflege");
+      P.daten = d && typeof d === "object" ? d : { posten: [], konflikte: [], zuTun: 0 };
+    } catch (e) { P.fehler = e; }
+    P.laden = false; zeichne();
+  }
   async function ladeAnalyse() {
     Z.ana.laden = true; Z.ana.fehler = null; zeichne();
     try { const a = await api().holeJson("/api/analyse"); Z.ana.daten = a; Z.tokens = a && a.tokens ? a.tokens : Z.tokens; }
@@ -358,7 +439,10 @@
     for (const g of GRUPPEN) {
       const sek = h("section", { class: "st-gruppe" }, h("h3", { text: t(g) }));
       if (g === "gruppeHintergrund" && !claude) sek.appendChild(h("p", { class: "st-info", text: t("claudeFehlt") }));
-      for (const f of FELDER.filter((x) => x.gruppe === g)) sek.appendChild(zeile(f, w, kaputt || (f.brauchtClaude && !claude)));
+      for (const f of FELDER.filter((x) => x.gruppe === g)) {
+        const bekannt = !E.daten.werte || f.schluessel in E.daten.werte;
+        sek.appendChild(zeile(f, bekannt ? w : Object.assign({}, w, { [f.schluessel]: f.standard }), kaputt || !bekannt || (f.brauchtClaude && !claude), bekannt, claude));
+      }
       wrap.appendChild(sek);
     }
     return wrap;
@@ -370,11 +454,12 @@
     zeichne();
   }
 
-  function zeile(f, w, gesperrt) {
+  function zeile(f, w, gesperrt, bekannt, claude) {
     const k = f.schluessel, id = "st-f-" + k;
     const etiketten = h("div", { class: "st-etiketten" },
       h("span", { class: "st-kosten " + (f.kosten === "kosten0" ? "gruen" : "bernstein"), text: t(f.kosten) }),
-      f.nurClaude ? h("span", { class: "st-badge", text: t("nurClaudeCode") }) : null);
+      f.nurClaude ? h("span", { class: "st-badge", text: t("nurClaudeCode") }) : null,
+      bekannt === false ? h("span", { class: "st-badge", text: t("kommtNoch") }) : null);
     const text = h("div", { class: "st-text" },
       h("div", { class: "st-name", id: id, text: t("titel_" + k) }),
       h("p", { class: "st-satz", text: t("satz_" + k) }),
@@ -391,8 +476,9 @@
     } else if (f.art === "stufen") {
       const gruppe = h("div", { class: "st-stufen", role: "group", "aria-labelledby": id });
       for (const v of f.werte) {
-        const name = k === "hinweise" ? t("hinweis_" + v) : v === 0 ? t("aus") : t("stunden", { n: v });
-        gruppe.appendChild(h("button", { type: "button", "aria-pressed": String(w[k] === v), "data-fokus": "stufe-" + k + "-" + v, disabled: gesperrt, onclick: () => setze(k, v) }, name));
+        const name = f.stufenText ? t(stufenSchluessel(k, v)) : k === "hinweise" ? t("hinweis_" + v) : v === 0 ? t("aus") : t("stunden", { n: v });
+        const aus = gesperrt || (f.brauchtClaudeWert === v && claude === false && w[k] !== v);
+        gruppe.appendChild(h("button", { type: "button", "aria-pressed": String(w[k] === v), "data-fokus": "stufe-" + k + "-" + v, disabled: aus, title: aus && !gesperrt ? t("laufOhneClaude") : null, onclick: () => setze(k, v) }, name));
       }
       z.appendChild(gruppe);
     } else {
@@ -447,7 +533,7 @@
       h("div", { class: "st-fuss-knoepfe" },
         h("button", { type: "button", class: "st-btn st-ghost", disabled: kaputt || E.speichert, onclick: allesAusKlick }, t("allesAus")),
         h("span", { class: "st-luecke" }),
-        offen ? h("button", { type: "button", class: "st-btn st-ghost", disabled: E.speichert, onclick: () => { E.entwurf = kopie(E.daten.werte); E.meldung = null; zeichne(); } }, t("zuruecksetzen")) : null,
+        offen ? h("button", { type: "button", class: "st-btn st-ghost", disabled: E.speichert, onclick: () => { E.entwurf = kopie(E.daten.werte); E.meldung = null; zeichne(); } }, t("aenderungenVerwerfen")) : null,
         h("button", { type: "button", class: "st-btn st-primaer", disabled: !offen || kaputt || E.speichert, onclick: () => speichere() },
           E.speichert ? t("speichert") : t("speichern"))));
   }
@@ -498,13 +584,23 @@
       const beschaeftigt = !!V.beschaeftigt[id];
       const lang = String(v.text || "").length > 320 || String(v.text || "").split("\n").length > 7;
       const auf = !!V.aufgeklappt[id];
-      wrap.appendChild(h("article", { class: "st-vorschlag" + (beschaeftigt ? " beschaeftigt" : "") },
+      const art = vorschlagArt(v);
+      const lektion = art === "lektion";
+      const regel = lektion ? lektionsFelder(v) : null;
+      // Bei Lektionen mit Regel/Warum/Wie ist der Text nur der Auszug aus der Sitzung → zugeklappt hinter einem Link.
+      const auszugVersteckt = lektion && regel && !auf;
+      wrap.appendChild(h("article", { class: "st-vorschlag st-v-" + art + (beschaeftigt ? " beschaeftigt" : "") },
         h("div", { class: "st-v-kopf" },
-          h("span", { class: "st-art " + (v.art === "stand" ? "stand" : "fakt"), text: t(v.art === "stand" ? "art_stand" : "art_fakt") }),
+          h("div", { class: "st-v-marken" },
+            h("span", { class: "st-art " + art, text: t("art_" + art) }),
+            lektion ? h("span", { class: "st-v-ziel", text: t(v.ziel === "skill" ? "ziel_skill" : "ziel_memory") }) : null,
+            art === "pflege" ? h("span", { class: "st-v-ziel", text: t("befund_" + (BEFUNDE.indexOf(v.befund) >= 0 ? v.befund : "sonstiges")) }) : null),
           v.erstellt ? h("time", { datetime: String(v.erstellt), title: String(v.erstellt), text: wannRelativ(v.erstellt) }) : null),
         h("h4", { text: v.titel || id }),
-        h("p", { class: "st-v-text" + (lang && !auf ? " gekuerzt" : ""), text: v.text || "" }),
-        lang ? h("button", { type: "button", class: "st-link", onclick: () => { V.aufgeklappt[id] = !auf; zeichne(); } }, auf ? t("wenigerLesen") : t("mehrLesen")) : null,
+        regel,
+        regel && v.text ? h("p", { class: "st-v-auszug-titel", text: t("lektionAuszug") }) : null,
+        auszugVersteckt ? null : h("p", { class: "st-v-text" + (regel ? " auszug" : "") + (lang && !auf ? " gekuerzt" : ""), text: v.text || "" }),
+        (lang || (regel && v.text)) ? h("button", { type: "button", class: "st-link", onclick: () => { V.aufgeklappt[id] = !auf; zeichne(); } }, auf ? t("wenigerLesen") : t("mehrLesen")) : null,
         h("div", { class: "st-v-fuss" },
           v.quelleOrdner ? h("span", { class: "st-v-ordner", title: String(v.quelleOrdner), text: t("ausOrdner", { ordner: v.quelleOrdner }) }) : h("span"),
           h("div", { class: "st-v-knoepfe" },
@@ -514,13 +610,26 @@
     return wrap;
   }
 
+  // Regel / Warum / Wie anwenden einer Lektion als Definitionsliste — null, wenn keins der Felder gefüllt ist.
+  function lektionsFelder(v) {
+    const zeilen = [["lektionRegel", v.regel], ["lektionWarum", v.warum], ["lektionWie", v.wie]].filter((z) => typeof z[1] === "string" && z[1].trim());
+    if (!zeilen.length) return null;
+    const dl = h("dl", { class: "st-lektion" });
+    for (const [k, wert] of zeilen) { dl.appendChild(h("dt", { text: t(k) })); dl.appendChild(h("dd", { text: wert.trim() })); }
+    return dl;
+  }
+
   async function entscheide(id, aktion) {
     const V = Z.vor;
     V.beschaeftigt[id] = true; V.meldung = null; zeichne();
     try {
       const r = await api().sende("POST", "/api/vorschlaege/" + encodeURIComponent(id) + "/" + aktion, {});
       const ziel = r && r.ziel ? String(r.ziel) : "";
-      V.meldung = { art: "ok", text: t(aktion === "uebernehmen" ? "uebernommen" : "verworfen", { ziel: ziel }) };
+      const war = (V.liste || []).find((x) => String(x.id) === id);
+      const lektion = aktion === "uebernehmen" && war && war.art === "lektion";
+      // Pflege-Vorschlag → Prüfauftrag in <inbox>/_pflege, mit nächstem Schritt statt bloßem Ablageort (Final-Review #1)
+      const pflege = aktion === "uebernehmen" && war && war.art === "pflege";
+      V.meldung = { art: "ok", text: lektion ? t("uebernommenLektion") : pflege ? t("uebernommenPflege") : t(aktion === "uebernehmen" ? "uebernommen" : "verworfen", { ziel: ziel }) };
       const a = app();
       if (a && typeof a.neuLaden === "function") { try { a.neuLaden(); } catch (e) { /* Ansicht lädt beim nächsten Mal */ } }
     } catch (e) {
@@ -528,6 +637,274 @@
     }
     delete V.beschaeftigt[id];
     await ladeVorschlaege();
+  }
+
+  // ----------------------------------------------------------------------------------------- Pflege
+  function zeichnePflege() {
+    const P = Z.pfl;
+    if (!P.daten) return P.fehler ? fehlerKarte(() => ladePflege()) : laedt();
+    const d = P.daten;
+    const posten = Array.isArray(d.posten) ? d.posten.filter((p) => p && POSTEN.indexOf(p.schluessel) >= 0) : [];
+    const zuTun = typeof d.zuTun === "number" ? d.zuTun : 0;
+    const wrap = h("div", { class: "st-pflege" });
+
+    // Kopf: wie viel zu tun ist + Aktualisieren
+    wrap.appendChild(h("div", { class: "st-a-kopf" },
+      h("span", { text: d.erstellt ? t("pflegeStand", { wann: wannRelativ(d.erstellt) }) : "" }),
+      h("button", { type: "button", class: "st-link", disabled: P.laden, onclick: () => ladePflege() }, P.laden ? t("laden") : t("aktualisieren"))));
+    wrap.appendChild(zuTun > 0
+      ? h("div", { class: "st-p-summe" }, h("span", { class: "st-p-summe-zahl", text: zahl(zuTun) }), h("span", { text: zuTun === 1 ? t("pflegeSache1") : t("pflegeSachen") }))
+      : h("div", { class: "st-p-summe ok" }, h("span", { class: "st-p-haken" }, ICON_HAKEN()), h("span", null, h("strong", { text: t("pflegeNichts") }), " ", t("pflegeNichtsText"))));
+    if (P.meldung) wrap.appendChild(h("div", { class: "st-toast " + P.meldung.art, role: "status", text: P.meldung.text }));
+
+    // Widersprüche
+    const k = ordneKonflikte(d.konflikte, P.spaeter);
+    const kAnzahl = k.sichtbar.filter((x) => !x.entschieden).length;
+    const ks = h("section", { class: "st-a-block st-konflikte" },
+      h("h3", null, kAnzahl ? h("i", { class: "st-ring rot" }) : null, t("konflikteTitel"), h("span", { class: "st-zahl", text: zahl(kAnzahl) })));
+    if (!k.sichtbar.length && !k.zurueck.length) ks.appendChild(h("p", { class: "st-muted", text: t("konflikteLeer") }));
+    else {
+      if (k.sichtbar.some((x) => !x.entschieden)) ks.appendChild(h("p", { class: "st-muted", text: t("konflikteText") }));
+      for (const x of k.sichtbar) ks.appendChild(konfliktKarte(x));
+      if (k.zurueck.length) {
+        if (P.zeigeSpaeter) for (const x of k.zurueck) ks.appendChild(konfliktKarte(x, true));
+        ks.appendChild(h("button", { type: "button", class: "st-link st-p-mehr", onclick: () => { P.zeigeSpaeter = !P.zeigeSpaeter; zeichne(); } },
+          P.zeigeSpaeter ? t("wenigerLesen") : t("spaeterZeigen", { n: zahl(k.zurueck.length) })));
+      }
+    }
+    wrap.appendChild(ks);
+
+    // Bericht: Posten mit Befund (Konflikte stehen schon oben), danach eine Zeile „ohne Befund“.
+    const mit = posten.filter((p) => p.anzahl > 0 && p.schluessel !== "konflikte");
+    const ohne = posten.filter((p) => !(p.anzahl > 0) && p.schluessel !== "konflikte");
+    const bs = h("section", { class: "st-a-block st-bericht" }, h("h3", { text: t("berichtTitel") }));
+    for (const p of mit) bs.appendChild(postenZeile(p));
+    if (ohne.length) bs.appendChild(h("p", { class: "st-p-ohne", text: t("berichtOhne", { liste: ohne.map((p) => t("thema_" + p.schluessel)).join(" · ") }) }));
+    wrap.appendChild(bs);
+
+    wrap.appendChild(laufKarte(d.lauf));
+    return wrap;
+  }
+
+  function seiteWaehlen(kandidaten) {
+    const a = app();
+    let ok = false;
+    if (a && typeof a.waehle === "function") {
+      for (const id of kandidaten) { try { if (a.waehle(id) !== false) { ok = true; break; } } catch (e) { /* nächster */ } }
+    }
+    if (!ok) { Z.pfl.meldung = { art: "fehler", text: t("seiteNichtGefunden") }; zeichne(); return; }
+    if (root.matchMedia && root.matchMedia("(max-width: 720px)").matches) schliesse();
+  }
+
+  function konfliktKarte(k, zurueckgestellt) {
+    const P = Z.pfl;
+    const key = konfliktSchluessel(k);
+    const beschaeftigt = !!P.beschaeftigt[key];
+    const gewaehlt = WAHLEN.indexOf(k.entschieden) >= 0 ? k.entschieden : null;
+    const fragen = !gewaehlt || !!P.aendern[key];
+    const seite = String(k.seite);
+    const karte = h("article", { class: "st-konflikt" + (gewaehlt && !fragen ? " entschieden" : "") + (beschaeftigt ? " beschaeftigt" : "") + (zurueckgestellt ? " zurueck" : ""), "data-wahl": gewaehlt || "" },
+      h("div", { class: "st-ko-kopf" },
+        h("button", { type: "button", class: "st-ko-seite", title: seite, onclick: () => seiteWaehlen([seite]) },
+          h("span", { class: "st-s-name", text: seitenName(seite) }), h("span", { class: "st-s-ort", text: seitenOrt(seite) })),
+        h("span", { class: "st-ko-nr", text: t("konfliktNr", { nr: k.nr }) })));
+
+    const ab = h("div", { class: "st-ab" });
+    for (const seiteAB of ["a", "b"]) {
+      const aus = k[seiteAB] || {};
+      const quelle = aus.quelle ? String(aus.quelle) : "";
+      const klasse = "st-aussage" + (gewaehlt === seiteAB || gewaehlt === "beide" ? " gilt" : gewaehlt ? " gilt-nicht" : "");
+      ab.appendChild(h("div", { class: klasse },
+        h("span", { class: "st-ab-marke", "aria-hidden": "true", text: seiteAB.toUpperCase() }),
+        h("p", { class: "st-ab-text", text: aus.text || "" }),
+        quelle
+          ? h("button", { type: "button", class: "st-quelle", title: quelle, onclick: () => seiteWaehlen(quellKandidaten(quelle, seite)) }, t("quelleOeffnen", { name: seitenName(quelle) }))
+          : h("span", { class: "st-quelle leer", text: t("ohneQuelle") })));
+    }
+    karte.appendChild(ab);
+
+    if (!fragen) {
+      karte.appendChild(h("div", { class: "st-ko-stand" },
+        h("span", { class: "st-ko-chip" }, ICON_HAKEN(), t("entschiedenAls", { wahl: t("wahl_" + gewaehlt) })),
+        h("span", { class: "st-ko-stand-text", text: t("entschiedenText") }),
+        h("button", { type: "button", class: "st-link", "data-fokus": "aendern-" + key, onclick: () => {
+          // Gespeicherte Notiz vorbelegen — sonst überschriebe „Ändern“ sie nach einem Neuladen still mit leer.
+          if (P.notiz[key] == null && k.notiz) { P.notiz[key] = notizText(k.notiz); P.notizOffen[key] = true; }
+          P.aendern[key] = true; zeichne();
+        } }, t("aendern"))));
+      return karte;
+    }
+
+    const notizOffen = !!P.notizOffen[key];
+    const knopf = (wahl, klasse) => h("button", {
+      type: "button", class: "st-btn " + klasse + (gewaehlt === wahl ? " aktiv" : ""), disabled: beschaeftigt, "data-fokus": "wahl-" + wahl + "-" + key,
+      "aria-pressed": gewaehlt ? String(gewaehlt === wahl) : null, onclick: () => entscheideKonflikt(k, wahl),
+    }, t("wahl_" + wahl));
+    const wahl = h("div", { class: "st-ko-wahl" },
+      h("div", { class: "st-ko-ab" }, knopf("a", "st-ko-a"), knopf("b", "st-ko-b")),
+      knopf("beide", "st-ghost st-ko-beide"));
+    karte.appendChild(wahl);
+
+    if (notizOffen) {
+      const zaehler = h("span", { class: "st-ko-zaehler", text: t("notizZeichen", { n: String((P.notiz[key] || "").length) }) });
+      const feld = h("textarea", {
+        class: "st-notiz", rows: "2", maxlength: String(MAX_NOTIZ), placeholder: t("notizPlatzhalter"), "aria-label": t("notizDazu"),
+        "data-fokus": "notiz-" + key, spellcheck: "true", disabled: beschaeftigt,
+        oninput: (e) => { P.notiz[key] = String(e.target.value).slice(0, MAX_NOTIZ); zaehler.textContent = t("notizZeichen", { n: String(P.notiz[key].length) }); },
+      });
+      feld.value = P.notiz[key] || "";
+      karte.appendChild(h("div", { class: "st-ko-notiz" }, feld, zaehler));
+    }
+    karte.appendChild(h("div", { class: "st-ko-fuss" },
+      h("button", { type: "button", class: "st-link", "data-fokus": "notizknopf-" + key, onclick: () => {
+        P.notizOffen[key] = !notizOffen; if (notizOffen) delete P.notiz[key]; zeichne();
+        if (!notizOffen) { const f = Array.prototype.find.call(inhalt.querySelectorAll("textarea"), (el) => el.getAttribute("data-fokus") === "notiz-" + key); if (f) f.focus(); }
+      } }, notizOffen ? t("notizWeg") : t("notizDazu")),
+      h("span", { class: "st-luecke" }),
+      gewaehlt ? h("button", { type: "button", class: "st-link st-ko-leise", onclick: () => { delete P.aendern[key]; zeichne(); } }, t("abbrechen"))
+        : zurueckgestellt ? null
+        : h("button", { type: "button", class: "st-link st-ko-leise", disabled: beschaeftigt, onclick: () => entscheideKonflikt(k, "spaeter") }, t("wahl_spaeter"))));
+    return karte;
+  }
+
+  async function entscheideKonflikt(k, wahl) {
+    const P = Z.pfl;
+    const key = konfliktSchluessel(k);
+    if (wahl === "spaeter") {
+      // „Später“ schreibt nichts (der Dienst würde ohnehin nichts schreiben) — nur in dieser Sitzung zurückstellen.
+      P.spaeter[key] = true; P.meldung = { art: "ok", text: t("spaeterGemerkt") }; zeichne();
+      return;
+    }
+    P.beschaeftigt[key] = true; P.meldung = null; zeichne();
+    try {
+      // Eine schon getroffene Entscheidung ersetzt der Dienst, solange sie nicht eingearbeitet ist (Antwort: ersetzt).
+      // Ohne neu getippte Notiz bleibt die gespeicherte (k.notiz) erhalten.
+      const r = await api().sende("POST", konfliktPfad(k), entscheidungsKoerper(k, wahl, P.notiz[key] != null ? P.notiz[key] : k.notiz));
+      P.meldung = { art: "ok", text: t(r && r.ersetzt ? "entscheidungGeaendert" : "entscheidungGespeichert") };
+      // Notiz bleibt in der Oberfläche stehen: wer gleich „Ändern“ drückt, muss sie nicht neu tippen.
+      delete P.aendern[key]; delete P.spaeter[key];
+    } catch (e) {
+      if (e.status === 409) P.meldung = { art: "fehler", text: t(/geändert/i.test(e.message || "") ? "seiteGeaendert" : "entscheidungSchonDa") };
+      else if (e.status !== 403) P.meldung = { art: "fehler", text: t("aktionFehler", { fehler: e.message || "?" }) };
+    }
+    delete P.beschaeftigt[key];
+    await ladePflege();
+  }
+
+  function postenZeile(p) {
+    const P = Z.pfl;
+    const k = p.schluessel;
+    const hinweis = NUR_HINWEIS.indexOf(k) >= 0;
+    const liste = Array.isArray(p.liste) ? p.liste.map((e) => postenEintrag(k, e)) : [];
+    const offen = !!P.offen[k];
+    const z = h("div", { class: "st-posten" + (hinweis ? " hinweis" : "") + (k === "abgelaufen" ? " bernstein" : "") },
+      h("span", { class: "st-p-zahl", text: zahl(p.anzahl) }),
+      h("div", { class: "st-p-text" },
+        h("div", { class: "st-p-titel" }, t("posten_" + k), hinweis ? h("span", { class: "st-badge", text: t("nurHinweis") }) : null),
+        h("p", { class: "st-p-schritt", text: t("schritt_" + k) }),
+        h("div", { class: "st-p-aktionen" },
+          liste.length ? h("button", { type: "button", class: "st-link", "aria-expanded": String(offen), onclick: () => { P.offen[k] = !offen; zeichne(); } }, offen ? t("wenigerLesen") : t("listeZeigen")) : null,
+          k === "vorschlaege" ? h("button", { type: "button", class: "st-link", onclick: () => { Z.reiter = "vorschlaege"; ladeReiter(); zeichne(); } }, t("zuDenVorschlaegen")) : null)));
+    if (offen && liste.length) {
+      const ul = h("ul", { class: "st-seitenliste st-p-liste" });
+      for (const e of liste) {
+        // Mit Seite: anklickbar (Name + übersetzter Zusatz bzw. Ordner), sonst reiner Text.
+        if (e.seite) {
+          ul.appendChild(h("li", null, h("button", { type: "button", title: e.seite + (e.zusatz ? " — " + e.zusatz : ""), onclick: () => seiteWaehlen([e.seite]) },
+            h("span", { class: "st-s-name", text: seitenName(e.seite) }), h("span", { class: "st-s-ort", text: e.zusatz || seitenOrt(e.seite) }))));
+        } else ul.appendChild(h("li", { class: "st-p-eintrag", text: e.text }));
+      }
+      if (p.anzahl > liste.length) ul.appendChild(h("li", { class: "st-p-eintrag st-muted", text: t("weitere", { n: zahl(p.anzahl - liste.length) }) }));
+      z.querySelector(".st-p-text").appendChild(ul);
+    }
+    return z;
+  }
+
+  // Ein Listeneintrag des Pflegeberichts → { seite?, zusatz?, text } in der gewählten Sprache. Der Dienst liefert
+  // strukturierte Einträge (pflege.mjs: Felder je Posten); ältere Dienste liefern fertige deutsche Sätze — die
+  // werden wie bisher gezeigt (Pfad vor „ — “ anklickbar).
+  function postenEintrag(k, e) {
+    if (typeof e === "string") {
+      const pfad = e.split(" — ")[0];
+      return /\.md$/i.test(pfad) ? { seite: pfad, zusatz: e.length > pfad.length ? e.slice(pfad.length + 3) : "", text: e } : { text: e };
+    }
+    if (!e || typeof e !== "object") return { text: String(e == null ? "" : e) };
+    const n = (x) => zahl(Number(x) || 0);
+    switch (k) {
+      case "abgelaufen": {
+        const verfall = e.grund === "verfall";
+        const schl = (verfall ? "eintragVerfall" : "eintragAbgelaufen") + (Number(e.tage) === 1 ? "1" : "");
+        return { seite: e.seite, zusatz: t(schl, { n: n(e.tage), datum: datum(e.frist) }) };
+      }
+      case "bald": return { seite: e.seite, zusatz: t("eintragBald", { datum: datum(e.frist) }) };
+      case "konflikte": return { seite: e.seite, zusatz: Number(e.anzahl) > 1 ? t("eintragKonflikte", { n: n(e.anzahl) }) : "" };
+      case "konflikteKaputt": return { seite: e.seite, zusatz: Number(e.anzahl) > 1 ? t("eintragKaputt", { n: n(e.anzahl) }) : "" };
+      case "entscheidungen": return { seite: e.seite, zusatz: t("eintragEntscheidung", { nr: n(e.konflikt), wahl: WAHLEN.indexOf(e.wahl) >= 0 ? t("wahl_" + e.wahl) : String(e.wahl || "") }) };
+      case "vorschlaege": return { text: String(e.titel || "") };
+      case "lektionen": case "pflegeAuftraege": return { text: String(e.name || "") };
+      case "luecken": return { text: String(e.frage || "") };
+      case "dubletten": {
+        const seiten = Array.isArray(e.seiten) ? e.seiten.map(String) : [];
+        const grund = e.grund === "titel" ? t("eintragGleicherTitel") : t("eintragAehnlich", { wert: prozent(Number(e.aehnlichkeit) || 0) });
+        return { seite: seiten[0], zusatz: (seiten.length > 1 ? "↔ " + seiten.slice(1).map(seitenName).join(", ") + " · " : "") + grund };
+      }
+      case "zuLang": return { seite: e.seite, zusatz: t("eintragZeilen", { n: n(e.zeilen) }) };
+      case "importe": return { text: t(Number(e.notizen) === 1 ? "eintragImport1" : "eintragImport", { quelle: String(e.quelle || ""), n: n(e.notizen) }) };
+      case "messlatte": return { text: t(e.ok ? "eintragMesslatte" : "eintragMesslatteUnter", { datum: datum(e.datum), positiv: String(e.positiv || ""), still: String(e.still || "") }) };
+      default: return e.seite ? { seite: String(e.seite), zusatz: "" } : { text: "" };
+    }
+  }
+
+  // Karte „Gründlich prüfen lassen“: Knopf + Kosten. lauf (optional, vom Dienst): { claude, laeuft, letzter }.
+  function laufKarte(lauf) {
+    const L = Z.pfl.lauf;
+    const info = lauf && typeof lauf === "object" ? lauf : {};
+    const claude = typeof info.claude === "boolean" ? info.claude : Z.ein.daten ? Z.ein.daten.claudeGefunden !== false : true;
+    const laeuft = !!info.laeuft || L.sendet;
+    const letzter = info.letzter && typeof info.letzter === "object" ? info.letzter : null;
+    let letzteZeile = null;
+    if (letzter && letzter.zeit) {
+      const tok = (Number(letzter.tokEin) || 0) + (Number(letzter.tokAus) || 0);
+      letzteZeile = tok > 0 ? t("laufLetzterTokens", { wann: wannRelativ(letzter.zeit), n: zahl(letzter.vorschlaege || 0), tok: zahl(tok) })
+        : t("laufLetzter", { wann: wannRelativ(letzter.zeit), n: zahl(letzter.vorschlaege || 0) });
+    }
+    return h("section", { class: "st-lauf" },
+      h("div", { class: "st-lauf-kopf" },
+        h("span", { class: "st-lauf-icon" }, ICON_FUNKE()),
+        h("div", null, h("div", { class: "st-name", text: t("laufTitel") }), h("p", { class: "st-satz", text: t("laufText") }))),
+      h("div", { class: "st-etiketten" },
+        h("span", { class: "st-kosten bernstein", text: t("kostenLauf") }),
+        h("span", { class: "st-badge", text: t("nurClaudeCode") })),
+      !claude ? h("p", { class: "st-info", text: t("laufOhneClaude") }) : null,
+      L.meldung ? h("div", { class: "st-toast " + L.meldung.art, role: "status", text: L.meldung.text }) : null,
+      h("div", { class: "st-lauf-fuss" },
+        h("span", { class: "st-lauf-letzter", text: letzteZeile || "" }),
+        h("button", { type: "button", class: "st-btn st-primaer", "data-fokus": "lauf", disabled: !claude || laeuft, onclick: () => starteLauf() },
+          laeuft ? t("laufLaeuft") : t("laufKnopf"))));
+  }
+
+  async function starteLauf() {
+    const L = Z.pfl.lauf;
+    L.sendet = true; L.meldung = null; zeichne();
+    try {
+      const r = await api().sende("POST", "/api/pflege/lauf", {});
+      const grund = r && typeof r.grund === "string" ? r.grund : "";
+      if (r && r.gestartet === false) {
+        L.meldung = /schon/i.test(grund) ? { art: "ok", text: t("laufSchonDabei") }
+          : /claude/i.test(grund) ? { art: "fehler", text: t("laufOhneClaude") }
+          : { art: "fehler", text: t("laufFehler", { fehler: grund || "?" }) };
+      } else L.meldung = { art: "ok", text: t("laufGestartet") };
+    } catch (e) {
+      // Dienst ab W1-Fix: nicht gestartet → 409 „läuft schon“ / 503 „claude fehlt“ (grund im Körper);
+      // 503 ohne grund = Pflege-Lauf gibt es in dieser Version nicht.
+      const grund = e.daten && typeof e.daten.grund === "string" ? e.daten.grund : "";
+      if (e.status === 409) L.meldung = { art: "ok", text: t("laufSchonDabei") };
+      else if (e.status === 503 && /claude/i.test(grund)) L.meldung = { art: "fehler", text: t("laufOhneClaude") };
+      else if (e.status === 503) L.meldung = { art: "fehler", text: t("laufNichtDa") };
+      else if (e.status !== 403) L.meldung = { art: "fehler", text: t("laufFehler", { fehler: grund || e.message || "?" }) };
+    }
+    L.sendet = false; zeichne();
+    if (L.meldung && L.meldung.art === "ok") ladePflege();
   }
 
   // ---------------------------------------------------------------------------------------- Analyse
@@ -555,6 +932,7 @@
 
     wrap.appendChild(seitenListe("konflikt", "listeKonflikt", "listeKonfliktText", seiten.konflikt, "rot"));
     wrap.appendChild(seitenListe("pruef", "listePruef", "listePruefText", seiten.pruefbeduerftig, "gelb"));
+    if (Array.isArray(seiten.abgelaufen)) wrap.appendChild(seitenListe("abgelaufen", "listeAbgelaufen", "listeAbgelaufenText", seiten.abgelaufen, "gelb"));
     wrap.appendChild(seitenListe("meist", "listeMeist", "listeMeistText", seiten.meistGelesen));
     wrap.appendChild(seitenListe("nie", "listeNie", "listeNieText", seiten.nieGelesen));
     wrap.appendChild(seitenListe("verwaist", "listeVerwaist", "listeVerwaistText", seiten.verwaist));

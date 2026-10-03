@@ -21,6 +21,10 @@ export const SCHEMA = {
   updateHinweis:           { typ: "boolean", standard: true },
   sicherungTaeglich:       { typ: "boolean", standard: true },
   luecken:                 { typ: "boolean", standard: false },
+  // v0.4 „Selbstpflege": Wochen-Zeile beim Sitzungsstart, Pflege-Lauf mit KI, Session-Auswerter (Lektionen).
+  wochenbericht:           { typ: "boolean", standard: true },
+  pflegeLauf:              { werte: ["aus", "woechentlich"], standard: "aus" },
+  lektionen:               { werte: ["aus", "lokal", "mit-ki"], standard: "lokal" },
 };
 export const STANDARD = Object.fromEntries(Object.entries(SCHEMA).map(([k, s]) => [k, s.standard]));
 

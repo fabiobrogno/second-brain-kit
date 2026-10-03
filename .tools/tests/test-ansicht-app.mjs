@@ -47,7 +47,8 @@ test("Texte: jeder in app.js und index.html benutzte Schlüssel hat einen deutsc
   for (const m of APP.matchAll(/\bt\("([A-Za-z]+)"/g)) schluessel.add(m[1]);
   for (const m of APP.matchAll(/:\s*"((?:typ|bereich)[A-Z][A-Za-z]+)"/g)) schluessel.add(m[1]);
   for (const m of INDEX.matchAll(/data-t(?:-title|-aria|-placeholder)?="([A-Za-z]+)"/g)) schluessel.add(m[1]);
-  const fehlt = [...schluessel].filter((k) => !(k in H.STANDARD));
+  // Optik-Texte (v0.4) kommen per BrainTexte.ergaenze aus app.js (H.ZUSATZ), nicht aus STANDARD
+  const fehlt = [...schluessel].filter((k) => !(k in H.STANDARD) && !(k in H.ZUSATZ.de));
   assert.deepEqual(fehlt, []);
   assert.ok(schluessel.size > 40, "Schlüssel gefunden: " + schluessel.size);
 });
@@ -61,6 +62,13 @@ test("Texte: jeder Rückfall-Schlüssel aus app.js (STANDARD) hat auch einen ech
   const fehltEn = Object.keys(H.STANDARD).filter((k) => !(k in BrainTexte.tabelle.en));
   assert.deepEqual(fehltDe, [], "in texte.js (de) fehlende Schlüssel aus app.js");
   assert.deepEqual(fehltEn, [], "in texte.js (en) fehlende Schlüssel aus app.js");
+  // Zusatztexte der Optik: de und en vollständig, keine Überschneidung mit STANDARD
+  assert.deepEqual(Object.keys(H.ZUSATZ.de).sort(), Object.keys(H.ZUSATZ.en).sort());
+  assert.deepEqual(Object.keys(H.ZUSATZ.de).filter((k) => k in H.STANDARD), []);
+  // ergaenze() spielt sie ein: danach liefert BrainTexte sie in beiden Sprachen
+  BrainTexte.ergaenze(H.ZUSATZ);
+  assert.equal(BrainTexte.tabelle.en.statusAbgelaufen, "Expired");
+  assert.equal(BrainTexte.tabelle.de.statusAbgelaufen, "Abgelaufen");
 });
 
 test("Aufleuchten: neue Lesezeilen → Seiten-IDs (dekodiert, ohne Doppelte), seit = jüngster Zeitstempel", () => {
@@ -100,9 +108,9 @@ test("Kanten großer Brains: nur Auswahl, Weg oder Suchtreffer — im Überblick
   assert.equal(H.kantenFuerFokus("sel", { ...opt, sel: 0, max: 1 }).length, 1);
 });
 
-test("index.html: Skript-Reihenfolge texte → api → markdown → suche → app → steuer, steuer.css eingebunden", () => {
+test("index.html: Skript-Reihenfolge texte → api → markdown → suche → icons → app → steuer, steuer.css eingebunden", () => {
   const skripte = [...INDEX.matchAll(/<script\b([^>]*)>/g)].map((m) => (m[1].match(/src="([^"]+)"/) || [])[1]);
-  assert.deepEqual(skripte, ["vendor/three.bundle.js", "vendor/brain-mesh/brain-mesh.js", "texte.js", "api.js", "markdown.js", "suche.js", "app.js", "steuer.js"]);
+  assert.deepEqual(skripte, ["vendor/three.bundle.js", "vendor/brain-mesh/brain-mesh.js", "texte.js", "api.js", "markdown.js", "suche.js", "icons.js", "app.js", "steuer.js"]);
   assert.match(INDEX, /<link rel="stylesheet" href="style.css">\s*<link rel="stylesheet" href="steuer.css">/);
 });
 
@@ -129,6 +137,9 @@ test("app.js: Punkt-Shader begrenzen die Größe, verwerfen Punkte an/hinter der
   const quelle = readFileSync(new URL("../ansicht/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(quelle, /gl_PointSize = uPR \* uScale \* s \* 70\.0 \/ -mv\.z;/);
   assert.match(quelle, /tiefe > 0\.06 \? min\(uPR \* uScale \* s \* 70\.0 \/ tiefe, uPR \* 160\.0\) : 0\.0/);
+  // MCP-Plaketten: dieselbe Grenze (Größe gedeckelt, nichts an/hinter der Kamera, NaN-sicherer Kreis-Test)
+  assert.match(quelle, /tiefe > 0\.06 \? min\(uPR \* uScale \* \(26\.0 \+ 8\.0 \* mhl\) \* 4\.6 \/ tiefe, uPR \* 110\.0\) : 0\.0/);
+  assert.match(quelle, /if \(!\(length\(pc - 0\.5\) <= 0\.5\)\) discard;/);
   assert.match(quelle, /if \(!\(d <= 1\.0\)\) discard;/);
   assert.match(quelle, /if \(!\(d <= 0\.5\)\) discard;/);
 });

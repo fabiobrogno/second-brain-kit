@@ -1,13 +1,14 @@
 // .tools/tests/test-ansicht-daten.mjs — Daten der 3D-Ansicht: Bereiche aus der Config, Ausgabe nur nach .logs/ansicht/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync, renameSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { kopiereBaum } from "./kopiere-baum.mjs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { erzeugeAnsichtsDaten, baueAnsichtsDaten, datenSchluessel } from "../ansicht/daten.mjs";
+import { erzeugeAnsichtsDaten, baueAnsichtsDaten, datenSchluessel, bedeutungen, mcpIcon } from "../ansicht/daten.mjs";
+import { fingerabdruck } from "../konflikte.mjs";
 
 // Harte Sicherheitsregel (global.md): JEDER Test, der Home-Konfigurationen liest (hier: das MCP-Inventar
 // in daten.mjs), setzt HOME/USERPROFILE auf ein leeres Temp-Verzeichnis — die echten ~/.claude.json,
@@ -315,4 +316,117 @@ test("D.sprache aus cfg.ansicht.sprache (nur de/en), Seite mit BOM, Lint-Pfade m
   assert.equal("sprache" in baueAnsichtsDaten(v), false);
   writeFileSync(join(v, "brain.config.json"), JSON.stringify(KIT_AUSZUG));
   assert.equal("sprache" in baueAnsichtsDaten(v), false);
+});
+
+// --- v0.4 Task 1: Gültigkeit, Konflikte, Lesezahl, Bedeutung, MCP-Gruppe/-Icon ---
+test("v0.4: Knotenfelder gueltigkeit/pruefenBis/stand/konflikte/lesezahl/bedeutung, D.konflikte, MCP gruppe/icon", () => {
+  const v = tempVault("ansicht v04 ");
+  const jetzt = new Date(2026, 9, 3, 12, 0, 0).getTime();
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  writeFileSync(join(v, ".mcp.json"), JSON.stringify({ mcpServers: { "claude_ai_Beispiel": {}, "demo-server": {} } }));
+  mkdirSync(join(v, "wiki", "notizen"), { recursive: true });
+  writeFileSync(join(v, "wiki", "notizen", "alt.md"), "﻿---\r\nname: alt\r\ndescription: alt\r\nstand: 2026-01-10\r\npruefen_bis: 2026-09-23\r\n---\r\n# Alt\r\n\r\n[[neu]]\r\n");
+  writeFileSync(join(v, "wiki", "notizen", "neu.md"), "---\nname: neu\ndescription: neu\npruefen_bis: 2026-10-10\n---\n# Neu\n\n[[alt]] [[ohne]]\n");
+  writeFileSync(join(v, "wiki", "notizen", "ohne.md"), [
+    "---", "name: ohne", "description: ohne", "---", "# Ohne", "",
+    "> [!KONFLIKT] offen — Du entscheidest", '> A: "eins" — Quelle: [[alt]]', '> B: "zwei" — Quelle: [[neu]]', "",
+    "> [!KONFLIKT] offen — Du entscheidest", '> A: "kaputt, B fehlt"', "",
+  ].join("\n"));
+  mkdirSync(join(v, "notizen"));
+  writeFileSync(join(v, "notizen", "roh.md"), "> [!KONFLIKT] offen\n> A: \"x\"\n> B: \"y\"\n"); // keine Wiki-Seite → nicht in D.konflikte
+  mkdirSync(join(v, ".logs"));
+  const zeit = (tage) => new Date(jetzt - tage * 86400000).toISOString().slice(0, 19);
+  writeFileSync(join(v, ".logs", "werkzeug.log"), [
+    `${zeit(1)} sid=a art=lesen ziel=${encodeURIComponent("wiki/notizen/neu.md")}`,
+    `${zeit(2)} sid=a art=lesen ziel=${encodeURIComponent("wiki/notizen/neu.md")}`,
+    `${zeit(40)} sid=a art=lesen ziel=${encodeURIComponent("wiki/notizen/neu.md")}`, // älter als 30 Tage
+    `${zeit(3)} sid=a art=mcp ziel=${encodeURIComponent("demo-server/suche")}`,
+    "kaputte zeile ohne felder",
+  ].join("\n") + "\n");
+  const d = baueAnsichtsDaten(v, { jetzt });
+  const k = (id) => d.nodes.find((n) => n.id === id);
+  const alt = k("wiki/notizen/alt.md"), neu = k("wiki/notizen/neu.md"), ohne = k("wiki/notizen/ohne.md");
+  assert.deepEqual([alt.gueltigkeit, alt.pruefenBis, alt.stand], ["abgelaufen", "2026-09-23", "2026-01-10"]);
+  assert.deepEqual([neu.gueltigkeit, neu.pruefenBis, neu.stand], ["bald", "2026-10-10", null]);
+  assert.equal(ohne.gueltigkeit, "ohne");
+  // W1-Review #13: Knotenzahl aus demselben Parser wie D.konflikte (jeder Ring hat einen Eintrag), kaputte getrennt
+  assert.equal(ohne.konflikte, 1, "entscheidbare Kästen");
+  assert.equal(ohne.konflikteKaputt, 1, "unvollständiger Kasten getrennt gezählt");
+  assert.equal(ohne.status, "konflikt");
+  assert.deepEqual(d.konflikte, [{ seite: "wiki/notizen/ohne.md", nr: 1, fp: fingerabdruck("eins", "zwei"), zeile: 7, a: { text: "eins", quelle: "alt" }, b: { text: "zwei", quelle: "neu" } }]);
+  assert.equal(d.konflikte.length, d.nodes.filter(n => n.wiki).reduce((s, n) => s + n.konflikte, 0), "Ringzahl = Einträge");
+  assert.equal(neu.lesezahl, 2);
+  assert.equal(alt.lesezahl, 0);
+  for (const n of d.nodes) {
+    assert.ok(n.bedeutung >= 0 && n.bedeutung <= 1, `${n.id}: bedeutung ${n.bedeutung}`);
+    assert.ok([1, 2, 3].includes(n.bedeutungStufe), `${n.id}: Stufe ${n.bedeutungStufe}`);
+  }
+  assert.equal(neu.bedeutung, 1, "meiste Verbindungen + Lesungen → 1");
+  assert.equal(neu.bedeutungStufe, 3);
+  assert.ok(alt.bedeutung < neu.bedeutung);
+  const cai = k("mcp:claude_ai_Beispiel"), demo = k("mcp:demo-server");
+  assert.equal(cai.gruppe, "Claude.ai");
+  assert.equal(demo.gruppe, "Vault");
+  assert.equal(demo.lesezahl, 1);
+  assert.equal(cai.gueltigkeit, "ohne");
+  assert.ok(cai.icon === null || typeof cai.icon === "string");
+});
+
+test("v0.4: ohne Frontmatter zählt „pruefen_bis:“ im Text nicht (W1-Review #12)", () => {
+  const v = tempVault("ansicht ohne fm ");
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "erklaerung.md"), "# Felder\n\nSo schreibt man es:\npruefen_bis: 2020-01-01\n");
+  writeFileSync(join(v, "wiki", "echt.md"), "---\nname: echt\npruefen_bis: 2020-01-01\n---\n# Echt\n");
+  const d = baueAnsichtsDaten(v, { jetzt: new Date(2026, 9, 3, 12).getTime() });
+  assert.equal(d.nodes.find(n => n.id === "wiki/erklaerung.md").gueltigkeit, "ohne");
+  assert.equal(d.nodes.find(n => n.id === "wiki/echt.md").gueltigkeit, "abgelaufen");
+});
+
+test("v0.4: Symlink-Seiten nach außen fließen nicht ein (W1-Review #16)", (t) => {
+  const v = tempVault("ansicht symlink ");
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  const aussen = mkdtempSync(join(tmpdir(), "ansicht-aussen-"));
+  mkdirSync(join(aussen, "ordner"));
+  const kasten = "# Fremd\n\n> [!KONFLIKT] offen\n> A: x\n> B: y\n";
+  writeFileSync(join(aussen, "fremd.md"), kasten);
+  writeFileSync(join(aussen, "ordner", "fremd2.md"), kasten);
+  writeFileSync(join(v, "wiki", "innen.md"), kasten);
+  try {
+    symlinkSync(join(aussen, "fremd.md"), join(v, "wiki", "link.md"));
+    symlinkSync(join(aussen, "ordner"), join(v, "wiki", "linkdir"), "dir");
+  } catch { t.skip("keine Symlinks"); return; }
+  const d = baueAnsichtsDaten(v);
+  assert.deepEqual(d.konflikte.map(k => k.seite), ["wiki/innen.md"]);
+  assert.ok(!d.nodes.some(n => /link/.test(n.id)), "keine Knoten für Symlinks nach außen");
+});
+
+test("v0.4: verfall zählt ab dem letzten Commit der Seite", { skip: !hatGit && "kein git" }, () => {
+  const v = tempVault("ansicht verfall ");
+  writeFileSync(join(v, "brain.config.json"), kitConfig());
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "moment.md"), "---\nname: moment\ndescription: m\nverfall: 30\n---\n# Moment\n");
+  writeFileSync(join(v, "wiki", "ohne-commit.md"), "---\nname: oc\ndescription: m\nverfall: 30\n---\n# OC\n");
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  env.GIT_AUTHOR_DATE = env.GIT_COMMITTER_DATE = "2026-01-01T10:00:00";
+  const g = (...a) => execFileSync("git", ["-C", v, ...a], { stdio: "ignore", windowsHide: true, env });
+  g("init", "-q"); g("add", "--", "wiki/moment.md");
+  g("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--no-gpg-sign", "-m", "x");
+  const d = baueAnsichtsDaten(v, { jetzt: new Date(2026, 9, 3, 12).getTime() });
+  assert.equal(d.nodes.find((n) => n.id === "wiki/moment.md").gueltigkeit, "abgelaufen");
+  assert.equal(d.nodes.find((n) => n.id === "wiki/ohne-commit.md").gueltigkeit, "ohne");
+});
+
+test("v0.4: bedeutungen() normiert auf 0..1 mit Stufen; mcpIcon() fällt auf null zurück", () => {
+  assert.deepEqual(bedeutungen([]), []);
+  assert.deepEqual(bedeutungen([{ verbindungen: 0, lesezahl: 0 }]), [{ bedeutung: 0, bedeutungStufe: 1 }]);
+  const b = bedeutungen([{ verbindungen: 10, lesezahl: 10 }, { verbindungen: 1, lesezahl: 0 }, { verbindungen: 4, lesezahl: 3 }]);
+  assert.deepEqual(b.map((x) => x.bedeutungStufe), [3, 1, 2]);
+  assert.equal(b[0].bedeutung, 1);
+  assert.equal(mcpIcon("claude_ai_Gmail", null, {}), null);
+  assert.equal(mcpIcon("x", () => "gmail", null), null);
+  assert.equal(mcpIcon("claude_ai_Gmail", (n, z) => z[n.replace(/^claude_ai_/, "").toLowerCase()] || null, { gmail: "gmail" }), "gmail");
+  assert.equal(mcpIcon("x", () => { throw new Error("kaputt"); }, {}), null);
+  assert.equal(mcpIcon("x", () => "", {}), null);
 });

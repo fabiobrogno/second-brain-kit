@@ -65,6 +65,10 @@ try {
   renameSync(tmp, ziel);
 } catch (e) { log(`Hinweis: Lint-Cache übersprungen (${e.message})`); }
 
+// Pflegebericht (v0.4) losgelöst vom Sitzungsstart rechnen → .logs/pflege-bericht.json; der NÄCHSTE Sitzungsstart
+// liest daraus die Wochen-Zeile ohne Wartezeit (W1-Review #6). Neu gerechnet wird nur bei geändertem Vault.
+if (AUTOMATIK.wochenbericht !== false) node("pflege.mjs", [V, "--cache"]);
+
 // Sicherung (ersetzt reines git push): brain backup regelt github/ordner/keins. Rückwärtskompatibel:
 // fehlt backup in der Config, aber es ist bereits ein Git-Remote eingerichtet, pushen wir wie bisher
 // (altes Verhalten vor dieser Sicherung-Funktion bleibt für bestehende Vaults unverändert).

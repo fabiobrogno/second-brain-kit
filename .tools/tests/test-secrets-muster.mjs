@@ -24,6 +24,10 @@ const faelle = [
   ["password is", j("the pass", "word is ", "hunter2x"), "the password is required"],
   ["Passwort Doppelpunkt", j("Pass", "wort: ", "Geheim99"), "Passwortmanager benutzen"],
   ["Connection-String", j("redis", "x://", "nutzer", ":", "geheim", "@host:6379"), "https://example.org/pfad@version"],
+  ["curl -u Nutzer und Wert", j("curl -u ", "admin", ":", "Sup3r", "Geheim https://x.invalid"), "git push -u origin main"],
+  ["--user Nutzer und Wert", j("curl --user ", "admin", ":", "Sup3r", "Geheim"), "curl --user-agent Gartenbot/1.0"],
+  ["-u direkt mit Nutzer und Wert", j("mysql -u", "root", ":", "Sup3r", "Geheim"), "sort -u liste.txt"],
+  ["Schlüssel-Header", j("curl -H 'X-Api-", "Key: ", "abc123'"), "curl -H 'Content-Type: application/json'"],
   ["Connection-String mit Port", j("ftp", "://", "anna", ":", "s3cret", "@ftp.example.org"), "http://localhost:8080/a@b"],
 ];
 
@@ -65,4 +69,11 @@ test("findeSecrets: höchstens 5 Fundstellen, Zeilennummern 1-basiert, CRLF", ()
   const f = findeSecrets(["ok", z, z, z, z, z, z].join("\r\n"));
   assert.equal(f.length, 5);
   assert.equal(f[0].zeile, 2);
+});
+
+test("Zugangsdaten über Zeilengrenzen: hatSecretsImKontext prüft auch den zusammengezogenen Text", async () => {
+  const { hatSecretsImKontext } = await import("../secrets-muster.mjs");
+  assert.equal(findeSecrets(j("pass", "wort:\n", "Geheim", "Xy99")).length, 0, "zeilenweise allein sieht es nicht");
+  assert.equal(hatSecretsImKontext(j("pass", "wort:\n", "Geheim", "Xy99")), true);
+  assert.equal(hatSecretsImKontext("Das Passwort-Feld ist leer.\nAlles gut."), false);
 });

@@ -8,6 +8,9 @@
 // Art). ernte.mjs entfernt sie nach Abschluss. Wird der Lauf mit Claude Code beendet (Windows: Job-Objekt), bleibt
 // die Marke liegen und session-start arbeitet sie beim nächsten Start ab (arbeiteOffeneAb) — dann läuft Claude.
 // Testhaken: BRAIN_ERNTE_SKRIPT ersetzt den Pfad zu ernte.mjs (Fake-Ernte in Tests).
+// v0.4: Mit „fakt" (SessionEnd/PreCompact) startet zusätzlich der Session-Auswerter (lektionen.mjs) losgelöst —
+// eigener Schalter `lektionen` (aus|lokal|mit-ki, Standard lokal), unabhängig von ernteSitzungsende.
+// Testhaken: BRAIN_LEKTIONEN_SKRIPT ersetzt den Pfad zu lektionen.mjs.
 import { readFileSync, existsSync, realpathSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +20,7 @@ import { leseAutomatik } from "../../einstellungen.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const ERNTE = join(HIER, "..", "..", "ernte.mjs");
+const LEKTIONEN = join(HIER, "..", "..", "lektionen.mjs");
 
 // Wie brain-hint.mjs: nur Wortzeichen und "-", höchstens 64 Zeichen.
 export function saubereSid(roh) {
@@ -110,16 +114,33 @@ export function arbeiteOffeneAb(vault, { jetzt = Date.now() } = {}) {
   return "";
 }
 
+// Session-Auswerter losgelöst starten (Schalter prüft der Aufrufer, ernteNichtIn prüft lektionen.mjs selbst).
+export function starteLektionen(vault, { transkript, sid = "", cwd = "" } = {}) {
+  if (process.env.BRAIN_ERNTE === "1") return false;
+  if (typeof transkript !== "string" || !transkript || !existsSync(transkript)) return false;
+  const skript = process.env.BRAIN_LEKTIONEN_SKRIPT || LEKTIONEN;
+  const args = [skript, "--transkript", transkript, "--sid", saubereSid(sid), "--cwd", String(cwd || ""), vault];
+  try {
+    const kind = spawn(process.execPath, args, { cwd: vault, detached: true, stdio: "ignore", windowsHide: true, env: { ...process.env, BRAIN_VAULT: vault } });
+    kind.on("error", () => {});
+    kind.unref();
+    return true;
+  } catch { return false; }
+}
+
 // Hook-Einstieg: Eingabe (geparstes Hook-JSON) + Art → Schalter prüfen → starten.
+// Rückgabe wie bisher: true, wenn die Ernte gestartet wurde (der Session-Auswerter zählt nicht).
 export function loese(vault, art, eingabe) {
   if (process.env.BRAIN_ERNTE === "1") return false;
-  if (!schalterAn(leseAutomatik(vault).werte, art)) return false;
-  return starteErnte(vault, {
-    art,
+  const { werte, fehler } = leseAutomatik(vault);
+  const job = {
     transkript: eingabe?.transcript_path ? String(eingabe.transcript_path) : "",
     sid: eingabe?.session_id,
     cwd: eingabe?.cwd ? String(eingabe.cwd) : "",
-  });
+  };
+  if (art === "fakt" && !fehler && werte.lektionen !== "aus") starteLektionen(vault, job);
+  if (!schalterAn(werte, art)) return false;
+  return starteErnte(vault, { art, ...job });
 }
 
 // Eigener Argument-Parser: vaultPfad() würde den Wert von --art („fakt") als Vault deuten.
