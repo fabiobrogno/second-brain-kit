@@ -60,7 +60,8 @@ export function pruefeSeite(vault, seite) {
   if (teile.some(t => !t || t === "." || t === ".." || t.startsWith("."))) throw fehlerMit(400, "Ungültige Seite.");
   const o = ordner(vault);
   if (!istWikiSeite(seite, o.wiki)) throw fehlerMit(400, "Das ist keine Wiki-Seite.");
-  const datei = join(vault, ...teile);
+  const datei = findeSeitenPfad(vault, teile);
+  if (!datei) throw fehlerMit(404, "Diese Seite gibt es nicht (mehr).");
   let st;
   try { st = lstatSync(datei); } catch { throw fehlerMit(404, "Diese Seite gibt es nicht (mehr)."); }
   if (!st.isFile()) throw fehlerMit(400, "Seite ist keine normale Datei.");
@@ -71,17 +72,39 @@ export function pruefeSeite(vault, seite) {
   return dateiEcht;
 }
 
-// Gleiche Seite trotz anderer Schreibweise (Groß/klein auf macOS/Windows, NFC/NFD-Umlaute)?
+// Gleiche Seite trotz anderer Schreibweise? Über den Seitennamen (NFC + Kleinschreibung) — auf JEDEM System,
+// auch wenn das Dateisystem Groß/klein oder NFC/NFD unterscheidet (Linux, NTFS).
 const nfc = (s) => String(s ?? "").normalize("NFC");
-export const gleicheSeite = (a, b) => norm(nfc(a)) === norm(nfc(b));
+const nameSchluessel = (s) => nfc(fwd(s)).toLowerCase();
+export const gleicheSeite = (a, b) => nameSchluessel(a) === nameSchluessel(b);
+
+// Seiten-ID-Teile → vorhandener Pfad. Je Ebene zuerst die Schreibweise wie gegeben; fehlt sie (case-sensitives
+// Dateisystem, Umlaut als NFD statt NFC), der Eintrag mit gleichem Namen nach NFC, sonst nach NFC + Kleinschreibung.
+// Mehrdeutig (z. B. „a.md“ und „A.md“ unter Linux, keine davon exakt) oder nicht da → null.
+function findeSeitenPfad(vault, teile) {
+  let p = vault;
+  for (const t of teile) {
+    const direkt = join(p, t);
+    try { lstatSync(direkt); p = direkt; continue; } catch {}
+    let namen;
+    try { namen = readdirSync(p); } catch { return null; }
+    const gleichNfc = namen.filter(n => nfc(n) === nfc(t));
+    const treffer = gleichNfc.length ? gleichNfc : namen.filter(n => nameSchluessel(n) === nameSchluessel(t));
+    if (treffer.length !== 1) return null;
+    p = join(p, treffer[0]);
+  }
+  return p;
+}
 
 // Seiten-ID in der Schreibweise auf der Platte (Groß/klein wie gespeichert, NFC) — so ergibt jede Schreibvariante
-// derselben Datei dieselbe ID (W1-Review #11). Basis ist der Wiki-Ordnername aus der Config.
+// derselben Seite dieselbe ID (W1-Review #11). Basis ist der Wiki-Ordnername aus der Config.
 export function kanonischeSeite(vault, seite) {
   const o = ordner(vault);
   try {
     const wikiEcht = realpathSync.native(join(vault, o.wiki));
-    const dateiEcht = realpathSync.native(join(vault, ...String(seite).split("/")));
+    const pfad = findeSeitenPfad(vault, String(seite).split("/"));
+    if (!pfad) return nfc(seite);
+    const dateiEcht = realpathSync.native(pfad);
     const rel = relative(wikiEcht, dateiEcht).split(/[\\/]+/).join("/");
     if (!rel || rel.startsWith("..")) return nfc(seite);
     return nfc(`${o.wiki}/${rel}`);

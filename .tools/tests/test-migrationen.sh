@@ -43,6 +43,11 @@ kopiere_tools() { mkdir -p "$2/.tools"; for e in "$1/.tools"/* "$1/.tools"/.[!.]
 KK="$T/Anna's kit/v0.2.0"
 V="$T/Anna's Brain"
 mkdir -p "$KK"; kopiere_tools "$KIT" "$KK"
+# Kit-Klon wie nach dem Export: unter .tools/kit nur AGENTS.md + publish-check.mjs, die Vorlage liegt in
+# <kit-klon>/vorlage (export.mjs#zielPfadFuer) — sonst findet eine Migration im Monorepo, was im Kit fehlt.
+for e in "$KK/.tools/kit"/* "$KK/.tools/kit"/.[!.]*; do
+  [ -e "$e" ] || continue; case "$(basename "$e")" in AGENTS.md|publish-check.mjs) ;; *) rm -rf "$e" ;; esac
+done
 if [ "$TEST_WIN" = 1 ]; then KB="$KK"; else KB="$T/kit\\v0.2.0"; mkdir -p "$KB/.tools/ansicht"; cp "$KK/.tools/ansicht/index.html" "$KB/.tools/ansicht/"; fi
 cp -R "$D/fixture" "$V"; mkdir -p "$V/.agents/skills/update"
 printf 'alte AGENTS.md (0.1.0)\n' > "$V/AGENTS.md"
@@ -134,7 +139,7 @@ grep -q '"systemVersion": "0.1.0"' "$V1/brain.config.json" || { echo "FAIL: 0.1.
 M3="$REPO/migrations/0.3.0.md"
 [ -f "$M3" ] || { echo "FAIL: migrations/0.3.0.md fehlt"; exit 1; }
 if [ -d "$D/../kit/vorlage" ]; then VORL="$D/../kit/vorlage"; else VORL="$KIT/vorlage"; fi
-mkdir -p "$KK/vorlage/wiki"; cp "$VORL/wiki/ich.md" "$KK/vorlage/wiki/ich.md"
+mkdir -p "$KK/vorlage/wiki"; cp "$VORL/wiki/ich.md" "$VORL/wiki/_schema.md" "$KK/vorlage/wiki/"
 H3="$T/home3"; mkdir -p "$H3"; export HOME="$H3" USERPROFILE="$H3"
 V3="$T/Carla's Brain, neu"
 cp -R "$D/fixture" "$V3"; printf 'alte AGENTS.md (0.2.0)\n' > "$V3/AGENTS.md"

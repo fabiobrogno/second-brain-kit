@@ -158,23 +158,24 @@ test("markiereEntschieden liefert die gespeicherte Notiz mit (T6: „Ändern“ 
   assert.equal(ohneFp[1].entschieden, "beide");
 });
 
-test("Schreibvarianten der Seiten-ID (Groß/klein, NFD) → ein Auftrag je Kasten, alte Variante ersetzt", (t) => {
+// Gleiche Seite = gleicher Seitenname nach NFC + Kleinschreibung — auf jedem System, auch wenn das Dateisystem
+// Groß/klein bzw. NFC/NFD unterscheidet (Linux, NTFS): dort wird die Variante über den Namen aufgelöst.
+test("Schreibvarianten der Seiten-ID (Groß/klein, NFD) → ein Auftrag je Kasten, alte Variante ersetzt", () => {
   const v = neuerVault();
   schreibeEntscheidung(v, { seite: ID, nr: 1, wahl: "b" });
   const nfd = ID.normalize("NFD");
   const gross = ID.replace("thema_testgeraet", "THEMA_TESTGERAET");
-  let gleicheDatei = false;
-  try { gleicheDatei = statSync(join(v, ...gross.split("/"))).ino === statSync(join(v, ...ID.split("/"))).ino; } catch {}
   const r1 = schreibeEntscheidung(v, { seite: nfd, nr: 1, wahl: "a" });
   assert.equal(r1.ersetzt, 1, "NFD-Variante ersetzt");
-  if (gleicheDatei) {
-    const r2 = schreibeEntscheidung(v, { seite: gross, nr: 1, wahl: "beide" });
-    assert.equal(r2.ersetzt, 1, "Groß-/Kleinvariante ersetzt (case-insensitives Dateisystem)");
-  } else t.diagnostic("Dateisystem unterscheidet Groß/klein — Variante ist eine andere Datei");
+  const r2 = schreibeEntscheidung(v, { seite: gross, nr: 1, wahl: "beide" });
+  assert.equal(r2.ersetzt, 1, "Groß-/Kleinvariante ersetzt");
+  const r3 = schreibeEntscheidung(v, { seite: gross.normalize("NFD"), nr: 1, wahl: "a" });
+  assert.equal(r3.ersetzt, 1, "Groß-/Kleinvariante in NFD ersetzt");
   const liste = listeEntscheidungen(v);
   assert.equal(liste.length, 1);
   assert.equal(liste[0].seite, ID.normalize("NFC"), "gespeichert in der Schreibweise auf der Platte (NFC)");
   assert.equal(kanonischeSeite(v, nfd), ID.normalize("NFC"));
+  assert.equal(kanonischeSeite(v, gross), ID.normalize("NFC"));
 });
 
 test("Auftragsordner im Wiki (Inbox als Symlink ins Wiki oder ordner.inbox im Wiki) → 400, Wiki unverändert", (t) => {
