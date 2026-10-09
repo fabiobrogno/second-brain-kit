@@ -22,6 +22,16 @@ grep -q 'Update-Check:' "$V/.logs/hooks.log" 2>/dev/null && { echo "FAIL: Update
 rm -f "$V/.logs/pflege-bericht.json"; echo '{"automatik":{"updateHinweis":false,"wochenbericht":false}}' > "$V/brain.config.json"
 node "$H"
 [ -f "$V/.logs/pflege-bericht.json" ] && { echo "FAIL: Pflegebericht-Cache trotz wochenbericht=false"; exit 1; }
+# Schalter sicherungTaeglich=false → keine tägliche Ordner-Sicherung (Standard: Bundle wird geschrieben)
+git -C "$V" init -q 2>/dev/null; git -C "$V" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init 2>/dev/null
+BK=$(mktemp -d)
+echo "{\"backup\":{\"art\":\"ordner\",\"pfad\":\"$BK\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false,\"sicherungTaeglich\":false}}" > "$V/brain.config.json"
+node "$H"
+ls "$BK"/brain-*.bundle >/dev/null 2>&1 && { echo "FAIL: Sicherung trotz sicherungTaeglich=false"; exit 1; }
+echo "{\"backup\":{\"art\":\"ordner\",\"pfad\":\"$BK\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false}}" > "$V/brain.config.json"
+node "$H"
+ls "$BK"/brain-*.bundle >/dev/null 2>&1 || { echo "FAIL: Sicherung im Standard (sicherungTaeglich nicht gesetzt) fehlt"; exit 1; }
+rm -rf "$BK"
 
 # ---------- v0.3: session-start — Ich-Karte, Projektseite, Vorschläge (Temp-HOME, eigener Temp-Vault) ----------
 S="$(pwd)/../adapters/claude-code/session-start.mjs"
@@ -52,6 +62,14 @@ OUT=$(start "$W/arbeit/doppelt"); echo "$OUT" | grep -q 'Projektseite' && { echo
 OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -q 'Projektseite' && { echo "FAIL: Projektseite ohne Treffer"; exit 1; }
 [ "$(start "$W/arbeit/Obstwiese" | grep -c 'Projektseite')" = 1 ] || { echo "FAIL: Projektzeile nicht genau einmal"; exit 1; }
 auto '{"projektAutomatik":false}'; OUT=$(start "$W/arbeit/Obstwiese"); echo "$OUT" | grep -q 'Projektseite' && { echo "FAIL: Projektseite trotz Schalter aus"; exit 1; }
+# Schalter-Wirkung: ichKarte/projektAutomatik je true und false (Ich-Karte aus: weiter oben schon ohne Schalter geprüft)
+auto '{"ichKarte":false,"projektAutomatik":true}'; OUT=$(start "$W/arbeit/Obstwiese")
+echo "$OUT" | grep -q 'gärtnere' && { echo "FAIL: Ich-Karte trotz ichKarte=false"; exit 1; }
+echo "$OUT" | grep -q 'Projektseite' || { echo "FAIL: Projektseite fehlt bei projektAutomatik=true: [$OUT]"; exit 1; }
+auto '{"ichKarte":true,"projektAutomatik":false}'; OUT=$(start "$W/arbeit/Obstwiese")
+echo "$OUT" | grep -q 'gärtnere' || { echo "FAIL: Ich-Karte fehlt bei ichKarte=true"; exit 1; }
+echo "$OUT" | grep -q 'Projektseite' && { echo "FAIL: Projektseite trotz projektAutomatik=false"; exit 1; }
+auto '{"projektAutomatik":false}'
 # Vorschläge: Zahl nur wenn > 0
 OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -q 'Vorschläge' && { echo "FAIL: Vorschlagszeile ohne Vorschläge"; exit 1; }
 # import() braucht unter Windows eine file://-URL (D:/… wäre ein unbekanntes URL-Schema) → pathToFileURL

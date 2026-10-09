@@ -20,6 +20,7 @@ import { schreibeVorschlag } from "./vorschlaege.mjs";
 import { vaultPfad, ordner, entferneBom } from "./pfade.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
+import { wert } from "./einstellungen.mjs";
 
 const TAG_MS = 86400000, WOCHE_MS = 7 * TAG_MS, FENSTER_MS = 10 * 60000;
 export const MAX_JE_WOCHE = 5;
@@ -175,7 +176,9 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   } else {
     const liste = vorschlagsListe(vault, kandidaten(vault), { gesehen: leseGesehen(vault), max: 50 });
     if (process.argv.includes("--json")) console.log(JSON.stringify(liste.map(g => ({ stichwoerter: g.stichwoerter, seite: g.seite, anzahl: g.anzahl, anlaesse: [...g.anlaesse] }))));
-    else if (!liste.length) console.log("Lernschleife: keine Kandidaten (braucht den Schalter „Lücken merken“).");
+    else if (!liste.length) console.log(wert(vault, "luecken")
+      ? "Lernschleife: noch keine Kandidaten — es braucht Wissensfragen, nach denen die KI eine nicht genannte Wiki-Seite liest."
+      : "Lernschleife: keine Kandidaten — der Schalter „Lücken merken“ ist aus, darum sammelt sie nichts.");
     else for (const g of liste) console.log(`${g.anzahl}× „${g.stichwoerter.join(" ")}“ → ${g.seite}`);
   }
 }

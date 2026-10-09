@@ -31,17 +31,18 @@
     { schluessel: "ernteNichtIn", gruppe: "gruppeHintergrund", art: "liste", kosten: "kosten0" },
     { schluessel: "hinweise", gruppe: "gruppeSitzung", art: "stufen", werte: ["aus", "niedrig", "mittel", "hoch"], kosten: "kostenHinweis", nurClaude: true },
     { schluessel: "ichKarte", gruppe: "gruppeSitzung", art: "schalter", kosten: "kostenIch" },
-    { schluessel: "projektAutomatik", gruppe: "gruppeSitzung", art: "schalter", kosten: "kostenProjekt", nurClaude: true },
+    { schluessel: "projektAutomatik", gruppe: "gruppeSitzung", art: "schalter", standard: true, kosten: "kostenProjekt", nurClaude: true },
     { schluessel: "wochenbericht", gruppe: "gruppeSitzung", art: "schalter", standard: true, kosten: "kostenWoche", nurClaude: true },
-    { schluessel: "liveAufleuchten", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0", nurClaude: true },
+    { schluessel: "liveAufleuchten", gruppe: "gruppeAnsicht", art: "schalter", standard: true, kosten: "kosten0", nurClaude: true },
     { schluessel: "luecken", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0" },
-    { schluessel: "updateHinweis", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kostenUpdate" },
-    { schluessel: "sicherungTaeglich", gruppe: "gruppeAnsicht", art: "schalter", kosten: "kosten0" },
+    { schluessel: "updateHinweis", gruppe: "gruppeAnsicht", art: "schalter", standard: true, kosten: "kostenUpdate" },
+    { schluessel: "sicherungTaeglich", gruppe: "gruppeAnsicht", art: "schalter", standard: true, kosten: "kosten0" },
   ];
   const GRUPPEN = ["gruppeHintergrund", "gruppeSitzung", "gruppeAnsicht"];
   // Was „Alles aus (wie v0.2)“ abschaltet: alles, was v0.3/v0.4 neu automatisch tut. Hinweise, Update-Hinweis
   // und tägliche Sicherung gab es schon in v0.2 — die bleiben, wie sie sind. Die v0.4-Schlüssel nur, wenn der
   // Dienst sie kennt (sonst wiese er das Speichern mit 400 ab).
+  // Bewusst false (auch projektAutomatik): „Alles aus“ schaltet ab — das ist nicht der Schema-Standard (einstellungen.mjs).
   const NEU_IN_V03 = { staendeIntervallStunden: 0, ernteSitzungsende: false, ichKarte: false, projektAutomatik: false, liveAufleuchten: false, luecken: false };
   const NEU_IN_V04 = { wochenbericht: false, pflegeLauf: "aus", lektionen: "aus", antwortMesslatte: "aus" };
   const REITER = [["einstellungen", "reiterEinstellungen"], ["vorschlaege", "reiterVorschlaege"], ["pflege", "reiterPflege"], ["analyse", "reiterAnalyse"]];
@@ -457,6 +458,7 @@
         h("span", { class: "st-geschaetzt", text: t("geschaetzt") })));
 
     if (kaputt) wrap.appendChild(h("div", { class: "st-warnung", role: "alert", text: t("configKaputt") }));
+    wrap.appendChild(h("p", { class: "st-muted", text: t("wirkungHinweis") }));
 
     for (const g of GRUPPEN) {
       const sek = h("section", { class: "st-gruppe" }, h("h3", { text: t(g) }));
