@@ -12,6 +12,7 @@ import { walk } from "./vault-dateien.mjs";
 import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
+import { fragenRoh, pruefeFragen } from "./fragen.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
@@ -84,12 +85,14 @@ for (const p of pages) {
   }
   // tote Wikilinks (nur Wiki-Seiten; Codeblöcke/Inline-Code ausgenommen)
   for (const l of wikilinks(raw.replace(/^---\n[\s\S]*?\n---\n?/, ""))) if (!resolveLink(ids, l, wikiName, idSet)) findings.push(`TOTER LINK: ${p} → [[${l}]]`);
+  // fragen: JSON-Liste aus Texten, höchstens 6, je ≤ 160 Zeichen (fragen.mjs) — sonst fehlt die Seite still in der Suchkarte
+  for (const f of pruefeFragen(fragenRoh(fm)).fehler) findings.push(`FRAGEN: ${p} — ${f}`);
   // auch-Bezüge müssen auf existierende Ordner zeigen
   for (const a of arr("auch")) if (!/^[\p{L}\d_-]+(\/[\p{L}\d_-]+)*$/u.test(a) || !existsSync(join(wikiDir, ...a.split("/")))) findings.push(`AUCH: ${p} → ${a} existiert nicht bzw. ist kein Ordner im Wiki`);
 }
 for (const g of doppelteNamen(ids, (id) => istWikiSeite(id, wikiName))) findings.push(`DOPPELTER NAME: ${g.join(" · ")} — [[Link]] löst mehrdeutig auf, einen umbenennen`);
 // Blockierende Klassen (pre-commit). Struktur-Modus endet hier.
-const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|ORDNER|TOTE QUELLE|CONFIG)\b/;
+const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG)\b/;
 if (struktur) {
   const b = findings.filter(f => BLOCKIEREND.test(f));
   b.forEach(f => console.log("- " + f));

@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { zeitstempel, leseZeilen, leseFelder } from "./logs.mjs";
+import { zeitstempel, leseZeilen, leseFelder, hitsSeiten } from "./logs.mjs";
 import { wert, leseAutomatik } from "./einstellungen.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
@@ -16,6 +16,7 @@ import { istAusgeschlossen } from "./ernte.mjs";
 import { inventar } from "./ansicht/mcp-inventar.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
+import { leseErgebnis as antwortErgebnis } from "./antwort-messlatte.mjs";
 
 const TAG_MS = 86400000;
 const ZEHN_MIN_MS = 10 * 60000;
@@ -34,18 +35,8 @@ const kurzSid = (sid) => String(sid || "").slice(0, 8);
 const zahl = (x, standard = 0) => { const n = Number(x); return Number.isFinite(n) ? n : standard; };
 
 // --- hint.log: Trefferquote, Wege, Antwortzeit --------------------------------------------------------
-// `hits=` wird hier aus dem ROHEN Feldwert zerlegt (leseFelder dekodiert das ganze Feld und verlöre sonst die
-// Grenze zwischen Seiten, deren Name selbst ein Komma trägt). Unterstützt: alles in einem URI-kodiert mit Tab
-// als Trenner (`encodeURIComponent(seiten.join("\t"))`), je Seite kodiert und mit "," verbunden, und alte rohe
-// Zeilen ("a.md,b.md").
-export function hitsSeiten(roh) {
-  const r = String(roh ?? "");
-  if (!r || r === "-") return [];
-  const dekodiere = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
-  const ganz = dekodiere(r);
-  const teile = ganz.includes("\t") ? ganz.split("\t") : r.split(",").map(dekodiere);
-  return teile.map((t) => t.trim()).filter(Boolean);
-}
+// hitsSeiten (Zerlegung des `hits=`-Feldes) lebt in logs.mjs — leicht genug für Statusleiste und brain-stand.mjs.
+export { hitsSeiten };
 
 function leseHinweise(vault, seitMs) {
   let inhalt;
@@ -137,6 +128,71 @@ function auswertenGelesen(hinweisZeilen, gelesenZeilen) {
     if (gelesen) hinweiseMitLesen++;
   }
   return { hinweiseMitLesen, quote: mitHinweis.length ? hinweiseMitLesen / mitHinweis.length : 0 };
+}
+
+// --- Schwellen-Prüfung: zu streng oder zu locker? (nur Empfehlung, ändert nie etwas) -----------------------
+// zu streng: Hinweis-Hook schwieg, die KI las danach (≤ 10 min, vor dem nächsten Prompt derselben Sitzung) trotzdem
+//            eine Wiki-Seite — die Seite hätte vermutlich getroffen.
+// zu locker: Hinweis gezeigt, aber keine der genannten Seiten wurde danach in der Sitzung je gelesen.
+// Empfehlung erst ab SCHWELLE_MIN Fällen je Seite der Rechnung; Stufen wie automatik.hinweise.
+export const SCHWELLE_MIN = 20;
+const ZU_STRENG_AB = 0.25, ZU_LOCKER_AB = 0.6;
+const STUFEN = ["aus", "niedrig", "mittel", "hoch"];
+const KEIN_ZIEL = new Set(["ueberblick.md", "ich.md"]);
+
+export function empfehlung({ stufe = "mittel", still = 0, zuStreng = 0, gezeigt = 0, zuLocker = 0 } = {}) {
+  if (stufe === "aus") return { art: "aus", stufe: null };
+  if (still < SCHWELLE_MIN && gezeigt < SCHWELLE_MIN) return { art: "zuWenig", stufe: null };
+  const streng = still >= SCHWELLE_MIN && zuStreng >= ZU_STRENG_AB;
+  const locker = gezeigt >= SCHWELLE_MIN && zuLocker >= ZU_LOCKER_AB;
+  const i = STUFEN.indexOf(stufe);
+  if (streng && locker) return { art: "karten", stufe: null };
+  if (streng) return i >= 1 && i < STUFEN.length - 1 ? { art: "lockerer", stufe: STUFEN[i + 1] } : { art: "karten", stufe: null };
+  if (locker) return i > 1 ? { art: "strenger", stufe: STUFEN[i - 1] } : { art: "karten", stufe: null };
+  return { art: "passt", stufe: null };
+}
+
+// Gezählt wird nur, solange werkzeug.log schon mitschreibt (erste Zeile = Beginn der Beobachtung; rotiert das Log,
+// wandert der Beginn mit) — sonst sähe jeder Hinweis vor dem Einschalten des Protokolls wie „nie gelesen“ aus.
+function auswertenSchwelle(vault, hinweisZeilenAlle, gelesenZeilen, { stufe, wiki }) {
+  const zeitVon = (f) => Date.parse(`${f.zeit}Z`);
+  const erste = leseZeilen(join(vault, ".logs", "werkzeug.log")).map(zeitVon).find(Number.isFinite);
+  const hinweisZeilen = erste == null ? [] : hinweisZeilenAlle.filter(f => zeitVon(f) >= erste);
+  const gruppe = (zeilen, filter) => {
+    const m = new Map();
+    for (const f of zeilen) {
+      const t = zeitVon(f), s = kurzSid(f.sid);
+      if (!s || !Number.isFinite(t) || !filter(f)) continue;
+      if (!m.has(s)) m.set(s, []);
+      m.get(s).push({ f, t });
+    }
+    for (const l of m.values()) l.sort((a, b) => a.t - b.t);
+    return m;
+  };
+  const prompts = gruppe(hinweisZeilen, (f) => !f.fehler);
+  const gelesen = gruppe(gelesenZeilen, (w) => istWikiSeite(normRel(w.ziel || ""), wiki) && !KEIN_ZIEL.has(normRel(w.ziel).split("/").pop()));
+  let still = 0, stillGelesen = 0, gezeigt = 0, nieGelesen = 0;
+  for (const [s, liste] of prompts) {
+    const reads = gelesen.get(s) || [];
+    liste.forEach(({ f, t }, i) => {
+      if (hatHinweis(f)) {
+        gezeigt++;
+        const seiten = new Set(f.seiten || []);
+        if (!reads.some(r => r.t >= t && seiten.has(r.f.ziel))) nieGelesen++;
+      } else {
+        still++;
+        const naechster = liste[i + 1];
+        const ende = Math.min(t + ZEHN_MIN_MS, naechster ? naechster.t - 1 : Infinity);
+        if (reads.some(r => r.t >= t && r.t <= ende)) stillGelesen++;
+      }
+    });
+  }
+  const werte = {
+    seit: erste == null ? null : new Date(erste).toISOString().slice(0, 19) + "Z",
+    min: SCHWELLE_MIN, stufe, still, stillGelesen, zuStreng: still ? stillGelesen / still : 0,
+    gezeigt, nieGelesen, zuLocker: gezeigt ? nieGelesen / gezeigt : 0,
+  };
+  return { ...werte, empfehlung: empfehlung(werte) };
 }
 
 // --- hint-eval.log: eigenes Zeilenformat (keine k=v-Zeile) --------------------------------------------
@@ -301,7 +357,7 @@ function leseImporte(vault, o) {
 }
 
 // --- Lücken (merkeLuecke + Lesen in analyse) --------------------------------------------------------
-function lueckenDatei(vault) { return join(vault, ".logs", "luecken.log"); }
+export function lueckenDatei(vault) { return join(vault, ".logs", "luecken.log"); }
 
 // Häufige Füllwörter (de/en) — tragen nichts zur Erkennung einer Lücke bei.
 const STOPPWOERTER = new Set((
@@ -333,20 +389,21 @@ export function stichwoerter(text) {
   return out;
 }
 
-// Merkt eine Wissensfrage ohne Treffer — gespeichert werden nur Stichwörter (stichwoerter()), nie der Prompt.
-// Verworfen wird bei: Schalter aus, Config unlesbar, Zugangsdaten im Text (vor UND nach dem Zusammenfügen
-// der Zeilen geprüft), Arbeitsordner in `ernteNichtIn` (Standard: process.cwd()), keine Stichwörter übrig.
-export function merkeLuecke(vault, quelle, text, { cwd = process.cwd() } = {}) {
+// Gemeinsamer Schreibweg für Lücken und Fragespur: gespeichert werden nur Stichwörter (stichwoerter()), nie der
+// Prompt. Verworfen wird bei: Schalter `luecken` aus, Config unlesbar, Messlatten-Sitzung (sid „eval-…“),
+// Zugangsdaten im Text (vor UND nach dem Zusammenfügen der Zeilen geprüft), Arbeitsordner in `ernteNichtIn`
+// (Standard: process.cwd()), keine Stichwörter übrig. Einträge älter als 30 Tage fallen beim Schreiben weg.
+function merkeStichwoerter(vault, datei, felder, text, { cwd = process.cwd(), sid = "" } = {}) {
   try {
     const { werte, fehler } = leseAutomatik(vault);
     if (fehler || !werte.luecken) return false;
+    if (String(sid || "").startsWith("eval-")) return false;
     if (cwd && istAusgeschlossen(String(cwd), werte.ernteNichtIn)) return false;
     const t = String(text ?? "");
     const einzeilig = t.replace(/\s+/g, " ");
     if (findeSecrets(t).length > 0 || findeSecrets(einzeilig).length > 0) return false;
     const woerter = stichwoerter(einzeilig);
     if (!woerter.length) return false;
-    const datei = lueckenDatei(vault);
     const cutoff = Date.now() - 30 * TAG_MS;
     let behalten = [];
     try {
@@ -355,7 +412,10 @@ export function merkeLuecke(vault, quelle, text, { cwd = process.cwd() } = {}) {
         return Number.isFinite(ms) && ms >= cutoff;
       });
     } catch { /* Datei fehlt noch — kein Problem */ }
-    const neueZeile = `${zeitstempel()} quelle=${encodeURIComponent(String(quelle))} text=${woerter.join(" ")}`;
+    // sid nur in der 8er-Kurzform (wie hint.log) — reicht für die Zuordnung zu werkzeug.log (Lernschleife)
+    const sidKurz = kurzSid(String(sid || "").replace(/[^\w-]/g, ""));
+    const kopf = [zeitstempel(), ...(sidKurz ? [`sid=${sidKurz}`] : []), ...felder].join(" ");
+    const neueZeile = `${kopf} text=${woerter.join(" ")}`;
     try {
       mkdirSync(dirname(datei), { recursive: true });
       const tmp = `${datei}.${process.pid}.tmp`;
@@ -364,6 +424,21 @@ export function merkeLuecke(vault, quelle, text, { cwd = process.cwd() } = {}) {
     } catch { /* darf nie werfen — nur bestmöglich schreiben */ }
     return true;
   } catch { return false; }
+}
+
+// Merkt eine Wissensfrage ohne Treffer (Lücke). `sid` (optional, Hinweis-Hook) macht die Lücke für die Lernschleife
+// zuordenbar: liest die KI danach eine Wiki-Seite, wird daraus ein Vorschlag „Frage → Seite“ (lernschleife.mjs).
+export function merkeLuecke(vault, quelle, text, { cwd = process.cwd(), sid = "" } = {}) {
+  return merkeStichwoerter(vault, lueckenDatei(vault), [`quelle=${encodeURIComponent(String(quelle))}`], text, { cwd, sid });
+}
+
+// Fragespur (Lernschleife): Wissensfrage MIT Hinweis — Stichwörter, sid und die gezeigten Seiten. Liest die KI danach
+// eine ANDERE Wiki-Seite, war der Hinweis daneben. Gleiche Regeln wie merkeLuecke (Schalter `luecken`, nur Stichwörter).
+export function fragespurDatei(vault) { return join(vault, ".logs", "fragespur.log"); }
+export function merkeFragespur(vault, text, { cwd = process.cwd(), sid = "", hits = [] } = {}) {
+  const seiten = (Array.isArray(hits) ? hits : []).map(String).filter(Boolean);
+  if (!sid || !seiten.length) return false;
+  return merkeStichwoerter(vault, fragespurDatei(vault), [`hits=${encodeURIComponent(seiten.join("\t"))}`], text, { cwd, sid });
 }
 
 // MCP: nur die ANZAHL nicht lesbarer Client-Configs (Pfade enthielten den Benutzernamen) — Spec §3.C.
@@ -381,11 +456,15 @@ export function analyse(vault, { tage = 30, jetzt = Date.now() } = {}) {
   const gelesenZeilen = leseGelesenZeilen(vault, seitMs);
   const hinweise = auswertenHinweise(hinweisZeilen);
   const gelesen = auswertenGelesen(hinweisZeilen, gelesenZeilen);
+  const schwelle = auswertenSchwelle(vault, hinweisZeilen, gelesenZeilen, { stufe: wert(vault, "hinweise"), wiki: o.wiki });
   const messlatteVerlauf = leseMesslatte(vault);
   const messlatte = { letzter: messlatteVerlauf.length ? messlatteVerlauf[messlatteVerlauf.length - 1] : null, verlauf: messlatteVerlauf };
   const seiten = leseSeiten(vault, cfg, o, seitMs);
   const tokens = auswertenTokens(vault, cfg, o, jetzt);
   const importe = leseImporte(vault, o);
+  // Antwort-Messlatte (opt-in): Schalter + letzter Lauf aus .logs/antwort-messlatte.log
+  let antwortMesslatte = { schalter: wert(vault, "antwortMesslatte"), letzter: null, faelle: [] };
+  try { antwortMesslatte = { ...antwortMesslatte, ...antwortErgebnis(vault) }; } catch { /* Log unlesbar — leer */ }
   const luecken = wert(vault, "luecken")
     ? leseZeilen(lueckenDatei(vault), { seitMs }).map(f => ({ zeit: f.zeit, quelle: f.quelle, text: f.text }))
     : null;
@@ -395,7 +474,9 @@ export function analyse(vault, { tage = 30, jetzt = Date.now() } = {}) {
     genugDaten: hinweise.prompts >= 5,
     hinweise,
     gelesen,
+    schwelle,
     messlatte,
+    antwortMesslatte,
     seiten,
     luecken,
     tokens,
@@ -411,10 +492,25 @@ function textBericht(e) {
   zeilen.push(`Zeitraum: letzte ${e.zeitraumTage} Tage${e.genugDaten ? "" : " (noch wenig Daten)"}.`);
   zeilen.push(`Prompts geprüft: ${e.hinweise.prompts}, davon mit Hinweis: ${e.hinweise.mitHinweis} (${pct(e.hinweise.quote)}).`);
   zeilen.push(`Hinweise auch gelesen: ${e.gelesen.hinweiseMitLesen} (${pct(e.gelesen.quote)}).`);
+  const em = e.schwelle?.empfehlung;
+  if (em && em.art !== "aus") {
+    zeilen.push(`Schwelle: geschwiegen, aber danach gelesen ${e.schwelle.stillGelesen}/${e.schwelle.still} (${pct(e.schwelle.zuStreng)}), `
+      + `Hinweis nie gelesen ${e.schwelle.nieGelesen}/${e.schwelle.gezeigt} (${pct(e.schwelle.zuLocker)}).`);
+    const EMPF = {
+      zuWenig: `Für eine Empfehlung noch zu wenig Daten (je ${SCHWELLE_MIN} Fälle).`,
+      passt: "Empfehlung: Stufe passt — nichts ändern.",
+      lockerer: `Empfehlung: Stufe „${em.stufe}“ probieren (mehr Hinweise) — in den Einstellungen unter Hinweise.`,
+      strenger: `Empfehlung: Stufe „${em.stufe}“ probieren (weniger Hinweise) — in den Einstellungen unter Hinweise.`,
+      karten: "Empfehlung: Stufe nicht verschieben, sondern Karten schärfen — `fragen:` auf den gelesenen Seiten ergänzen.",
+    };
+    zeilen.push(EMPF[em.art] || "");
+  }
   zeilen.push(`Wege: Dienst ${e.hinweise.wege.dienst}, Kaltstart ${e.hinweise.wege.kalt}, sonst ${e.hinweise.wege.sonst}. p95 ${e.hinweise.p95ms} ms.`);
   zeilen.push(e.messlatte.letzter
     ? `Letzte Qualitätsmessung (${e.messlatte.letzter.datum}): positiv ${e.messlatte.letzter.positiv}, still ${e.messlatte.letzter.still}.`
     : "Noch keine Qualitätsmessung gelaufen.");
+  const am = e.antwortMesslatte?.letzter;
+  if (am) zeilen.push(`Antwort-Messlatte (${String(am.zeit || "").slice(0, 10)}): ${am.voll}/${am.fragen} Antworten vollständig, Kernfakten ${am.fakten}.`);
   zeilen.push(`Wiki-Seiten: ${e.seiten.gesamt}, nie gelesen: ${e.seiten.nieGelesen.length}, verwaist: ${e.seiten.verwaist.length}.`);
   zeilen.push(`Prüfbedürftig: ${e.seiten.pruefbeduerftig.length}, offene Konflikte: ${e.seiten.konflikt.length}.`);
   zeilen.push(`Geschätzte Tokens heute: ${e.tokens.heute}, letzte 7 Tage: ${e.tokens.sieben}.`);

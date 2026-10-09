@@ -25,6 +25,8 @@ export const SCHEMA = {
   wochenbericht:           { typ: "boolean", standard: true },
   pflegeLauf:              { werte: ["aus", "woechentlich"], standard: "aus" },
   lektionen:               { werte: ["aus", "lokal", "mit-ki"], standard: "lokal" },
+  // Treffsicherheit: Antwort-Messlatte (antwort-messlatte.mjs) — Haiku beantwortet Testfragen aus <wiki>/_antworten.json.
+  antwortMesslatte:        { werte: ["aus", "monatlich"], standard: "aus" },
 };
 export const STANDARD = Object.fromEntries(Object.entries(SCHEMA).map(([k, s]) => [k, s.standard]));
 

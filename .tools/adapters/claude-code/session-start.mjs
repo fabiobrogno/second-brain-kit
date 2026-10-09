@@ -57,6 +57,10 @@ if (!process.env.BRAIN_SESSION_NUR_STATUS) {
   try {
     if (leseAutomatik(V).werte.pflegeLauf === "woechentlich") (await import("../../pflegelauf.mjs")).starteWennFaellig(V);
   } catch {}
+  // Antwort-Messlatte (opt-in, einmal im Monat): losgelöst, nie blockierend.
+  try {
+    if (leseAutomatik(V).werte.antwortMesslatte === "monatlich") (await import("../../antwort-messlatte.mjs")).starteWennFaellig(V);
+  } catch {}
 }
 
 if (configFehler(V)) console.log("Brain: Die Einstellungsdatei brain.config.json ist beschädigt — es gelten Standardwerte. Sag „repariere meine Brain-Einstellungen“.");

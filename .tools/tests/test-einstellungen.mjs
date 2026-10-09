@@ -24,9 +24,10 @@ test("SCHEMA/STANDARD/HINWEIS_SCHWELLEN: Schema exakt wie vorgegeben", () => {
     staendeIntervallStunden: 0, ernteSitzungsende: false, ernteNichtIn: [], ichKarte: false,
     projektAutomatik: true, hinweise: "mittel", liveAufleuchten: true, updateHinweis: true,
     sicherungTaeglich: true, luecken: false,
-    wochenbericht: true, pflegeLauf: "aus", lektionen: "lokal",
+    wochenbericht: true, pflegeLauf: "aus", lektionen: "lokal", antwortMesslatte: "aus",
   });
   assert.deepEqual(SCHEMA.pflegeLauf.werte, ["aus", "woechentlich"]);
+  assert.deepEqual(SCHEMA.antwortMesslatte.werte, ["aus", "monatlich"], "Antwort-Messlatte: opt-in, Standard aus");
   assert.deepEqual(SCHEMA.lektionen.werte, ["aus", "lokal", "mit-ki"]);
   assert.equal(SCHEMA.wochenbericht.typ, "boolean");
   assert.deepEqual(SCHEMA.staendeIntervallStunden.werte, [0, 1, 2, 4]);

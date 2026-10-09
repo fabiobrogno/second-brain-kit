@@ -13,7 +13,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const { suche } = await import("../../hint-kind.mjs");
 const { frageDienst, istGesperrt, meldeHaenger, starteDienst } = await import("../../dienst-client.mjs");
 const { entscheide } = await import("../../such-kern.mjs");
-const { shouldQuery, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel } = await import("../../hint-core.mjs");
+const { shouldQuery, istWissensfrage, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel } = await import("../../hint-core.mjs");
 const { vorigeFrage } = await import("../../transkript.mjs");
 const { vaultPfad, ordner, ladeConfig } = await import("../../pfade.mjs");
 const { leseAutomatik, HINWEIS_SCHWELLEN } = await import("../../einstellungen.mjs");
@@ -154,10 +154,16 @@ try {
     if (hits.length) {
       appendFileSync(seenFile, hits.map(h => h.page).join("\n") + "\n");
       process.stdout.write(text);
-    } else if (automatik.luecken && shouldQuery(prompt)) {
-      // Wissensfrage ohne Treffer → Lücke merken (merkeLuecke prüft Schalter + Secrets + ernteNichtIn(cwd)
-      // selbst, Ruling 3/4; Modul nur bei Bedarf laden). cwd kommt aus demselben Hook-stdin wie oben (input).
-      try { const { merkeLuecke } = await import("../../analyse.mjs"); merkeLuecke(vault, "hint", prompt, { cwd: input?.cwd }); } catch {}
+    }
+    if (automatik.luecken && istWissensfrage(prompt)) {
+      // Wissensfrage ohne Treffer → Lücke merken; mit Treffer → Fragespur (Lernschleife: las die KI danach eine
+      // andere Seite?). Beide prüfen Schalter + Secrets + ernteNichtIn(cwd) selbst und speichern nur Stichwörter
+      // plus die 8er-sid (Ruling 3/4; Modul nur bei Bedarf laden). cwd kommt aus demselben Hook-stdin (input).
+      try {
+        const { merkeLuecke, merkeFragespur } = await import("../../analyse.mjs");
+        if (hits.length) merkeFragespur(vault, prompt, { cwd: input?.cwd, sid, hits: hits.map(h => h.page) });
+        else merkeLuecke(vault, "hint", prompt, { cwd: input?.cwd, sid });
+      } catch {}
     }
     for (const f of readdirSync(seenDir)) { const p = join(seenDir, f); if (Date.now() - statSync(p).mtimeMs > 2 * 86400000) unlinkSync(p); }
   }

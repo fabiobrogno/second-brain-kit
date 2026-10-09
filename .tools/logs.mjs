@@ -75,3 +75,16 @@ export function leseZeilen(datei, { seitMs = 0 } = {}) {
   }
   return out;
 }
+
+// `hits=` wird hier aus dem ROHEN Feldwert zerlegt (leseFelder dekodiert das ganze Feld und verlöre sonst die
+// Grenze zwischen Seiten, deren Name selbst ein Komma trägt). Unterstützt: alles in einem URI-kodiert mit Tab
+// als Trenner (`encodeURIComponent(seiten.join("\t"))`), je Seite kodiert und mit "," verbunden, und alte rohe
+// Zeilen ("a.md,b.md").
+export function hitsSeiten(roh) {
+  const r = String(roh ?? "");
+  if (!r || r === "-") return [];
+  const dekodiere = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
+  const ganz = dekodiere(r);
+  const teile = ganz.includes("\t") ? ganz.split("\t") : r.split(",").map(dekodiere);
+  return teile.map((t) => t.trim()).filter(Boolean);
+}

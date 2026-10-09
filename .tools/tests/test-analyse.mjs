@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zeitstempel } from "../logs.mjs";
-import { analyse, merkeLuecke, hitsSeiten, stichwoerter, lintPfade } from "../analyse.mjs";
+import { analyse, merkeLuecke, hitsSeiten, stichwoerter, lintPfade, empfehlung, SCHWELLE_MIN } from "../analyse.mjs";
 import { protokolliere } from "../werkzeug-log.mjs";
 import { importiere } from "../import/import.mjs";
 
@@ -431,4 +431,57 @@ test("mcp.nichtLesbar: zählt kaputte Client-Configs (nur die Anzahl, keine Pfad
   } finally {
     writeFileSync(join(TEST_HOME, ".cursor", "mcp.json"), "{}");
   }
+});
+
+// ------------------------------------------------------------------------------- Treffsicherheit: Schwellen-Prüfung
+test("empfehlung: zu streng → eine Stufe lockerer, zu locker → strenger, beides/am Rand → Karten schärfen, sonst passt", () => {
+  const n = SCHWELLE_MIN;
+  assert.deepEqual(empfehlung({ stufe: "aus", still: 99, zuStreng: 1 }), { art: "aus", stufe: null });
+  assert.deepEqual(empfehlung({ stufe: "mittel", still: n - 1, zuStreng: 1, gezeigt: n - 1, zuLocker: 1 }), { art: "zuWenig", stufe: null });
+  assert.deepEqual(empfehlung({ stufe: "mittel", still: n, zuStreng: 0.25 }), { art: "lockerer", stufe: "hoch" });
+  assert.deepEqual(empfehlung({ stufe: "niedrig", still: n, zuStreng: 0.5 }), { art: "lockerer", stufe: "mittel" });
+  assert.deepEqual(empfehlung({ stufe: "hoch", still: n, zuStreng: 0.5 }), { art: "karten", stufe: null });
+  assert.deepEqual(empfehlung({ stufe: "mittel", gezeigt: n, zuLocker: 0.6 }), { art: "strenger", stufe: "niedrig" });
+  assert.deepEqual(empfehlung({ stufe: "hoch", gezeigt: n, zuLocker: 0.9 }), { art: "strenger", stufe: "mittel" });
+  assert.deepEqual(empfehlung({ stufe: "niedrig", gezeigt: n, zuLocker: 0.9 }), { art: "karten", stufe: null });
+  assert.deepEqual(empfehlung({ stufe: "mittel", still: n, zuStreng: 0.5, gezeigt: n, zuLocker: 0.9 }), { art: "karten", stufe: null });
+  assert.deepEqual(empfehlung({ stufe: "mittel", still: n, zuStreng: 0.1, gezeigt: n, zuLocker: 0.3 }), { art: "passt", stufe: null });
+});
+
+test("schwelle: geschwiegen-aber-gelesen und gezeigt-aber-nie-gelesen aus den Logs, erst ab Beginn des Lese-Protokolls", () => {
+  const vault = neuerVault();
+  mkdirSync(join(vault, "09_wiki", "firma"), { recursive: true });
+  for (const n of ["thema_a.md", "thema_b.md"]) writeFileSync(join(vault, "09_wiki", "firma", n), "---\ndescription: x\n---\n# X\n");
+  const T = ANKER - 86400000, M = 60000;
+  schreibeLog(vault, "hint.log", [
+    hintZeile({ zeit: T - 60 * M, sid: "vorher01" }),                               // vor dem Lese-Protokoll → zählt nicht
+    hintZeile({ zeit: T, sid: "still001" }),                                        // still, danach gelesen → zu streng
+    hintZeile({ zeit: T + 10 * M, sid: "still002" }),                               // still, Lesen erst nach dem nächsten Prompt
+    hintZeile({ zeit: T + 12 * M, sid: "still002" }),                               // still, Überblick zählt nicht
+    hintZeile({ zeit: T + 20 * M, sid: "zeig0001", hits: encodeURIComponent("09_wiki/firma/thema_a.md") }), // nie gelesen
+    hintZeile({ zeit: T + 30 * M, sid: "zeig0002", hits: encodeURIComponent("09_wiki/firma/thema_b.md") }), // später gelesen
+  ].join("\n") + "\n");
+  schreibeLog(vault, "werkzeug.log", [
+    werkzeugZeile({ zeit: T - 5 * M, sid: "x", art: "mcp", ziel: "s%2Fw" }),         // Beginn der Beobachtung
+    werkzeugZeile({ zeit: T + 3 * M, sid: "still001-aaaa", ziel: "09_wiki/firma/thema_a.md" }),
+    werkzeugZeile({ zeit: T + 13 * M, sid: "still002", ziel: "09_wiki/ueberblick.md" }),
+    werkzeugZeile({ zeit: T + 14 * M, sid: "zeig0001", ziel: "09_wiki/firma/thema_b.md" }),
+    werkzeugZeile({ zeit: T + 90 * M, sid: "zeig0002", ziel: "09_wiki/firma/thema_b.md" }),
+  ].join("\n") + "\n");
+  const s = analyse(vault, { jetzt: ANKER }).schwelle;
+  assert.equal(s.stufe, "mittel");
+  assert.equal(s.seit, new Date(T - 5 * M).toISOString().slice(0, 19) + "Z");
+  assert.deepEqual([s.still, s.stillGelesen, s.gezeigt, s.nieGelesen], [3, 1, 2, 1]);
+  assert.ok(Math.abs(s.zuStreng - 1 / 3) < 1e-9);
+  assert.equal(s.zuLocker, 0.5);
+  assert.deepEqual(s.empfehlung, { art: "zuWenig", stufe: null });
+});
+
+test("schwelle: ohne werkzeug.log keine Zählung (zu wenig Daten), Hinweise aus → art aus", () => {
+  const vault = neuerVault();
+  schreibeLog(vault, "hint.log", hintZeile({ zeit: ANKER - 1000, sid: "s1" }) + "\n");
+  const s = analyse(vault, { jetzt: ANKER }).schwelle;
+  assert.deepEqual([s.still, s.gezeigt, s.seit, s.empfehlung.art], [0, 0, null, "zuWenig"]);
+  mitAutomatik(vault, { hinweise: "aus" });
+  assert.equal(analyse(vault, { jetzt: ANKER }).schwelle.empfehlung.art, "aus");
 });

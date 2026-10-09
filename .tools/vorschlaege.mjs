@@ -18,7 +18,10 @@ import { findeSecrets } from "./secrets-muster.mjs";
 export const ID_MUSTER = /^[a-z0-9-]{1,80}$/;
 const ARTEN = new Set(["fakt", "stand", "lektion", "pflege"]);
 export const LEKTION_ZIELE = ["memory", "skill"];
-export const PFLEGE_BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "sonstiges"];
+// „frage“ (Treffsicherheit): Lernschleife (lernschleife.mjs, 0 Tokens) — „Frage X zur Seite Y hinzufügen?“. Nie von der KI.
+export const PFLEGE_BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "frage", "sonstiges"];
+// Befunde, die der Pflege-Lauf (Haiku) setzen darf — „frage“ kommt nur aus echten Beobachtungen der Lernschleife.
+export const KI_BEFUNDE = PFLEGE_BEFUNDE.filter(b => b !== "frage");
 const MAX_FELD = 600;
 const MAX_TITEL = 80, MAX_TEXT = 6000, MAX_META = 1000;
 

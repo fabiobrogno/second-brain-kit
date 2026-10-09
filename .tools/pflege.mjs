@@ -40,6 +40,8 @@ const GUELTIGKEIT_MODUL = await import(pathToFileURL(join(HIER, "gueltigkeit.mjs
 export const POSTEN = ["abgelaufen", "bald", "konflikte", "konflikteKaputt", "entscheidungen", "vorschlaege", "lektionen", "pflegeAuftraege", "verwaist",
   "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "messlatte"];
 const NUR_HINWEIS = new Set(["bald", "nieGelesen", "luecken"]);
+// Schon von der Person entschieden bzw. beauftragt — wartet nur noch aufs Einarbeiten, braucht kein Zutun mehr.
+export const BEAUFTRAGT = new Set(["pflegeAuftraege", "entscheidungen"]);
 const MAX_LISTE = 20, MAX_ZEILEN = 150, BALD_TAGE = 14, TAG_MS = 86400000;
 
 const SCHRITT = {
@@ -315,8 +317,9 @@ export function pflegebericht(vault, { jetzt = Date.now() } = {}) {
     posten("importe", importe),
     messlattePosten(a.messlatte.verlauf || []),
   ];
-  const zuTun = liste.filter(p => !NUR_HINWEIS.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
-  return { erstellt: new Date(jetztMs).toISOString().slice(0, 19) + "Z", posten: liste, zuTun };
+  const zuTun = liste.filter(p => !NUR_HINWEIS.has(p.schluessel) && !BEAUFTRAGT.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
+  const beauftragt = liste.filter(p => BEAUFTRAGT.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
+  return { erstellt: new Date(jetztMs).toISOString().slice(0, 19) + "Z", posten: liste, zuTun, beauftragt };
 }
 
 // Kurzform eines Postens: „3 abgelaufen“, „1 Konflikt“
@@ -399,7 +402,8 @@ export function markiereEntschieden(vault, konflikte) {
 }
 
 export function textBericht(b) {
-  const z = [`Pflegebericht (${b.erstellt.slice(0, 10)}): ${b.zuTun === 0 ? "nichts zu tun." : `${b.zuTun} ${b.zuTun === 1 ? "Sache" : "Sachen"} zu tun.`}`];
+  const z = [`Pflegebericht (${b.erstellt.slice(0, 10)}): ${b.zuTun === 0 ? "nichts zu tun." : `${b.zuTun} ${b.zuTun === 1 ? "Sache" : "Sachen"} zu tun.`}`
+    + (b.beauftragt ? ` ${b.beauftragt} beauftragt — wird beim nächsten Einarbeiten erledigt.` : "")];
   for (const p of b.posten) {
     if (!p.anzahl) continue;
     z.push(`- ${kurz(p)}: ${p.liste.slice(0, 5).map(e => eintragText(p.schluessel, e)).join("; ")}${p.anzahl > 5 ? " …" : ""}`);

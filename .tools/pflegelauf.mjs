@@ -17,7 +17,7 @@ import { findeSecrets, ohneSecrets, hatSecretsImKontext } from "./secrets-muster
 import { hatPii } from "./pii-muster.mjs";
 import { haengeAn, zeitstempel, leseZeilen } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
-import { schreibeVorschlag, PFLEGE_BEFUNDE } from "./vorschlaege.mjs";
+import { schreibeVorschlag, KI_BEFUNDE } from "./vorschlaege.mjs";
 import { EIGENER_VAULT, ordner, entferneBom } from "./pfade.mjs";
 import { findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock } from "./ernte.mjs";
 import { lektionenAusVerlaeufen } from "./lektionen.mjs";
@@ -36,7 +36,7 @@ export const PFLEGE_AUFTRAG = [
   "Schreibe NIE Zugangsdaten, Passwörter, Tokens, Schlüssel, Adressen, Telefonnummern oder Kundendaten.",
   `Nenne höchstens ${MAX_VORSCHLAEGE} konkrete Pflege-Vorschläge, wichtigste zuerst. Je Vorschlag genau:`,
   "### <Titel, höchstens 60 Zeichen>",
-  `befund: ${PFLEGE_BEFUNDE.filter(b => b !== "sonstiges").join(" | ")} | sonstiges`,
+  `befund: ${KI_BEFUNDE.filter(b => b !== "sonstiges").join(" | ")} | sonstiges`,
   "<1–3 Sätze: welche Seiten, was genau, nächster Schritt>",
   "Nur Vorschläge, keine Änderungen. Gibt es nichts zu tun, antworte nur: NICHTS",
 ].join("\n");
@@ -199,7 +199,7 @@ export function parsePflege(ausgabe) {
       const m = /^\s*befund\s*:\s*(.*)$/i.exec(z);
       if (m) {
         const b = m[1].trim().toLowerCase().replace(/ü/g, "ue");
-        befund = PFLEGE_BEFUNDE.includes(b) ? b : "sonstiges";
+        befund = KI_BEFUNDE.includes(b) ? b : "sonstiges";
       } else text.push(z);
     }
     const inhalt = text.join("\n").trim();

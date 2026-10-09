@@ -455,3 +455,20 @@ test("steuer: Übernehmen eines Pflege-Vorschlags meldet den nächsten Schritt s
   assert.match(code, /war\.art === "pflege"/);
   assert.match(code, /pflege \? t\("uebernommenPflege"\)/);
 });
+
+// ------------------------------------------------------------------------------- Treffsicherheit: Schwellen-Prüfung
+test("steuer: Schwellen-Prüfung — Werte, Empfehlung mit Stufenname (de/en), „aus“ ohne Werte, Unbekanntes → zu wenig", () => {
+  const { BrainTexte } = ladeIn({ navigator: { language: "de-DE" } }, "texte.js");
+  const { BrainSteuer } = ladeIn({}, "steuer.js");
+  const st = BrainSteuer.hilfen.schwellenTexte;
+  const s = { min: 20, seit: "2026-10-02T23:02:56Z", still: 100, stillGelesen: 30, zuStreng: 0.3, gezeigt: 10, nieGelesen: 2, zuLocker: 0.2,
+    empfehlung: { art: "lockerer", stufe: "hoch" } };
+  const de = st(s, BrainTexte.t);
+  assert.deepEqual([...de.werte], ["Geschwiegen, aber danach eine Seite gelesen: 30 von 100 (30 %)", "Hinweis gezeigt, aber nie gelesen: 2 von 10 (20 %)"]);
+  assert.match(de.empfehlung, /^Stufe „Oft“ probieren: mehr Hinweise\./);
+  assert.match(de.seit, /2026-10-02.*Nur eine Empfehlung/);
+  BrainTexte.setzeSprache("en");
+  assert.match(st(s, BrainTexte.t).empfehlung, /^Try the level “More”: more hints\./);
+  assert.equal(st({ empfehlung: { art: "aus" } }, BrainTexte.t).werte.length, 0);
+  assert.equal(st({ empfehlung: { art: "quatsch" } }, BrainTexte.t).art, "zuWenig");
+});

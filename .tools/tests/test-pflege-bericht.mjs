@@ -96,7 +96,8 @@ test("pflegebericht: exakt auf dem Fixture", () => {
   // Handlungsbedarf: 1 abgelaufen + 1 Konflikt + 1 kaputter Kasten + 1 Entscheidung + 1 Vorschlag + 1 Lektion
   // + 1 Pflege-Auftrag + 1 verwaist + 2 Dubletten + 1 zu lang + 1 Import + 1 Messlatte = 13 (bald, nie gelesen,
   // Lücken sind nur Hinweise)
-  assert.equal(b.zuTun, 13);
+  assert.equal(b.zuTun, 11, "Entscheidungen und Pflege-Aufträge zählen als beauftragt, nicht als zu tun");
+  assert.equal(b.beauftragt, 2);
   for (const x of b.posten) {
     if (x.schluessel !== "messlatte") assert.equal(x.anzahl >= x.liste.length, true, x.schluessel); // Messlatte: Liste = letzte Läufe
     assert.ok(x.naechsterSchritt.length > 5, x.schluessel);
@@ -107,7 +108,7 @@ test("pflegebericht: exakt auf dem Fixture", () => {
   assert.equal(wochenZeile({ zuTun: 2, posten: [{ schluessel: "lektionen", anzahl: 1 }, { schluessel: "pflegeAuftraege", anzahl: 2 }] }),
     "Brain-Woche: 1 Lektion wartet · 2 Pflege-Aufträge warten — im Gehirn unter Pflege");
   assert.equal(wochenZeile({ zuTun: 4, posten: [{ schluessel: "vorschlaege", anzahl: 3 }, { schluessel: "entscheidungen", anzahl: 1 }] }), "", "nur eigene Zeilen → keine Wochen-Zeile");
-  assert.match(textBericht(b), /^Pflegebericht \(2026-10-03\): 13 Sachen zu tun\.\n- 1 abgelaufen: 09_wiki\/geräte\/thema_alt\.md/);
+  assert.match(textBericht(b), /^Pflegebericht \(2026-10-03\): 11 Sachen zu tun\. 2 beauftragt — wird beim nächsten Einarbeiten erledigt\.\n- 1 abgelaufen: 09_wiki\/geräte\/thema_alt\.md/);
 });
 
 test("markiereEntschieden / offeneKonflikte: Konflikte tragen die getroffene Wahl", () => {

@@ -42,6 +42,9 @@ rev: 1
   Verfall ist überschritten → Lint meldet `ABGELAUFEN`, das Gehirn zeigt die Seite markiert. Beim Einarbeiten
   schnell veränderlicher Tatsachen (Preise, Versionen, Stände, Rollen) `pruefen_bis` setzen: Standard 90 Tage,
   Preise 30 Tage. Seiten ohne diese Felder gelten weder als abgelaufen noch als gültig geprüft.
+- `fragen: ["<Frage>", ...]` — 2–6 typische Fragen in den eigenen Worten (eine Zeile, JSON, je ≤ 160 Zeichen,
+  höchstens 6; Lint meldet `FRAGEN`). Sie fließen in die Suchkarte der Seite, damit der Brain-Hinweis genau bei
+  diesen Fragen trifft. Beim Anlegen/Überarbeiten 2–4 eintragen; Änderungen brauchen kein rev+1.
 - Alle optionalen Felder sind rein additiv — ohne sie funktioniert die Seite wie bisher.
 
 ## Beweisbindung

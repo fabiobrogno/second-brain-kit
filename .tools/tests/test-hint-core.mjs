@@ -119,3 +119,16 @@ test("format: Treffer auf abgelaufene Seiten tragen „(abgelaufen seit N Tagen)
   assert.equal(ablaufZusatz(v, "09_wiki/gibtsnicht.md", { jetzt }), "");
   assert.equal(ablaufZusatz(null, "09_wiki/alt.md", { jetzt }), "");
 });
+
+test("Systemnachrichten werden nie durchsucht; Lücken nur bei echten Wissensfragen", async () => {
+  const { shouldQuery, istWissensfrage, istSystemNachricht } = await import("../hint-core.mjs");
+  for (const s of ["<task-notification><task-id>x</task-id> completed", "<agent-message from=\"a1\">Bericht fertig mit vielen Wörtern</agent-message>",
+    "[SYSTEM NOTIFICATION - NOT USER INPUT] irgendwas langes hier", "Another Claude session sent a message: Status fertig"]) {
+    assert.equal(istSystemNachricht(s), true, s); assert.equal(shouldQuery(s), false, s); assert.equal(istWissensfrage(s), false, s);
+  }
+  assert.equal(istWissensfrage("wie funktioniert der Amazon Sync eigentlich genau"), true);
+  assert.equal(istWissensfrage("welche Preise gelten für die Toner?"), true);
+  assert.equal(istWissensfrage("mach das bitte schnell fertig und sichere alles"), false);
+  assert.equal(istWissensfrage("ich sag dir ehrlich ich find das richtig krass"), false);
+  assert.equal(shouldQuery("mach das bitte schnell fertig und sichere alles"), true);
+});

@@ -10,10 +10,24 @@ export function qmdToRel(file, map) {
 }
 
 // Nur echte Fragen/Aufträge abfragen: keine Slash-Commands, keine Kurzantworten.
+// Vom Werkzeug erzeugte Nachrichten (Agenten-Berichte, Aufgaben-Meldungen, System-Hinweise) sind keine Fragen der Person:
+// nie durchsuchen, nie als Lücke merken.
+export function istSystemNachricht(prompt) {
+  const p = String(prompt || "").trimStart();
+  return /^(<task-notification|<agent-message|<system-reminder|<bash-(input|stdout|stderr)|<local-command|<command-(name|message)|\[SYSTEM NOTIFICATION|\[Request interrupted|Another Claude session sent a message|Caveat: The messages below)/i.test(p);
+}
 export function shouldQuery(prompt) {
   const p = String(prompt || "").trim();
-  if (!p || p.startsWith("/") || p.length < 15) return false;
+  if (!p || p.startsWith("/") || p.length < 15 || istSystemNachricht(p)) return false;
   return p.split(/\s+/).filter(w => /\p{L}{3,}/u.test(w)).length >= 3;
+}
+// Für die Lücken-Liste strenger als shouldQuery: nur echte Wissensfragen (Fragezeichen oder Fragewort am Anfang),
+// keine Anweisungen wie „mach …“ oder Plaudersätze — sonst füllt sich die Liste mit Rauschen.
+export function istWissensfrage(prompt) {
+  const p = String(prompt || "").trim();
+  if (!shouldQuery(p)) return false;
+  if (/\?\s*$/.test(p) || /\?\s/.test(p)) return true;
+  return /^(was|wie|wer|wo|wann|warum|wieso|weshalb|welche[rsmn]?|gibt es|kennst du|weißt du|what|how|who|where|when|why|which|is there|do you know)\b/i.test(p);
 }
 
 // Treffer über Schwelle → Wiki-Seiten (Rohquelle → zitierende Seite), dedupliziert, begrenzt.

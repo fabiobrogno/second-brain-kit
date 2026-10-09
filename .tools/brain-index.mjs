@@ -7,6 +7,7 @@ import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { qmdPath } from "./qmd-pfad.mjs";
 import { saubereBegriffe, saubereAbschnitte, inhaltsBegriffe } from "./karten.mjs";
+import { fragenRoh, fragenZeile } from "./fragen.mjs";
 import { istGeneriert, istWikiSeite, resolveLink as loese } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
@@ -123,7 +124,7 @@ for (const p of wikiPages) {
 for (const k of Object.keys(wikiMap.bySource)) wikiMap.bySource[k].sort();
 mkdirSync(join(vault, ".logs"), { recursive: true });
 
-// .logs/hint-karten/ — eine kompakte Karteikarte je Wiki-Seite (Titel, Beschreibung, Abschnitte, Fettbegriffe).
+// .logs/hint-karten/ — eine kompakte Karteikarte je Wiki-Seite (Titel, Beschreibung, Fragen, Abschnitte, Fettbegriffe).
 // Eigene QMD-Sammlung „brainkarten": kurze, dichte Vektoren statt verwässerter Langseiten-Abschnitte.
 const kartenDir = join(vault, ".logs", "hint-karten");
 mkdirSync(kartenDir, { recursive: true });
@@ -131,12 +132,16 @@ const karten = new Set();
 for (const p of wikiPages) {
   if (p.fm.typ === "ueberblick") continue;
   const name = p.id.split(sep).pop();
-  const body = entferneBom(readFileSync(join(vault, p.id), "utf8")).replace(/\r\n/g, "\n").replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const roh = entferneBom(readFileSync(join(vault, p.id), "utf8")).replace(/\r\n/g, "\n");
+  const fmText = (roh.match(/^---\n([\s\S]*?)\n---\n?/) || [, ""])[1];
+  const body = roh.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  // Feld `fragen:` (fragen.mjs): typische Fragen in den Worten der Person — nur gültige Einträge, ohne Feld keine Zeile
+  const fragen = fragenZeile(fragenRoh(fmText));
   const heads = saubereAbschnitte([...body.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()));
   let bold = saubereBegriffe([...body.matchAll(/\*\*([^*]{2,60})\*\*/g)].map(m => m[1].trim())).slice(0, 40);
   // Dünne Karte (< 8 Begriffe, typ. Tabellen-/Listenseite) → Inhalte aus Tabellen und Listen ergänzen
   if (bold.length < 8) bold = [...new Set([...bold, ...inhaltsBegriffe(body)])].slice(0, 40);
-  const karte = `# ${p.title}\n\n${p.fm.description || ""}\n\nAbschnitte: ${heads.join(" · ")}\n\nBegriffe: ${bold.join(" · ")}\n`;
+  const karte = `# ${p.title}\n\n${p.fm.description || ""}\n\n${fragen ? fragen + "\n\n" : ""}Abschnitte: ${heads.join(" · ")}\n\nBegriffe: ${bold.join(" · ")}\n`;
   const ziel = join(kartenDir, name);
   atomic(ziel, karte);
   karten.add(name);

@@ -1,0 +1,70 @@
+{
+  "nodes": [
+    {
+      "id": "00_inbox/neu.md",
+      "title": "Inbox-Notiz",
+      "cluster": "00_inbox",
+      "size": 22,
+      "tags": []
+    },
+    {
+      "id": "09_wiki/firma/amazon/entitaet_gamma.md",
+      "title": "Gamma",
+      "cluster": "09_wiki",
+      "size": 137,
+      "tags": []
+    },
+    {
+      "id": "09_wiki/firma/amazon/thema_beta.md",
+      "title": "Thema Beta",
+      "cluster": "09_wiki",
+      "size": 187,
+      "tags": []
+    },
+    {
+      "id": "09_wiki/thema_alpha.md",
+      "title": "Alpha",
+      "cluster": "09_wiki",
+      "size": 188,
+      "tags": []
+    },
+    {
+      "id": "10_projekte/alpha/notiz-a.md",
+      "title": "Notiz A",
+      "cluster": "10_projekte",
+      "size": 59,
+      "tags": [
+        "testtag"
+      ]
+    },
+    {
+      "id": "90_archiv/alt.md",
+      "title": "Alt",
+      "cluster": "90_archiv",
+      "size": 18,
+      "tags": []
+    }
+  ],
+  "edges": [
+    {
+      "source": "09_wiki/firma/amazon/entitaet_gamma.md",
+      "target": "09_wiki/firma/amazon/thema_beta.md"
+    },
+    {
+      "source": "09_wiki/firma/amazon/thema_beta.md",
+      "target": "09_wiki/firma/amazon/entitaet_gamma.md"
+    },
+    {
+      "source": "09_wiki/firma/amazon/thema_beta.md",
+      "target": "09_wiki/thema_alpha.md"
+    },
+    {
+      "source": "09_wiki/thema_alpha.md",
+      "target": "10_projekte/alpha/notiz-a.md"
+    },
+    {
+      "source": "10_projekte/alpha/notiz-a.md",
+      "target": "09_wiki/thema_alpha.md"
+    }
+  ]
+}

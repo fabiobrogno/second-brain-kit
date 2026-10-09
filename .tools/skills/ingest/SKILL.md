@@ -39,6 +39,11 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    Rohquellen der Seite (ihre `quellen:`) prüfen; was die Rohquellen nicht tragen, wird nicht geändert, sondern der
    Person als offene Frage vorgelegt. Danach den Auftrag nach `{{ARCHIV}}/pflege-erledigt/` verschieben (anlegen
    falls nötig). Landet eine Datei mit `art: pflege` direkt in {{INBOX}}, gilt dasselbe — nicht als Quelle einarbeiten.
+   **Sonderfall `befund: frage`** (Lernschleife: „Frage X zur Seite Y hinzufügen?“, aus Stichwörtern einer echten
+   Frage): die Frage der Person in ihren Worten vorlegen (die Stichwörter sind nur ein Gerüst), nach Okay in
+   `fragen:` der Seite ergänzen (höchstens 6) und dasselbe Paar in `{{WIKI}}/_messlatte.json` unter `positiv`
+   eintragen (`{ "prompt": "<Frage>", "erwartet": ["<basename>.md"] }`, Datei anlegen falls nötig) — übernommene
+   Paare kommen so auch in die Messlatte. Danach Karten-Tor wie in Schritt 7, Auftrag nach `{{ARCHIV}}/pflege-erledigt/`.
 3. **Betroffene Seiten finden:** {{WIKI}}/_index.md lesen (nach Ordnern gruppiert); bei Bedarf die
    `_<ordner>.md` des Themenordners. Nur die berührten Seiten öffnen (typisch 5–15). NIE das ganze Wiki laden.
 4. **Einarbeiten nach den 3 Riegeln** (_schema.md): gegen Originalquellen schreiben; Widersprüche
@@ -49,6 +54,11 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    **Gültigkeit:** bei schnell veränderlichen Tatsachen (Preise, Versionen, Stände, Personen-Rollen) `stand: <heutiges Datum>`
    und `pruefen_bis` setzen — Standard 90 Tage ab heute, bei Preisen 30 Tage (Datum selbst ausrechnen, nicht schätzen).
    Andere Seiten brauchen diese Felder nicht.
+   **Fragen (Treffsicherheit):** Beim Anlegen oder Überarbeiten einer Seite 2–4 typische Fragen in der Sprache der
+   Person eintragen — so, wie sie selbst fragen würde (kurz, Alltagswörter, keine Fachüberschriften), z. B.
+   `fragen: ["Wie komme ich an den Amazon-Token?", "Wo stehen die Ports der Dienste?"]` (eine Zeile, JSON, je
+   ≤ 160 Zeichen, höchstens 6 — Lint prüft). Die Fragen landen in der Suchkarte; Änderungen an `fragen:` brauchen
+   kein rev+1. Nie Kundendaten oder Zugangsdaten in eine Frage.
 5. **Quelle einsortieren:** Von {{INBOX}} in den passenden Cluster verschieben (Cluster-Definitionen
    in brain.config.json); Wahl im Report nennen. WICHTIG: quellen-Pfade im Frontmatter zeigen auf
    den NEUEN Ort, Hash NACH dem Verschieben berechnen.
@@ -60,10 +70,10 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    `{{NODE}} "{{VAULT}}/.tools/tests/hint-eval.mjs" --quiet` (Hinweis-Qualität). Seite > 150 Zeilen → Details in die Rohquelle
    (Lint meldet LANG). Neue Wiki-Seite und `{{VAULT}}/.tools/tests/hint-eval.json` vorhanden → 1–2 passende Testfragen
    dort ergänzen (positiv, `erwartet` als **Basename**, z. B. `thema_x.md`) und mit committen.
-   **Neue Wiki-Seite → Karten-Tor** (vor dem Report, NICHT im Hintergrund — die neue Karte ist erst nach dem
+   **Neue Wiki-Seite oder neue/geänderte `fragen:` → Karten-Tor** (vor dem Report, NICHT im Hintergrund — die neue Karte ist erst nach dem
    Refresh im Index): erst `{{NODE}} "{{VAULT}}/.tools/brain.mjs" refresh`, dann `{{NODE}} "{{VAULT}}/.tools/karten-tor.mjs" <basename>.md`
    (~30–60 s, lokal). Meldet es `KARTEN-TOR: …`, im Report nennen und die Karte schärfen (Beschreibung und
-   Fettbegriffe spezifischer, generische Wörter raus) — blockiert nie.
+   Fettbegriffe spezifischer, generische Wörter raus; schlägt eine Frage an, sie konkreter fassen) — blockiert nie.
 8. **Git:** NUR bei vollständigem Erfolg: im Repo {{VAULT}} die geänderten Dateien EXPLIZIT stagen
    (`{{GIT}} -C "{{VAULT}}" add -- <dateien>`: Wiki-Seiten, _log.md, verschobene Quelle — kein add -A) und committen:
    `{{GIT}} -C "{{VAULT}}" commit -m "ingest: <quelle> — <n> Seiten"`, danach

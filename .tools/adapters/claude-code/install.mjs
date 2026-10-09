@@ -148,13 +148,25 @@ for (const { ev, cmd, matcher, altFassung } of soll) {
     console.log(`+ Hook ${ev}${matcher && !altFassung ? ` (${matcher})` : ""}`);
   }
 }
-if (!args.includes("--ohne-statusline")) {
+// Ist das Plugin brain-mods aktiv, zeigt dessen Brain-Band denselben Stand über dem Prompt — die Statusline wäre doppelt.
+// Dann eine eigene (Brain-)Statusline entfernen und keine neu anlegen; fremde Statuslines bleiben unangetastet.
+const brainModsAktiv = Object.entries(s.enabledPlugins || {}).some(([k, v]) => v === true && k.startsWith("brain-mods@"));
+if (brainModsAktiv && !args.includes("--ohne-statusline")) {
+  if (typeof s.statusLine?.command === "string" && s.statusLine.command.includes(`${MARKER}statusline.mjs`)) {
+    delete s.statusLine; console.log("- Statusline entfernt (Brain-Band von brain-mods zeigt den Stand)");
+  }
+} else if (!args.includes("--ohne-statusline")) {
   const statusCmd = `${NODE} ${pfad("statusline.mjs")}`;
   if (!s.statusLine) { s.statusLine = { type: "command", command: statusCmd }; console.log("+ Statusline"); }
   else if (s.statusLine.command === statusCmd) { /* schon aktuell, idempotent still */ }
   else if (s.statusLine.command?.includes(`${vaultFwd}${MARKER}statusline.mjs`)) { s.statusLine.command = statusCmd; console.log("~ Statusline aktualisiert"); }
   else if (typeof s.statusLine.command === "string" && alteStatusMuster.test(s.statusLine.command)) { s.statusLine.command = statusCmd; console.log("~ Statusline ersetzt (alte Fassung)"); }
-  else { console.log("Statusline vorhanden, nicht geändert"); }
+  // Auch ruhende Terminals sollen den aktuellen Brain-Stand zeigen (Änderungen anderer Sitzungen): Claude Code
+  // führt die Statusline sonst nur bei eigener Aktivität aus. Ein eigener Wert der Person bleibt unangetastet.
+  if (s.statusLine?.command === statusCmd && s.statusLine.refreshInterval === undefined) {
+    s.statusLine.refreshInterval = 10; console.log("~ Statusline aktualisiert sich alle 10 s");
+  }
+  if (s.statusLine?.command !== statusCmd) console.log("Statusline vorhanden, nicht geändert");
 }
 const geaendert = JSON.stringify(s) !== vorher;
 

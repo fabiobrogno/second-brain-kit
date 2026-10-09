@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // .tools/brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | version | pflege | messlatte
+//   | lernschleife | antworten
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
 // Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
 import { execFileSync, spawnSync, spawn } from "node:child_process";
@@ -249,6 +250,10 @@ const befehle = {
   pflege: (...a) => node("pflege.mjs", vault, ...a),
   // „brain messlatte [--json]" — lokaler Such-Eval (v0.4, messlatte.mjs), Ergebnis in .logs/hint-eval.log.
   messlatte: (...a) => node("messlatte.mjs", vault, ...a),
+  // „brain lernschleife [--woche] [--json]" — Kandidaten „Frage → Seite“ (0 Tokens); --woche schreibt die Vorschläge.
+  lernschleife: (...a) => node("lernschleife.mjs", vault, ...a),
+  // „brain antworten" — Antwort-Messlatte von Hand (Haiku, kostet Tokens; Testfragen in <wiki>/_antworten.json).
+  antworten: (...a) => node("antwort-messlatte.mjs", vault, ...a),
   // „brain import <ordner|zip> [--name x] [--ja]" — delegiert ans Import-Werkzeug (Task 7); fehlt die Quelle,
   // meldet brain.mjs selbst die vertraute Nutzung statt des Skript-internen Aufrufs.
   import: (quelle, ...a) => {

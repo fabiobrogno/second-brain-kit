@@ -69,6 +69,10 @@ try {
 // liest daraus die Wochen-Zeile ohne Wartezeit (W1-Review #6). Neu gerechnet wird nur bei geändertem Vault.
 if (AUTOMATIK.wochenbericht !== false) node("pflege.mjs", [V, "--cache"]);
 
+// Lernschleife (Treffsicherheit, 0 Tokens): einmal pro Woche „Frage → Seite“-Vorschläge aus Lücken/Fragespur und
+// werkzeug.log. Nur mit Schalter luecken — ohne ihn gibt es keine Fragen-Stichwörter.
+if (AUTOMATIK.luecken) node("lernschleife.mjs", [V, "--woche"]);
+
 // Sicherung (ersetzt reines git push): brain backup regelt github/ordner/keins. Rückwärtskompatibel:
 // fehlt backup in der Config, aber es ist bereits ein Git-Remote eingerichtet, pushen wir wie bisher
 // (altes Verhalten vor dieser Sicherung-Funktion bleibt für bestehende Vaults unverändert).

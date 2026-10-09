@@ -177,5 +177,14 @@ run3 "${F3/STUFE/l1}" >/dev/null; [ ! -e "$V3/.logs/luecken.log" ] || { echo "FA
 auto '{"luecken":true}'; run3 "${F3/STUFE/l2}" >/dev/null
 grep -q 'quelle=hint text=funktioniert thema alpha genau$' "$V3/.logs/luecken.log" 2>/dev/null || { echo "FAIL: Lücke nicht gemerkt"; exit 1; }
 run3 '{"prompt":"ok passt, weiter","session_id":"l3"}' >/dev/null; [ "$(wc -l < "$V3/.logs/luecken.log" | tr -d ' ')" = 1 ] || { echo "FAIL: Kurzantwort als Lücke gemerkt"; exit 1; }
+# (f) Lernschleife: die Lücke trägt die 8er-sid (nie den Prompt); Wissensfrage MIT Treffer → fragespur.log mit hits;
+# Messlatten-Sitzungen (eval-…) merken nichts
+grep -q ' sid=l2 quelle=hint text=' "$V3/.logs/luecken.log" || { echo "FAIL: Lücke ohne sid"; exit 1; }
+echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.9}]' > "$J"
+run3 '{"prompt":"wie funktioniert das thema alpha genau","session_id":"spur1234567"}' | grep -q thema_alpha || { echo "FAIL: Treffer fehlt"; exit 1; }
+grep -q ' sid=spur1234 hits=09_wiki%2Fthema_alpha.md text=funktioniert thema alpha genau$' "$V3/.logs/fragespur.log" || { echo "FAIL: Fragespur fehlt: $(cat "$V3/.logs/fragespur.log" 2>&1)"; exit 1; }
+grep -q 'wie funktioniert' "$V3/.logs/fragespur.log" "$V3/.logs/luecken.log" && { echo "FAIL: Prompttext im Log"; exit 1; }
+run3 '{"prompt":"wie funktioniert das thema alpha genau","session_id":"eval-1-2"}' >/dev/null
+grep -q 'sid=eval-' "$V3/.logs/fragespur.log" "$V3/.logs/luecken.log" && { echo "FAIL: Messlatten-Lauf gemerkt"; exit 1; }
 rm -rf "$TV" "$TH"
 rm -rf "$BRAIN_VAULT/.logs"; rm -f "$J"; echo "PASS"

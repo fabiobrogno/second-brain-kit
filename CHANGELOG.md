@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.0] - 2026-10-09
+"Learning loop" — the brain now learns which page answers which of your questions, and tells you how well its
+hints fit. As before, everything new that calls an AI is off by default; with every new switch at its default,
+the brain behaves like 0.4.
+
+### Added
+- **Pages know their questions.** A wiki page can carry `fragen: ["…", "…"]` — 2–6 typical questions in your
+  own words (at most 6, each up to 160 characters). They go into the page's search card, so the brain hint
+  fires exactly on those questions; pages without the field keep a byte-identical card. `brain-lint` reports a
+  malformed list as `FRAGEN` (blocking in the pre-commit check, like `AUCH`). The **ingest** skill adds 2–4
+  questions when it creates or reworks a page.
+- **Learning loop** (0 tokens, only while `luecken` is on). If your AI reads a wiki page the hint did not name
+  within 10 minutes of a knowledge question (and before the next prompt), that "question → page" pair becomes
+  a candidate. Once a week, at most five of them arrive as maintenance suggestions (`befund: frage`) to add to
+  the page's `fragen`. Each pair is suggested only once; questions already listed are skipped. Same privacy as
+  the gap log: keywords only, secret filter, no prompt text in `hint.log`. `brain lernschleife` lists the
+  candidates.
+- **Threshold check.** `brain analyse` and the Analysis tab compare "hint stayed silent, but a page was read
+  right after" (too strict) with "hint named pages nobody read" (too loose) and, from 20 cases each, recommend
+  a looser or stricter hint level, sharper cards (`fragen`), or "fits". Never applied automatically.
+- **Answer benchmark** (opt-in, `antwortMesslatte: aus | monatlich`, off by default, cost label in the
+  settings). Test questions in `<wiki>/_antworten.json` (`[{ frage, seite, kernfakten }]`) are answered by a
+  lean Haiku call from the named page only (frontmatter and secrets stripped); the key facts are checked
+  locally. Results go to `.logs/antwort-messlatte.log` and show up in the analysis. By hand: `brain antworten`.
+
+### Changed
+- The Claude Code status line refreshes every 10 seconds, so idle terminals also show changes made by other
+  sessions (a refresh interval you set yourself is kept).
+- Brain status (waiting sources, conflicts, open suggestions, last ingest) is counted in one place
+  (`brain-stand.mjs`) for the status line.
+
 ## [0.4.0] - 2026-10-03
 "Self-maintenance and looks" — the brain now tells you what in it needs attention, lets you resolve
 contradictions with one click, and is easier to read at a glance. As before, everything new that calls an

@@ -211,8 +211,12 @@ test("wöchentlich: faellig/starteWennFaellig mit Marke; starteLosgeloest ohne c
   try {
     assert.equal(P.starteWennFaellig(v), true);
     const ende = Date.now() + 8000;
-    while (Date.now() < ende && !existsSync(process.env.FAKE_PFLEGE_LOG)) await new Promise(r => setTimeout(r, 50));
-    const lauf = JSON.parse(readFileSync(process.env.FAKE_PFLEGE_LOG, "utf8"));
+    // Datei kann schon existieren, aber noch leer sein (Kindprozess schreibt noch) — bis gültiges JSON drin steht.
+    let lauf;
+    while (Date.now() < ende && !lauf) {
+      try { lauf = JSON.parse(readFileSync(process.env.FAKE_PFLEGE_LOG, "utf8")); } catch { await new Promise(r => setTimeout(r, 50)); }
+    }
+    assert.ok(lauf, "Fake-Pflegelauf hat nichts geschrieben");
     assert.deepEqual(lauf.args, ["--anlass", "woechentlich", v]);
     assert.equal(lauf.vault, v);
     assert.ok(existsSync(P.START_MARKE(v)));

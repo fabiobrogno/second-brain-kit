@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-4F46E5"></a>
-  <a href="CHANGELOG.md"><img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-4F46E5"></a>
+  <a href="CHANGELOG.md"><img alt="Version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-4F46E5"></a>
   <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0E7490">
   <img alt="Claude · Codex · Gemini · Cursor" src="https://img.shields.io/badge/Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20%C2%B7%20Cursor-0E7490">
 </p>

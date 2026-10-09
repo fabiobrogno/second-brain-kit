@@ -27,6 +27,7 @@
     { schluessel: "ernteSitzungsende", gruppe: "gruppeHintergrund", art: "schalter", kosten: "kostenErnte", nurClaude: true, brauchtClaude: true },
     { schluessel: "lektionen", gruppe: "gruppeHintergrund", art: "stufen", werte: ["aus", "lokal", "mit-ki"], stufenText: true, standard: "lokal", kosten: "kostenLektionen", nurClaude: true, brauchtClaudeWert: "mit-ki" },
     { schluessel: "pflegeLauf", gruppe: "gruppeHintergrund", art: "stufen", werte: ["aus", "woechentlich"], stufenText: true, standard: "aus", kosten: "kostenLauf", nurClaude: true, brauchtClaude: true },
+    { schluessel: "antwortMesslatte", gruppe: "gruppeHintergrund", art: "stufen", werte: ["aus", "monatlich"], stufenText: true, standard: "aus", kosten: "kostenAntwort", nurClaude: true, brauchtClaude: true },
     { schluessel: "ernteNichtIn", gruppe: "gruppeHintergrund", art: "liste", kosten: "kosten0" },
     { schluessel: "hinweise", gruppe: "gruppeSitzung", art: "stufen", werte: ["aus", "niedrig", "mittel", "hoch"], kosten: "kostenHinweis", nurClaude: true },
     { schluessel: "ichKarte", gruppe: "gruppeSitzung", art: "schalter", kosten: "kostenIch" },
@@ -42,7 +43,7 @@
   // und tägliche Sicherung gab es schon in v0.2 — die bleiben, wie sie sind. Die v0.4-Schlüssel nur, wenn der
   // Dienst sie kennt (sonst wiese er das Speichern mit 400 ab).
   const NEU_IN_V03 = { staendeIntervallStunden: 0, ernteSitzungsende: false, ichKarte: false, projektAutomatik: false, liveAufleuchten: false, luecken: false };
-  const NEU_IN_V04 = { wochenbericht: false, pflegeLauf: "aus", lektionen: "aus" };
+  const NEU_IN_V04 = { wochenbericht: false, pflegeLauf: "aus", lektionen: "aus", antwortMesslatte: "aus" };
   const REITER = [["einstellungen", "reiterEinstellungen"], ["vorschlaege", "reiterVorschlaege"], ["pflege", "reiterPflege"], ["analyse", "reiterAnalyse"]];
   const REIHE = REITER.map((r) => r[0]);
   const WAHLEN = ["a", "b", "beide"];
@@ -51,7 +52,9 @@
   const POSTEN = ["abgelaufen", "bald", "konflikte", "konflikteKaputt", "entscheidungen", "vorschlaege", "lektionen", "pflegeAuftraege", "verwaist",
     "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "messlatte"];
   const NUR_HINWEIS = ["bald", "nieGelesen", "luecken"];
-  const BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "sonstiges"];
+  const BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "frage", "sonstiges"];
+  // Schwellen-Prüfung (analyse.mjs#empfehlung): Text „empf_<art>“.
+  const EMPFEHLUNGEN = ["aus", "zuWenig", "passt", "lockerer", "strenger", "karten"];
   // Textschlüssel, die steuer.js zusammengesetzt benutzt (für den Vollständigkeitstest).
   const TEXTSCHLUESSEL = GRUPPEN.concat([
     "hinweis_aus", "hinweis_niedrig", "hinweis_mittel", "hinweis_hoch", "art_fakt", "art_stand", "quelle_search", "quelle_hint",
@@ -63,7 +66,8 @@
     "seiteGeaendert", "eintragAbgelaufen", "eintragAbgelaufen1", "eintragVerfall", "eintragVerfall1", "eintragKaputt", "uebernommenPflege", "eintragBald", "eintragKonflikte", "eintragEntscheidung",
     "eintragGleicherTitel", "eintragAehnlich", "eintragZeilen", "eintragImport", "eintragImport1", "eintragMesslatte",
     "eintragMesslatteUnter",
-  ], POSTEN.map((k) => "posten_" + k), POSTEN.map((k) => "schritt_" + k), POSTEN.map((k) => "thema_" + k), BEFUNDE.map((k) => "befund_" + k),
+    "schwelleStreng", "schwelleLocker", "schwelleSeit", "schwelleNurEmpfehlung",
+  ], EMPFEHLUNGEN.map((k) => "empf_" + k), POSTEN.map((k) => "posten_" + k), POSTEN.map((k) => "schritt_" + k), POSTEN.map((k) => "thema_" + k), BEFUNDE.map((k) => "befund_" + k),
   FELDER.filter((f) => f.stufenText).reduce((a, f) => a.concat(f.werte.map((v) => stufenSchluessel(f.schluessel, v))), []));
   const MAX_ORDNER = 20, MAX_PFAD = 300;
 
@@ -128,10 +132,28 @@
     return { ok: true, pfad: pfad };
   }
 
+  // Texte der Schwellen-Prüfung (rein, testbar): s = analyse().schwelle, tt = Übersetzer, f = Formatierer.
+  function schwellenTexte(s, tt, f) {
+    const fmt = Object.assign({ zahl: String, prozent: (q) => Math.round((q || 0) * 100) + " %", datum: String }, f || {});
+    const em = (s && s.empfehlung) || {};
+    const art = EMPFEHLUNGEN.indexOf(em.art) >= 0 ? em.art : "zuWenig";
+    const werte = art === "aus" ? [] : [
+      tt("schwelleStreng", { a: fmt.zahl(s.stillGelesen || 0), b: fmt.zahl(s.still || 0), p: fmt.prozent(s.zuStreng) }),
+      tt("schwelleLocker", { a: fmt.zahl(s.nieGelesen || 0), b: fmt.zahl(s.gezeigt || 0), p: fmt.prozent(s.zuLocker) }),
+    ];
+    const stufe = em.stufe ? tt("hinweis_" + em.stufe) : "";
+    return {
+      art: art, werte: werte,
+      empfehlung: tt("empf_" + art, { stufe: stufe, n: fmt.zahl(s.min || 20) }),
+      seit: s.seit ? tt("schwelleSeit", { datum: fmt.datum(String(s.seit).slice(0, 10)) }) + " " + tt("schwelleNurEmpfehlung") : "",
+    };
+  }
+
   const hilfen = {
     FELDER: FELDER, TEXTSCHLUESSEL: TEXTSCHLUESSEL, REITER: REIHE, POSTEN: POSTEN, aenderungen: aenderungen, allesAus: allesAus,
     neuerOrdner: neuerOrdner, konfliktPfad: konfliktPfad, ordneKonflikte: ordneKonflikte, quellKandidaten: quellKandidaten,
     notizText: notizText, vorschlagArt: vorschlagArt, entscheidungsKoerper: entscheidungsKoerper, postenEintrag: postenEintrag, stufenSchluessel: stufenSchluessel,
+    schwellenTexte: schwellenTexte,
   };
 
   // ---------------------------------------------------------------------------------------- Oberfläche
@@ -655,6 +677,8 @@
     wrap.appendChild(zuTun > 0
       ? h("div", { class: "st-p-summe" }, h("span", { class: "st-p-summe-zahl", text: zahl(zuTun) }), h("span", { text: zuTun === 1 ? t("pflegeSache1") : t("pflegeSachen") }))
       : h("div", { class: "st-p-summe ok" }, h("span", { class: "st-p-haken" }, ICON_HAKEN()), h("span", null, h("strong", { text: t("pflegeNichts") }), " ", t("pflegeNichtsText"))));
+    const beauftragt = typeof d.beauftragt === "number" ? d.beauftragt : 0;
+    if (beauftragt > 0) wrap.appendChild(h("div", { class: "st-p-beauftragt", text: t("pflegeBeauftragt", { n: zahl(beauftragt) }) }));
     if (P.meldung) wrap.appendChild(h("div", { class: "st-toast " + P.meldung.art, role: "status", text: P.meldung.text }));
 
     // Widersprüche
@@ -929,6 +953,8 @@
         karte(t("karteTokens"), "~" + zahl(tk.heute || 0), t("karteTokensText", { n: zahl(tk.sieben || 0) }))));
       if (Array.isArray(hw.proTag) && hw.proTag.length) wrap.appendChild(verlauf(hw.proTag.slice(-30)));
     }
+    if (a.schwelle && a.schwelle.empfehlung) wrap.appendChild(schwellenBlock(a.schwelle));
+    if (a.antwortMesslatte) wrap.appendChild(antwortBlock(a.antwortMesslatte));
 
     wrap.appendChild(seitenListe("konflikt", "listeKonflikt", "listeKonfliktText", seiten.konflikt, "rot"));
     wrap.appendChild(seitenListe("pruef", "listePruef", "listePruefText", seiten.pruefbeduerftig, "gelb"));
@@ -961,6 +987,44 @@
     im.appendChild(h("p", { class: "st-muted", text: t("importHinweis") }));
     wrap.appendChild(im);
     return wrap;
+  }
+
+  // Schwellen-Prüfung: zu streng / zu locker + Empfehlung (nur Text — geändert wird nichts automatisch).
+  function schwellenBlock(s) {
+    const x = schwellenTexte(s, t, { zahl: zahl, prozent: prozent, datum: datum });
+    const sek = h("section", { class: "st-a-block st-schwelle" }, h("h3", { text: t("schwelleTitel") }));
+    if (x.werte.length) {
+      const ul = h("ul", { class: "st-schwelle-werte" });
+      for (const w of x.werte) ul.appendChild(h("li", { text: w }));
+      sek.appendChild(ul);
+    }
+    sek.appendChild(h("p", { class: "st-schwelle-empf", text: x.empfehlung }));
+    if (x.seit) sek.appendChild(h("p", { class: "st-muted", text: x.seit }));
+    return sek;
+  }
+
+  // Antwort-Messlatte: letzter Lauf + Fragen mit fehlenden Kernfakten (opt-in, Schalter antwortMesslatte).
+  function antwortBlock(am) {
+    const l = am.letzter;
+    const sek = h("section", { class: "st-a-block st-antwort" }, h("h3", null, t("antwortTitel"),
+      l ? h("span", { class: "st-zahl", text: zahl(l.voll || 0) + "/" + zahl(l.fragen || 0) }) : null));
+    if (!l) {
+      sek.appendChild(h("p", { class: "st-muted", text: am.schalter === "monatlich" ? t("antwortNochKein") : t("antwortAus") }));
+      return sek;
+    }
+    const tok = typeof l.tokEin === "number" || typeof l.tokAus === "number" ? zahl((l.tokEin || 0) + (l.tokAus || 0)) : "–";
+    sek.appendChild(h("p", { class: "st-muted", text: t(l.status === "fehler" ? "antwortFehler" : "antwortLetzter",
+      { datum: datum(String(l.zeit || "").slice(0, 10)), voll: zahl(l.voll || 0), fragen: zahl(l.fragen || 0), fakten: String(l.fakten || ""), tokens: tok, grund: String(l.grund || "?") }) }));
+    const offen = (Array.isArray(am.faelle) ? am.faelle : []).filter((f) => f && Array.isArray(f.fehlend) && f.fehlend.length);
+    if (offen.length) {
+      const ul = h("ul", { class: "st-luecken" });
+      for (const f of offen.slice(0, 20)) {
+        ul.appendChild(h("li", null, h("span", { class: "st-l-text", text: String(f.frage || "") }),
+          h("span", { class: "st-l-meta", text: seitenName(String(f.seite || "")) + " · " + t("antwortFehlend", { fakten: f.fehlend.join(", ") }) })));
+      }
+      sek.appendChild(ul);
+    }
+    return sek;
   }
 
   function karte(titel, wert, text, quote) {
