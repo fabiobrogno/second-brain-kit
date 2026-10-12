@@ -1,12 +1,12 @@
 // Adapter: QMD-Bibliothek direkt — searchVector = reine Kosinus-Ähnlichkeit (keine LLM-Umformulierung,
 // kein Reranker; ~0,4 s inkl. Modell-Laden). Die CLI `qmd vsearch` formuliert jede neue Frage per LLM um (2–10 s).
-// Modul-Pfad: $QMD_MODULE oder aus dem `qmd`-Binary im PATH abgeleitet. Index: $QMD_DB oder ~/.cache/qmd/index.sqlite.
+// Modul-Pfad: $QMD_MODULE oder aus dem `qmd`-Binary (~/.brain-kit/bin, sonst PATH) abgeleitet. Index: $QMD_DB oder ~/.cache/qmd/index.sqlite.
 import { existsSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { vaultPfad } from "./pfade.mjs";
-import { qmdPaketVerzeichnisWin32 } from "./qmd-befehl.mjs";
+import { qmdPaketVerzeichnisWin32, qmdPrivatBin } from "./qmd-befehl.mjs";
 
 export function modulPfad() {
   if (process.env.QMD_MODULE) return process.env.QMD_MODULE;
@@ -16,8 +16,8 @@ export function modulPfad() {
     if (paket) return join(paket, "dist", "index.js");
     throw Object.assign(new Error("qmd nicht im PATH"), { code: "QMD_FEHLT" });
   }
-  for (const dir of (process.env.PATH || "").split(":")) {
-    const bin = join(dir, "qmd");
+  // Zuerst das private qmd der Installation (~/.brain-kit/bin) — es steht in keinem PATH.
+  for (const bin of [qmdPrivatBin(), ...(process.env.PATH || "").split(":").map(dir => join(dir, "qmd"))].filter(Boolean)) {
     if (existsSync(bin)) return join(dirname(realpathSync(bin)), "..", "dist", "index.js");
   }
   throw Object.assign(new Error("qmd nicht im PATH"), { code: "QMD_FEHLT" });

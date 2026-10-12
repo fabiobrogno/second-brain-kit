@@ -17,6 +17,7 @@ import { inventar } from "./ansicht/mcp-inventar.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 import { leseErgebnis as antwortErgebnis } from "./antwort-messlatte.mjs";
+import { offenePakete } from "./import/abschluss.mjs";
 
 const TAG_MS = 86400000;
 const ZEHN_MIN_MS = 10 * 60000;
@@ -350,7 +351,10 @@ function leseImporte(vault, o) {
       const widersprueche = anzahl(b.widersprueche);
       // Import (Task 7) schreibt `duplikateExakt` als Liste der übersprungenen Dateien; eine Zahl geht auch.
       const duplikate = anzahl(b.duplikateExakt ?? b.duplikate);
-      out.push({ quelle: b.quelle || eintrag.name, notizen: zahl(b.notizen, 0), duplikate, widersprueche });
+      // Nur Pakete ohne Vermerk „eingearbeitet“ zählen (import/abschluss.mjs); sind alle erledigt, ist der Import nicht mehr offen.
+      const offen = offenePakete(b);
+      if (!offen.length) continue;
+      out.push({ quelle: b.quelle || eintrag.name, notizen: offen.reduce((s, p) => s + p.notizen, 0), duplikate, widersprueche });
     } catch { /* kaputter Bericht — überspringen */ }
   }
   return out;

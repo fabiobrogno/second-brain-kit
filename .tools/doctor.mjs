@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { totalmem, homedir } from "node:os";
 import { vaultPfad, ladeConfig, configFehler, ordner, istQuellVault, renderVorlage } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
-import { qmdBefehl } from "./qmd-befehl.mjs";
+import { qmdBefehl, VOLL_AB_GB } from "./qmd-befehl.mjs";
 import { pruefeUpdate, hinweisZeile } from "./update-check.mjs";
 import { findeClaude } from "./ernte.mjs";
 import { anzahlVorschlaege } from "./vorschlaege.mjs";
@@ -49,10 +49,12 @@ if (gewaehltesProfil === "minimal") {
 // "minimal" fragt brain.mjs search() qmd nie, egal ob eine Sammlung existiert; habeQmd bleibt in dem
 // Fall ohnehin false, siehe oben).
 if (habeQmd && gewaehltesProfil !== "minimal") {
-  let kennt = false;
-  try { kennt = execFileSync(b.cmd, [...b.vorArgs, "collection", "list"], { windowsHide: true, encoding: "utf8" }).includes("brain"); } catch {}
-  if (kennt) zeile("OK", "Such-Sammlung", "eingerichtet");
-  else zeile("WARN", "Such-Sammlung", "noch nicht angelegt — führe „brain refresh“ aus.");
+  // Beide Sammlungen nötig: „brain“ (Suche) und „brainkarten“ (Hinweise vor jedem Prompt). „brain refresh“ legt fehlende an.
+  let namen = new Set();
+  try { namen = new Set([...execFileSync(b.cmd, [...b.vorArgs, "collection", "list"], { windowsHide: true, encoding: "utf8" }).matchAll(/^(\S+) \(qmd:\/\//gm)].map(m => m[1])); } catch {}
+  const fehlen = ["brain", "brainkarten"].filter(n => !namen.has(n));
+  if (!fehlen.length) zeile("OK", "Such-Sammlung", "eingerichtet");
+  else zeile("WARN", "Such-Sammlung", `noch nicht angelegt (${fehlen.join(", ")}) — führe „brain refresh“ aus.`);
 }
 
 // 5. core.hooksPath (Sicherheits-Riegel vor jedem Commit)
@@ -86,7 +88,9 @@ else {
   const cfg = ladeConfig(vault);
   const profil = cfg.suche?.profil;
   const ramGB = totalmem() / 1e9;
-  if (profil === "voll" && ramGB < 8) zeile("WARN", "Suchprofil", `"voll" bei ${ramGB.toFixed(1)} GB Arbeitsspeicher — Profil "leicht" ist empfohlen (sag „stell die Suche auf leicht“).`);
+  // „voll“ lädt zusätzlich einen Reranker: auf 8-GB-Rechnern gemessen > 30 s je Suche (#4) — darum erst ab 16 GB
+  // (totalmem in 10^9 Byte: ein 16-GB-Mac meldet ~17,2, ein 8-GB-Mac ~8,6).
+  if (profil === "voll" && ramGB < VOLL_AB_GB) zeile("WARN", "Suchprofil", `"voll" bei ${ramGB.toFixed(1)} GB Arbeitsspeicher ist sehr langsam — Profil "leicht" ist empfohlen (sag „stell die Suche auf leicht“).`);
   else zeile("OK", "Suchprofil", `${profil || "leicht"} (${ramGB.toFixed(1)} GB Arbeitsspeicher)`);
 }
 

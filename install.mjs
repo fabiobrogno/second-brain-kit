@@ -16,7 +16,7 @@ import {
 import { execFileSync, spawnSync } from "node:child_process";
 import { join, dirname, basename, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { homedir } from "node:os";
+import { homedir, totalmem } from "node:os";
 
 const K = dirname(fileURLToPath(import.meta.url)); // Kit-Wurzel: install.mjs, vorlage/, .tools/, lib/ liegen hier nebeneinander
 const HEIM = process.env.BRAIN_KIT_HOME || join(homedir(), ".brain-kit");
@@ -274,7 +274,7 @@ async function main() {
     logDetail(`git: ${JSON.stringify(gitErgebnis)}`);
   } catch (e) { logDetail(`git-Einrichtung übersprungen: ${e?.message || e}`); }
 
-  const { qmdBefehl } = await import(pathToFileURL(join(K, ".tools", "qmd-befehl.mjs")).href);
+  const { qmdBefehl, VOLL_AB_GB } = await import(pathToFileURL(join(K, ".tools", "qmd-befehl.mjs")).href);
   const qb = qmdBefehl();
   let qmdProfil; // "leicht" (nutzbar) oder "minimal" (nicht nutzbar/nicht gewollt) — nie "voll", das ist Opt-in.
   if (process.env.BRAIN_KIT_OHNE_QMD) {
@@ -288,7 +288,9 @@ async function main() {
     const schonDa = spawnSync(qb.cmd, [...qb.vorArgs, "--help"], { windowsHide: true, stdio: "ignore", env: laufendesEnv() }).status === 0;
     if (schonDa) { qmdProfil = "leicht"; logDetail("qmd: bereits vorhanden"); }
     else {
-      melde(S("Ich lade die bessere Suche herunter (einmalig, ca. 300 MB) ...", "Downloading the better search now (one-time, about 300 MB) ..."));
+      melde(profilWahl === "voll"
+        ? S("Ich lade die bessere Suche herunter (einmalig, ca. 2 GB mit Reranker) ...", "Downloading the better search now (one-time, about 2 GB with the reranker) ...")
+        : S("Ich lade die bessere Suche herunter (einmalig, ca. 300 MB) ...", "Downloading the better search now (one-time, about 300 MB) ..."));
       const r = sorgeFuerQmd({ home: homedir() });
       qmdProfil = r.profil;
       logDetail(`qmd-Einrichtung: ${JSON.stringify(r)}`);
@@ -305,6 +307,10 @@ async function main() {
       melde(S("Profil „voll“ ist unter Windows in dieser Version nicht verfügbar — ich nutze „leicht“.",
               "Profile \"voll\" isn't available on Windows in this release — using \"leicht\" instead."));
       return "leicht";
+    }
+    if (wahl === "voll" && totalmem() / 1e9 < VOLL_AB_GB) {
+      melde(S("Hinweis: Profil „voll“ ist mit weniger als 16 GB Arbeitsspeicher sehr langsam (eine Suche kann über 30 Sekunden dauern). Wechseln geht jederzeit: sag „stell die Suche auf leicht“.",
+              "Note: profile \"voll\" is very slow with less than 16 GB of memory (a search can take over 30 seconds). You can switch any time: say \"set the search to leicht\"."));
     }
     return wahl;
   }
@@ -404,15 +410,13 @@ async function main() {
     }
   } catch (e) { logDetail(`git-Einrichtung übersprungen: ${e?.message || e}`); }
 
-  // --- qmd-Sammlung + Index auffrischen — nur wenn das GEWÄHLTE Profil qmd auch nutzt
+  // --- qmd-Sammlungen + Index auffrischen — nur wenn das GEWÄHLTE Profil qmd auch nutzt
   // (qmdProfil ist nur die Verfügbarkeit; jemand kann "minimal" bewusst wählen, obwohl qmd da wäre —
-  // dann baut brain.mjs search() nie eine qmd-Anfrage, also lohnt sich die Sammlung hier nicht). --
+  // dann baut brain.mjs search() nie eine qmd-Anfrage, also lohnt sich die Sammlung hier nicht).
+  // „brain refresh“ legt die Sammlungen „brain“ und „brainkarten“ selbst an und findet auch das gerade
+  // nach ~/.brain-kit installierte qmd (qmd-befehl.mjs) — darum hier kein eigenes `collection add`. --
   if (profil !== "minimal") {
     try {
-      const liste = spawnSync(qb.cmd, [...qb.vorArgs, "collection", "list"], { encoding: "utf8", windowsHide: true, env: laufendesEnv() });
-      if (!(liste.stdout || "").includes("brain")) {
-        spawnSync(qb.cmd, [...qb.vorArgs, "collection", "add", vault, "--name", "brain"], { windowsHide: true, stdio: "ignore", env: laufendesEnv() });
-      }
       const refresh = brainBefehl(vault, ["refresh"]);
       logDetail((refresh.stdout || "") + (refresh.stderr || ""));
     } catch (e) { logDetail(`Such-Sammlung übersprungen: ${e?.message || e}`); }

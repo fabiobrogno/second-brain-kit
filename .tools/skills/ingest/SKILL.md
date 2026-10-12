@@ -16,7 +16,10 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    gewählte Paket einarbeiten (nie den ganzen Import auf einmal). Je Fast-Duplikat-Gruppe entsteht GENAU EINE
    Wiki-Seite (nicht eine je Datei). Widerspruchs-Kandidaten aus dem Bericht nie still entscheiden: als
    [!KONFLIKT]-Kasten mit BEIDEN Belegen setzen, die laut Bericht NEUERE Quelle zuerst nennen — erst die Person
-   entscheidet. Beweisbindung wie immer: `quellen`/`quellen_sha` zeigen auf die Dateien unter `_import/<name>/`.
+   entscheidet. VOR dem Schreiben der Seiten die Paketdateien einsortieren: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import fertig <name> "<paket>" --ziel <cluster>`
+   (verschiebt sie nach `<cluster>/<name>/…` mit unveränderter Unterstruktur und vermerkt das Paket im Bericht; das ist
+   hier Schritt 5, siehe Skill import). Beweisbindung wie immer: `quellen`/`quellen_sha` zeigen auf den NEUEN Ort
+   `<cluster>/<name>/…` (Hash ist unverändert).
 2. **Secrets-Riegel (VOR allem anderen):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" ingest-check <datei>`.
    Exit 3 → ABBRUCH: Fundstellen nennen, NICHTS schreiben, User fragen. Exit 0 → weiter.
 2b. **Lock setzen (Parallel-Sicherheit):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" lock`. Exit 1 (eine andere Sitzung arbeitet
@@ -59,7 +62,7 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    `fragen: ["Wie komme ich an den Amazon-Token?", "Wo stehen die Ports der Dienste?"]` (eine Zeile, JSON, je
    ≤ 160 Zeichen, höchstens 6 — Lint prüft). Die Fragen landen in der Suchkarte; Änderungen an `fragen:` brauchen
    kein rev+1. Nie Kundendaten oder Zugangsdaten in eine Frage.
-5. **Quelle einsortieren:** Von {{INBOX}} in den passenden Cluster verschieben (Cluster-Definitionen
+5. **Quelle einsortieren** (Import-Pakete: schon in 1b per `import fertig` erledigt, nicht erneut verschieben): Von {{INBOX}} in den passenden Cluster verschieben (Cluster-Definitionen
    in brain.config.json); Wahl im Report nennen. WICHTIG: quellen-Pfade im Frontmatter zeigen auf
    den NEUEN Ort, Hash NACH dem Verschieben berechnen.
 6. **Protokoll:** Eintrag in {{WIKI}}/_log.md direkt unter die Formatvorlage (neuester oben). Zeitstempel IMMER

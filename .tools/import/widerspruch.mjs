@@ -25,10 +25,19 @@ const VERNEINUNG = new Set(["nicht", "kein", "keine", "not", "no"]);
 // Zahl direkt nach einem Ordnungswort ist eine Bezeichnung („Kapitel 3“), kein Wert → gehört zum Satzrahmen.
 const ORDNUNGSWORT = new Set(["kapitel", "abschnitt", "teil", "schritt", "punkt", "seite", "band", "folge", "nummer", "nr",
   "raum", "zimmer", "gleis", "tag", "woche", "chapter", "section", "part", "step", "page", "room", "no"]);
+// Wörter, die ein Datum nur einleiten („Stand 2026-07-30“) — sie sagen nichts über das Subjekt des Satzes.
+const DATUMSWORT = new Set(["stand", "datum", "am", "seit", "bis", "vom", "ab", "update", "updated", "aktualisiert", "geändert",
+  "geaendert", "erstellt", "zuletzt", "date", "since", "until", "on", "as", "of"]);
+// Wörter, aus denen reine Navigationszeilen („Vorheriger Tag: … · Nächster Tag: …“) bestehen.
+const NAVIGATIONSWORT = new Set(["vorheriger", "vorherige", "vorheriges", "vorherigen", "nächster", "nächste", "nächstes",
+  "nächsten", "naechster", "naechste", "naechstes", "zurück", "zurueck", "weiter", "tag", "woche", "monat", "eintrag", "notiz",
+  "seite", "übersicht", "uebersicht", "heute", "gestern", "morgen", "previous", "prev", "next", "back", "day", "week", "month",
+  "entry", "note", "page", "index", "home", "up", "hoch", "inhalt"]);
 const MAX_JE_PAAR = 10;
 const RAHMEN_SCHWELLE = 0.5;
 
 const R_DATUM = /(?<![\p{N}.])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})(?![\p{N}])|(?<![\p{N}])(\d{4})-(\d{2})-(\d{2})(?![\p{N}])/gu;
+const R_URL = /(?:https?:\/\/|www\.)[^\s<>"')\]|]+/giu;
 const R_VERSION = /(?<![\p{L}\p{N}.])v(\d+(?:\.\d+){1,2})(?![\p{N}])|(?<![\p{L}\p{N}.])(\d+\.\d+\.\d+)(?![\p{N}.])/giu;
 const R_VERSION_WORT = /(?<![\p{L}\p{N}.])(\d+\.\d+)(?![\p{N}.])/gu;
 const R_ZAHL = /(?<![\p{L}\p{N}])((?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+|\.\d+)?)\s?(€|euro(?![\p{L}])|eur(?![\p{L}])|%|mb(?![\p{L}])|gb(?![\p{L}]))?/giu;
@@ -58,7 +67,9 @@ export function saetze(text) {
 // Ein Satz → Werte je Art, Ja/Nein-Richtung, Rahmen-Wörter und Schlüsselwörter.
 export function werteAus(satz) {
   let rest = String(satz).normalize("NFC").toLowerCase();
-  const datum = [], version = [], zahl = [];
+  const datum = [], version = [], zahl = [], urls = [];
+  // URLs vor allem anderen heraus: ihre Zahlen/Daten sind Teil der Adresse, kein Wert des Satzes.
+  rest = rest.replace(R_URL, (u) => { urls.push(u.replace(/[.,;:!?]+$/, "")); return " "; });
   rest = rest.replace(R_DATUM, (_, t, m, j, J, M, T) => {
     if (J) datum.push(`${J}-${M}-${T}`);
     else datum.push(`${j.length === 2 ? "20" + j : j}-${m.padStart(2, "0")}-${t.padStart(2, "0")}`);
@@ -103,7 +114,8 @@ export function werteAus(satz) {
   }
   const richtung = pos && !neg ? 1 : neg && !pos ? -1 : 0;
   const schluessel = [...new Set(rahmen.filter(w => w.length >= 5 && !w.includes("#") && !STOPP.has(w) && !/^\p{N}+$/u.test(w)))];
-  return { datum, version, zahl, richtung, rahmen: new Set(rahmen), schluessel, bezeichnungen };
+  const thema = new Set(rahmen.filter(w => !DATUMSWORT.has(w) && !w.includes("#")));
+  return { datum, version, zahl, urls, richtung, rahmen: new Set(rahmen), schluessel, bezeichnungen, thema };
 }
 
 const gleicheListe = (a, b) => [...a].sort().join("|") === [...b].sort().join("|");
@@ -113,12 +125,25 @@ function jaccard(a, b) {
   return s / (a.size + b.size - s);
 }
 
+// Reine Navigationszeile: nach Abzug von Daten, Links, URLs und Trennzeichen bleiben nur Navigationswörter.
+export function istNavigation(satz) {
+  const t = String(satz).toLowerCase().replace(R_URL, " ").replace(R_DATUM, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  if (!t) return false;
+  const w = t.split(" ").filter(x => !/^\p{N}+$/u.test(x));
+  return w.length > 0 && w.some(x => !["tag", "woche", "monat", "seite", "heute", "index", "home", "inhalt"].includes(x)) && w.every(x => NAVIGATIONSWORT.has(x));
+}
+
 export function vergleicheSaetze(wa, wb) {
   if (!wa.schluessel.some(k => wb.schluessel.includes(k))) return null;
   if (jaccard(wa.rahmen, wb.rahmen) < RAHMEN_SCHWELLE) return null;
   // „Kapitel 3 …“ und „Kapitel 4 …“ sind verschiedene Dinge, kein Widerspruch.
   if (wa.bezeichnungen?.length && wb.bezeichnungen?.length && !gleicheListe(wa.bezeichnungen, wb.bezeichnungen)) return null;
-  if (wa.datum.length && wb.datum.length && !gleicheListe(wa.datum, wb.datum)) return "datum";
+  // Datum: nur beim gleichen Subjekt („Stand 2026-07-30“ zu verschiedenen Dingen ist keiner).
+  if (wa.datum.length && wb.datum.length && !gleicheListe(wa.datum, wb.datum)) {
+    const gleichesThema = wa.thema.size && wb.thema.size && jaccard(wa.thema, wb.thema) >= RAHMEN_SCHWELLE
+      && wa.schluessel.some(k => wa.thema.has(k) && wb.schluessel.includes(k));
+    if (gleichesThema) return "datum";
+  }
   if (wa.version.length && wb.version.length && !gleicheListe(wa.version, wb.version)) return "version";
   if (wa.zahl.length && wb.zahl.length && !gleicheListe(wa.zahl, wb.zahl)) return "zahl";
   if (wa.richtung * wb.richtung === -1) return "jaNein";
@@ -129,6 +154,7 @@ export function vergleicheSaetze(wa, wb) {
 export function pruefbareSaetze(text) {
   const out = [];
   for (const satz of saetze(text)) {
+    if (istNavigation(satz)) continue;
     const w = werteAus(satz);
     if (!w.schluessel.length) continue;
     if (!w.datum.length && !w.version.length && !w.zahl.length && !w.richtung) continue;
