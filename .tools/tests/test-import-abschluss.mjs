@@ -139,7 +139,8 @@ test("CLI: brain import fertig-Aufruf über abschluss.mjs", () => {
 });
 
 // --- Review-Befunde ---------------------------------------------------------------------------------
-test("Paketname mit bereinigtem Pfad (Ordner „Was ist?“ → „Was ist_“) verschiebt die Dateien", () => {
+// Windows erlaubt „?“ in Ordnernamen gar nicht — dort kann dieser Fall nicht entstehen.
+test("Paketname mit bereinigtem Pfad (Ordner „Was ist?“ → „Was ist_“) verschiebt die Dateien", { skip: process.platform === "win32" }, () => {
   const v = join(temp("brain abschluss "), "Mein Brain");
   mkdirSync(join(v, "09_wiki"), { recursive: true });
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ wiki: { ordner: "09_wiki" }, clusters: [{ id: "30_wissen", name: "Wissen" }] }) + "\n");

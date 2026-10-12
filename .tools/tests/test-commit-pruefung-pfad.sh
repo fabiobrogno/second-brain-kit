@@ -40,4 +40,9 @@ echo "$OUT" | grep -q 'REV: firma/x/thema_a.md' || { echo "FAIL: weniger Quellen
 # (g) Bestehendes Verhalten: nur quellen_sha geändert → REV
 seite '["00_inbox/_import/q/a.md", "00_inbox/_import/q/b.md"]' "[\"$SA\", \"abc\"]" 1 'Text.' > "$V/09_wiki/firma/x/thema_a.md"; g add 09_wiki; pruef
 echo "$OUT" | grep -q 'REV: firma/x/thema_a.md' || { echo "FAIL: reine Hash-Änderung nicht erkannt: $OUT"; exit 1; }; zurueck
+# (h) Wie unter Windows: core.autocrlf=true → der gestagte Schnappschuss hat CRLF, quellen_sha wurde über LF gebildet → ok
+g config core.autocrlf true
+verschiebe a.md; verschiebe b.md; seite "$NEU" "[\"$SA\", \"$SB\"]" 1 'Text.' > "$V/09_wiki/firma/x/thema_a.md"; g add 09_wiki; pruef
+[ $RC -eq 0 ] || { echo "FAIL: reiner Pfadwechsel mit CRLF-Schnappschuss blockiert: $OUT"; exit 1; }; zurueck
+g config --unset core.autocrlf
 echo "OK test-commit-pruefung-pfad"
