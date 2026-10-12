@@ -41,7 +41,7 @@ Ask these **five questions** before you start (skip any they already answered, u
 2. Language: `de` or `en` (default: auto-detected from the system locale)
 3. Search profile: `minimal` (plain text search, no downloads), `leicht` (local embeddings, ~300 MB
    one-time download, recommended for most machines), or `voll` (adds a reranker + query expansion,
-   ~2 GB total, needs ≥ 8 GB RAM, opt-in only — not available on Windows in this release)
+   ~2 GB total, needs ≥ 16 GB RAM, opt-in only — not available on Windows in this release)
 4. Agent adapter: `claude-code`, `codex`, or `keiner` (none)
 5. Backup: `github` (private repo, pushed automatically), `ordner:<path>` (a folder — USB stick, external
    drive, cloud-synced folder; a dated bundle file goes there once a day, last 7 kept), or `keins` (local

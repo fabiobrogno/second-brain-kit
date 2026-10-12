@@ -27,6 +27,19 @@ Ablauf für „importiere mein altes Brain aus <Ordner>" (oder: Obsidian/Notion/
    welches Paket als Nächstes eingearbeitet werden soll — nie den ganzen Import auf einmal einarbeiten.
 6. **Einarbeiten (nur nach Ja, je Paket):** Skill **ingest** auf die Dateien des gewählten Pakets anwenden
    (sie liegen unter `{{INBOX}}/_import/<quelle>/`). Dessen Import-Regeln gelten: erst `_bericht.md` lesen,
-   je Fast-Duplikat-Gruppe eine Wiki-Seite, Widersprüche nie still entscheiden.
-7. **Danach:** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" analyse` zeigt offene Importe (Notizen → Seiten, Duplikate,
-   offene Widersprüche) — der Person kurz nennen, wenn noch Pakete offen sind.
+   je Fast-Duplikat-Gruppe eine Wiki-Seite, Widersprüche nie still entscheiden. REIHENFOLGE (wichtig):
+   a) passenden Ziel-Cluster wählen (Cluster-Ids aus brain.config.json) und dem Paket zuweisen,
+   b) **zuerst** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import fertig <quelle> "<paket>" --ziel <cluster>` — das
+      verschiebt die Paketdateien per `git mv` nach `<cluster>/<quelle>/<unveränderte Unterstruktur>` und vermerkt
+      das Paket im Bericht als eingearbeitet (Inhalt bleibt bytegleich, `quellen_sha` ändert sich nicht),
+   c) **danach** die Wiki-Seiten schreiben: `quellen:` zeigt auf den NEUEN Ort `<cluster>/<quelle>/…`, nicht mehr
+      nach `{{INBOX}}/_import/`,
+   d) bei der Git-Übergabe (ingest Schritt 8) auch stagen, was der Befehl am Ende nennt (`_bericht.json` bzw. den
+      Archiv-Ordner). Bricht das Einarbeiten ab, bevor committet ist: Dateien per `git mv` zurück nach
+      `{{INBOX}}/_import/<quelle>/` und den Eintrag `eingearbeitet.<paket>` aus `_bericht.json` löschen (oder
+      `git restore --staged --worktree` auf die genannten Pfade — nur nach Rückfrage).
+   Das letzte Paket schließt den Import ab: Bericht und Metadaten wandern nach `{{ARCHIV}}/import-berichte/<quelle>/`,
+   `{{INBOX}}/_import/<quelle>/` verschwindet. Soll gar nichts eingearbeitet, sondern der ganze Rest ohne Wiki-Seiten
+   abgelegt werden, geht `… import fertig <quelle> --alle --ziel <cluster>` (nur auf ausdrücklichen Wunsch).
+7. **Danach:** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" analyse` zeigt offene Importe (nur Pakete, die noch nicht
+   eingearbeitet sind) — der Person kurz nennen, wenn noch Pakete offen sind.

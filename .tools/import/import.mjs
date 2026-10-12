@@ -19,6 +19,7 @@ import { ZipFehler } from "./zip.mjs";
 import { normalisiereText, textHash, sha256, analysiereNotiz, normTitel, stamm, frontmatter } from "./notiz.mjs";
 import { findeGruppen } from "./aehnlich.mjs";
 import { findeWidersprueche } from "./widerspruch.mjs";
+import { sichererRel } from "./abschluss.mjs";
 
 export { ImportFehler, ZipFehler };
 
@@ -49,13 +50,6 @@ export function normName(s) {
   return n || "import";
 }
 
-// Ein Pfadteil, der unter Windows, macOS und Linux gültig ist.
-function sichererTeil(t) {
-  let s = t.replace(/[<>:"|?*\u0000-\u001f\\]/g, "_").replace(/[. ]+$/, (m) => "_".repeat(m.length));
-  if (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(s)) s = "_" + s;
-  return s || "_";
-}
-const sichererRel = (rel) => rel.split("/").map(sichererTeil).join("/");
 
 const isoTag = (d) => {
   if (!(d instanceof Date) || isNaN(d)) return null;

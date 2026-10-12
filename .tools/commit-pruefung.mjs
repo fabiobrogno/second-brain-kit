@@ -7,7 +7,8 @@
 // Nutzung: node commit-pruefung.mjs [vault]
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 import { ladeConfig, ordner, entferneBom } from "./pfade.mjs";
@@ -69,16 +70,31 @@ try {
   const alt = new Set((hatHead ? lint(H) : []).map(z => umbenannt.reduce((x, [von, nach]) => x.split(von).join(nach), z)));
   for (const z of lint(S)) if (!alt.has(z)) blockiert.push(z.replace(/^- /, ""));
 
-  // 2) REV: Body oder quellen/quellen_sha geändert, rev nicht erhöht (Umbenennung/auch/name/description frei)
+  // 2) REV: Body oder quellen/quellen_sha geändert, rev nicht erhöht (Umbenennung/auch/name/description frei;
+  //    ebenso ein reiner Quellen-Pfadwechsel bei gleichem Hash, s. nurPfadwechsel)
   const teile = (roh) => { const raw = entferneBom(String(roh)).replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const fm = m ? m[1] : "";
     const feld = (k) => (fm.match(new RegExp(`^${k}:\\s*(.*)$`, "m")) || [, ""])[1].trim();
-    return { body: (m ? raw.slice(m[0].length) : raw).trim(), quellen: feld("quellen"), sha: feld("quellen_sha"), rev: Number(feld("rev")) || 0 }; };
+    return { body: (m ? raw.slice(m[0].length) : raw).trim(), quellen: feld("quellen"), sha: feld("quellen_sha"), rev: Number(feld("rev")) || 0,
+    rest: fm.split("\n").filter(z => !/^quellen:/.test(z)).join("\n") }; };
+  // Reiner Pfadwechsel (Import-Abschluss, Quelle per git mv in den Cluster): Body und übriges Frontmatter bytegleich,
+  // quellen_sha identisch, gleich viele Quellen — und die Datei am NEUEN Pfad trägt wirklich den gebundenen Hash.
+  const jsonListe = (t) => { try { const x = JSON.parse(t); return Array.isArray(x) && x.every(e => typeof e === "string") ? x : null; } catch { return null; } };
+  const nurPfadwechsel = (a, n) => {
+    if (a.body !== n.body || a.sha !== n.sha || a.rest !== n.rest || a.quellen === n.quellen) return false;
+    const qa = jsonListe(a.quellen), qn = jsonListe(n.quellen), sh = jsonListe(n.sha);
+    if (!qa || !qn || !sh || qa.length !== qn.length || sh.length !== qn.length) return false;
+    return qn.every((p, i) => {
+      if (p === qa[i]) return true;
+      if (isAbsolute(p) || p.split(/[\\/]/).includes("..")) return false;
+      try { return createHash("sha256").update(readFileSync(join(S, p))).digest("hex").slice(0, 16) === sh[i]; } catch { return false; }
+    });
+  };
   for (const s of status) {
     const art = s[0][0], neu = s[s.length - 1], altPfad = art === "R" ? s[1] : neu;
     if (!["M", "R"].includes(art) || !istWikiSeite(neu, wiki)) continue;
     let a; try { a = teile(git("show", `HEAD:${altPfad}`)); } catch { continue; }
     const n = teile(readFileSync(join(S, neu), "utf8"));
-    const geaendert = a.body !== n.body || a.quellen !== n.quellen || a.sha !== n.sha;
+    const geaendert = (a.body !== n.body || a.quellen !== n.quellen || a.sha !== n.sha) && !nurPfadwechsel(a, n);
     if (geaendert && n.rev <= a.rev) blockiert.push(`REV: ${neu.slice(wiki.length + 1)} — Inhalt oder Quellen geändert, rev nicht erhöht (${a.rev} → ${n.rev}; Schema: Beweisbindung)`);
   }
 

@@ -25,7 +25,7 @@ const vault = vaultPfad(["", ""]);
 const b = qmdBefehl();
 
 const node = (skript, ...a) => spawnSync(process.execPath, [join(T, skript), ...a], { stdio: "inherit", windowsHide: true }).status ?? 1;
-const hatQmd = () => spawnSync(b.cmd, [...b.vorArgs, "--help"], { stdio: "ignore", windowsHide: true }).error === undefined;
+const hatQmd = () => { const r = spawnSync(b.cmd, [...b.vorArgs, "--help"], { stdio: "ignore", windowsHide: true }); return !r.error && r.status === 0; };
 
 function suche(frage, n = "5") {
   if (!frage) { console.error("Nutzung: brain search \"<frage>\" [anzahl]"); return 64; }
@@ -256,8 +256,11 @@ const befehle = {
   antworten: (...a) => node("antwort-messlatte.mjs", vault, ...a),
   // „brain import <ordner|zip> [--name x] [--ja]" — delegiert ans Import-Werkzeug (Task 7); fehlt die Quelle,
   // meldet brain.mjs selbst die vertraute Nutzung statt des Skript-internen Aufrufs.
+  // „brain import fertig <quelle> <paket|--alle> --ziel <cluster>" — Paket als eingearbeitet abschließen
+  // (Dateien in den Cluster verschieben, Fortschritt im Bericht; import/abschluss.mjs).
   import: (quelle, ...a) => {
-    if (!quelle) { console.error("Nutzung: brain import <ordner|zip> [--name x] [--ja]"); return 64; }
+    if (!quelle) { console.error("Nutzung: brain import <ordner|zip> [--name x] [--ja] | brain import fertig <quelle> <paket|--alle> --ziel <cluster>"); return 64; }
+    if (quelle === "fertig") return node(join("import", "abschluss.mjs"), vault, ...a);
     return node(join("import", "import.mjs"), quelle, vault, ...a);
   },
   // „brain einstellungen [schluessel=wert …]" — dasselbe Schema wie die Maske (Task 0: SCHEMA/leseAutomatik/

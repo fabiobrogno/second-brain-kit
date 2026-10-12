@@ -65,6 +65,9 @@ Migrations in this release:
   `AGENTS.md` (and the Codex skills) are generated again for the updated ingest skill, the Claude Code adapter
   (if installed) is re-run for the 10-second status-line refresh, and `_schema.md` gets the explanation of
   `fragen` if it is missing.
+- `migrations/0.5.1.md` — no data migration: bug fixes arrive with the system files. `AGENTS.md` (and the
+  Codex skills) are generated again for the updated import/ingest skills, and `brain refresh` runs once to
+  create a missing search collection.
 
 Placeholders in a migration (`<vault>`, `<kit-klon>`) are always filled in as absolute paths, without `~`.
 From 0.2.0 on, the **update** skill also regenerates `AGENTS.md` (and `.agents/skills/` for Codex) every time

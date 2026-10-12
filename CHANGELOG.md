@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1] - 2026-10-12
+Bug fixes from the first tester reports (thanks, @freakadelle1997). No data migration; notes, wiki and settings
+stay as they are.
+
+### Fixed
+- **Better search found after a fresh install (macOS/Linux)** (#2). The installer puts the search engine into
+  `~/.brain-kit/bin`, which is on no `PATH` — every tool now looks there first (on Windows also in
+  `~/.brain-kit`), so `brain doctor`, the hint before every prompt and `brain refresh` no longer fall back
+  silently to the simple search.
+- **Search collection `brainkarten` is created** (#3). `brain refresh` now creates the collections `brain` and
+  `brainkarten` itself when they are missing (so the doctor's advice "run brain refresh" actually fixes it),
+  and `brain doctor` checks both.
+- **`voll` profile on 8 GB machines** (#4). `brain doctor` and the installer now warn below 16 GB of memory
+  (measured: over 30 s per search on 8 GB); the installer announces ~2 GB instead of ~300 MB for `voll`.
+- **Far fewer false contradictions in imports** (#5): day-navigation lines, the same URL phrased two ways, and
+  "Stand <date>" lines about different subjects are no longer reported; date conflicts need the same subject.
+- **Imports finish properly** (#6). `brain import fertig <source> <package|--alle> --ziel <cluster>` moves an
+  incorporated package into its cluster (sub-structure unchanged) and records it in the report; `analyse`,
+  `pflege` and the 3D view count only open packages, and after the last package the report moves to
+  `<archive>/import-berichte/`. The **import** skill calls it before writing pages, so `quellen:` points to
+  the final place right away. The pre-commit check no longer demands `rev+1` for a pure `quellen:` path change
+  when `quellen_sha` is identical and the file at the new path matches it.
+
 ## [0.5.0] - 2026-10-09
 "Learning loop" — the brain now learns which page answers which of your questions, and tells you how well its
 hints fit. As before, everything new that calls an AI is off by default; with every new switch at its default,

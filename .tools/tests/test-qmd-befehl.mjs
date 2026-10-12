@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync } from "node:fs";
+import { join, dirname, delimiter } from "node:path";
 import { tmpdir } from "node:os";
-import { qmdBefehl } from "../qmd-befehl.mjs";
+import { qmdBefehl, qmdPrivatBin } from "../qmd-befehl.mjs";
 
 function fakeWin32Layout({ bin }) {
   const dir = mkdtempSync(join(tmpdir(), "qmd-win-"));
@@ -30,8 +30,8 @@ test("win32: bin als Objekt — Schlüssel 'qmd' wird verwendet", () => {
 
 test("win32 ohne Treffer (kein qmd.cmd im PATH) → Fallback auf bloßes 'qmd'", () => {
   const leer = mkdtempSync(join(tmpdir(), "qmd-leer-"));
-  assert.deepEqual(qmdBefehl("win32", leer), { cmd: "qmd", vorArgs: [] });
-  assert.deepEqual(qmdBefehl("win32", ""), { cmd: "qmd", vorArgs: [] });
+  assert.deepEqual(qmdBefehl("win32", leer, leer), { cmd: "qmd", vorArgs: [] });
+  assert.deepEqual(qmdBefehl("win32", "", leer), { cmd: "qmd", vorArgs: [] });
 });
 
 test("win32: qmd.cmd vorhanden, aber kein package.json danach → Fallback", () => {
@@ -40,7 +40,29 @@ test("win32: qmd.cmd vorhanden, aber kein package.json danach → Fallback", () 
   assert.deepEqual(qmdBefehl("win32", dir), { cmd: "qmd", vorArgs: [] });
 });
 
-test("andere Plattformen → immer 'qmd' ohne vorArgs, PATH wird nicht angefasst", () => {
-  assert.deepEqual(qmdBefehl("darwin", "/usr/bin:/usr/local/bin"), { cmd: "qmd", vorArgs: [] });
-  assert.deepEqual(qmdBefehl("linux", ""), { cmd: "qmd", vorArgs: [] });
+test("andere Plattformen ohne privates qmd → 'qmd' ohne vorArgs, PATH wird nicht angefasst", () => {
+  const home = mkdtempSync(join(tmpdir(), "qmd-home-"));
+  assert.deepEqual(qmdBefehl("darwin", "/usr/bin:/usr/local/bin", home), { cmd: "qmd", vorArgs: [] });
+  assert.deepEqual(qmdBefehl("linux", "", home), { cmd: "qmd", vorArgs: [] });
+});
+
+test("macOS/Linux: privates qmd aus der Installation (~/.brain-kit/bin/qmd) per absolutem Pfad (#2)", () => {
+  const home = mkdtempSync(join(tmpdir(), "qmd-home-"));
+  mkdirSync(join(home, ".brain-kit", "bin"), { recursive: true });
+  writeFileSync(join(home, ".brain-kit", "bin", "qmd"), "#!/bin/sh\n");
+  const bin = join(home, ".brain-kit", "bin", "qmd");
+  assert.equal(qmdPrivatBin(home), bin);
+  // Über den laufenden Node gestartet (der Starter braucht sonst `node` im PATH), dessen Ordner kommt in den PATH.
+  assert.deepEqual(qmdBefehl("darwin", "/usr/bin", home), { cmd: process.execPath, vorArgs: [realpathSync(bin)] });
+  assert.deepEqual(qmdBefehl("linux", "", home), { cmd: process.execPath, vorArgs: [realpathSync(bin)] });
+  assert.ok(process.env.PATH.split(delimiter).includes(dirname(process.execPath)));
+});
+
+test("win32: qmd.cmd unter ~/.brain-kit (npm --prefix) wird auch ohne PATH-Eintrag gefunden (#2)", () => {
+  const { dir, entry } = fakeWin32Layout({ bin: "bin/qmd.js" });
+  // fakeWin32Layout legt qmd.cmd + node_modules direkt in dir an — genau npms --prefix-Layout unter Windows.
+  const home = mkdtempSync(join(tmpdir(), "qmd-home-"));
+  renameSync(dir, join(home, ".brain-kit"));
+  const r = qmdBefehl("win32", "C:\\andere\\pfad", home);
+  assert.deepEqual(r, { cmd: process.execPath, vorArgs: [join(home, ".brain-kit", "node_modules", "@tobilu", "qmd", entry)] });
 });

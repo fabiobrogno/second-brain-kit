@@ -14,7 +14,7 @@ if (-not $Ziel) {
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ErrorActionPreference = "Stop"
-if (-not $Version) { $Version = $env:BRAIN_KIT_VERSION; if (-not $Version) { $Version = "v0.5.0" } }
+if (-not $Version) { $Version = $env:BRAIN_KIT_VERSION; if (-not $Version) { $Version = "v0.5.1" } }
 $Heim = $env:BRAIN_KIT_HOME; if (-not $Heim) { $Heim = Join-Path $env:USERPROFILE ".brain-kit" }
 $Log = Join-Path $Heim "install.log"
 function Melde($Text) { Write-Host $Text; try { Add-Content -Path $Log -Value $Text -ErrorAction Stop } catch {} }
