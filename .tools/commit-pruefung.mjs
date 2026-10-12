@@ -86,7 +86,13 @@ try {
     return qn.every((p, i) => {
       if (p === qa[i]) return true;
       if (isAbsolute(p) || p.split(/[\\/]/).includes("..")) return false;
-      try { return createHash("sha256").update(readFileSync(join(S, p))).digest("hex").slice(0, 16) === sh[i]; } catch { return false; }
+      // Der Schnappschuss kommt aus checkout-index: unter Windows (core.autocrlf, Vault ohne .gitattributes) mit CRLF,
+      // während quellen_sha beim Ingest über die LF-Datei gebildet wurde — beide Formen gelten als derselbe Inhalt.
+      try {
+        const roh = readFileSync(join(S, p));
+        const h = (b) => createHash("sha256").update(b).digest("hex").slice(0, 16);
+        return h(roh) === sh[i] || h(Buffer.from(roh.toString("latin1").replace(/\r\n/g, "\n"), "latin1")) === sh[i];
+      } catch { return false; }
     });
   };
   for (const s of status) {
