@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ladeConfig } from "./pfade.mjs";
 
-const STANDARD_API = "https://api.github.com/repos/fbrogno/second-brain-kit/releases/latest";
+const STANDARD_API = "https://api.github.com/repos/fabiobrogno/second-brain-kit/releases/latest";
 const TAG_MS = 24 * 60 * 60 * 1000;
 
 function semver(v) {
