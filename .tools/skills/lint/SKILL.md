@@ -4,6 +4,7 @@ description: Brain-Hygiene prüfen (read-only) — Konflikte, Waisen, Drift, Ver
 ---
 
 1. Führe aus: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" lint` und zeige die Befunde als Liste.
+1b. Zeige zusätzlich den Gesundheitswert: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" pflege` (Zeile „Gesundheit: N/100“ mit den Abzügen).
 2. Ergänze je Befund eine konkrete Empfehlung (1 Zeile): entscheiden / verlinken / aktualisieren /
    archivieren (nach {{ARCHIV}}) / Skill ingest / Re-Ingest (bei PRÜFBEDÜRFTIG) / Skill update.
    TEAM-DRIFT → Seite erneut in die Team-Wissensbasis speichern (nur mit Freigabe).

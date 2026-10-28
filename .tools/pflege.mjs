@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
-import { istWikiSeite, resolveLink, wikilinks } from "./wiki-pfade.mjs";
+import { istWikiSeite, resolveLink, wikilinks, doppelteNamen } from "./wiki-pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { analyse } from "./analyse.mjs";
 import { listeVorschlaege } from "./vorschlaege.mjs";
@@ -33,6 +33,7 @@ import { listeEntscheidungen, konflikteIn, entscheidungFuer } from "./entscheidu
 import { findeGruppen } from "./import/aehnlich.mjs";
 import { fingerabdruck, konfliktKaesten } from "./konflikte.mjs";
 import { pruefeZufuehrungen, schreibeStatus } from "./zufuehrungen.mjs";
+import { gesundheitswert, gesundheitText } from "./gesundheit.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Gültigkeit aus Task 1 — bis zum Merge (oder wenn das Modul fehlt) gilt der Rückfall gueltigkeitRueckfall.
@@ -311,6 +312,13 @@ export function pflegebericht(vault, { jetzt = Date.now() } = {}) {
   const zuLang = seiten.map(s => ({ id: s.id, n: s.raw.split("\n").length })).filter(x => x.n > MAX_ZEILEN)
     .sort((x, y) => y.n - x.n || (x.id < y.id ? -1 : 1)).map(x => ({ seite: x.id, zeilen: x.n }));
 
+  // Gesundheitswert (gesundheit.mjs): tote Links und doppelte Seitennamen zählen wie im Lint (brain-lint.mjs)
+  let toteLinks = 0;
+  for (const s of seiten) for (const l of wikilinks(s.rumpf)) if (!resolveLink(ids, l, o.wiki, idSet)) toteLinks++;
+  const doppelteSeitennamen = doppelteNamen(ids, (id) => istWikiSeite(id, o.wiki)).length;
+  const gesundheit = gesundheitswert({ toteLinks, widersprueche: konfliktZahl + kaputtZahl, doppelte: dubletten.length + doppelteSeitennamen,
+    verwaist: verwaist.length, zuLang: zuLang.length });
+
   const importe = a.importe.map(i => ({ quelle: String(i.quelle), notizen: Number(i.notizen) || 0 }));
 
   const liste = [
@@ -333,7 +341,7 @@ export function pflegebericht(vault, { jetzt = Date.now() } = {}) {
   ];
   const zuTun = liste.filter(p => !NUR_HINWEIS.has(p.schluessel) && !BEAUFTRAGT.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
   const beauftragt = liste.filter(p => BEAUFTRAGT.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
-  return { erstellt: new Date(jetztMs).toISOString().slice(0, 19) + "Z", posten: liste, zuTun, beauftragt };
+  return { erstellt: new Date(jetztMs).toISOString().slice(0, 19) + "Z", posten: liste, zuTun, beauftragt, gesundheit };
 }
 
 // Kurzform eines Postens: „3 abgelaufen“, „1 Konflikt“
@@ -438,6 +446,7 @@ export function textBericht(b) {
     z.push(`- ${kurz(p)}: ${p.liste.slice(0, 5).map(e => eintragText(p.schluessel, e)).join("; ")}${p.anzahl > 5 ? " …" : ""}`);
     z.push(`  → ${p.naechsterSchritt}`);
   }
+  if (b.gesundheit) z.push(gesundheitText(b.gesundheit));
   return z.join("\n");
 }
 

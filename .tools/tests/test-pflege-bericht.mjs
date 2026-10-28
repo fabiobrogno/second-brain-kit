@@ -139,7 +139,7 @@ test("pflegebericht: leerer Vault → nichts zu tun, keine Wochen-Zeile; ohne Pr
   assert.equal(wochenZeile(b), "");
   assert.match(b.posten.find(p => p.schluessel === "nieGelesen").naechsterSchritt, /Werkzeug-Protokoll/);
   assert.match(b.posten.find(p => p.schluessel === "messlatte").naechsterSchritt, /brain messlatte/);
-  assert.match(textBericht(b), /nichts zu tun\.$/);
+  assert.match(textBericht(b), /nichts zu tun\.\nGesundheit: 100\/100$/);
 });
 
 test("Gültigkeits-Rückfall: Datumsgrenzen, verfall mit/ohne Commit, ungültige Daten", () => {
