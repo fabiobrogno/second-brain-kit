@@ -125,7 +125,8 @@ test("antwortLauf: Haiku-Fehler je Frage → Fall als fehler, alle Fälle fehler
 test("monatlicher Start: Schalter aus/ohne Testfragen → nichts; fällig → losgelöst gestartet, Marke gesetzt; danach 30 Tage Ruhe", async () => {
   const fd = mkdtempSync(join(tmpdir(), "antwort-start-"));
   const skript = join(fd, "fake-lauf.mjs");
-  writeFileSync(skript, `import { writeFileSync } from "node:fs";\nwriteFileSync(process.env.FAKE_ANTWORT_LOG, JSON.stringify({ args: process.argv.slice(2), vault: process.env.BRAIN_VAULT || "" }));\n`);
+  // atomar schreiben (tmp + rename): writeFileSync legt die Datei erst leer an — der Test las sonst manchmal „Unexpected end of JSON input“
+  writeFileSync(skript, `import { writeFileSync, renameSync } from "node:fs";\nconst ziel = process.env.FAKE_ANTWORT_LOG;\nwriteFileSync(ziel + ".tmp", JSON.stringify({ args: process.argv.slice(2), vault: process.env.BRAIN_VAULT || "" }));\nrenameSync(ziel + ".tmp", ziel);\n`);
   assert.equal(A.faellig(neuerVault({}, FAELLE)), false, "Standard aus");
   assert.equal(A.faellig(neuerVault({ antwortMesslatte: "monatlich" })), false, "ohne Testfragen");
   const v = neuerVault({ antwortMesslatte: "monatlich" }, FAELLE);
@@ -135,9 +136,13 @@ test("monatlicher Start: Schalter aus/ohne Testfragen → nichts; fällig → lo
   process.env.FAKE_ANTWORT_LOG = join(fd, "lauf.json");
   try {
     assert.equal(A.starteWennFaellig(v), true);
+    // warten, bis die Datei da UND als JSON lesbar ist (zusätzlich zum atomaren Schreiben des Fake-Skripts)
     const ende = Date.now() + 8000;
-    while (Date.now() < ende && !existsSync(process.env.FAKE_ANTWORT_LOG)) await new Promise(r => setTimeout(r, 50));
-    const lauf = JSON.parse(readFileSync(process.env.FAKE_ANTWORT_LOG, "utf8"));
+    let lauf = null;
+    while (Date.now() < ende && !lauf) {
+      try { lauf = JSON.parse(readFileSync(process.env.FAKE_ANTWORT_LOG, "utf8")); } catch { await new Promise(r => setTimeout(r, 50)); }
+    }
+    assert.ok(lauf, "Fake-Lauf hat lauf.json nicht (lesbar) geschrieben");
     assert.deepEqual(lauf.args, ["--anlass", "monatlich", v]);
     assert.equal(lauf.vault, v);
     assert.ok(existsSync(A.START_MARKE(v)));

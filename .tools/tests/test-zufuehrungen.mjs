@@ -2,7 +2,7 @@
 // Nur mkdtemp-Ordner; HOME auf ein Temp-Verzeichnis. Fehler müssen im selben Lauf in der Statusdatei UND im Pflegebericht stehen.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, utimesSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, utimesSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,6 +112,20 @@ test("Statusdatei nicht schreibbar → Eintrag im Bericht, nicht still", async (
   const p = b.posten.find(x => x.schluessel === "zufuehrungen");
   assert.equal(p.anzahl, 1);
   assert.match(eintragText("zufuehrungen", p.liste[0]), /nicht schreibbar/);
+});
+
+test("schreibeStatus: scheitert das Umbenennen, bleibt keine .tmp-Datei liegen und der Fehler wird geworfen", () => {
+  const v = vaultMit([{ name: "gut", pfad: quelle(0) }]);
+  const s = pruefeZufuehrungen(v, { jetzt: JETZT });
+  mkdirSync(STATUS_DATEI(v), { recursive: true }); // Ziel ist ein Ordner → renameSync scheitert
+  assert.throws(() => schreibeStatus(v, s));
+  assert.deepEqual(readdirSync(dirname(STATUS_DATEI(v))).filter(f => f.endsWith(".tmp")), []);
+});
+
+test("statusText: Singular bei 1 Tag", () => {
+  const z = (alterTage) => statusText({ probleme: 1, zufuehrungen: [{ name: "x", status: "still", alterTage }] });
+  assert.match(z(1), /letzter Lauf vor 1 Tag\)/);
+  assert.match(z(8), /letzter Lauf vor 8 Tagen\)/);
 });
 
 test("CLI: schreibt die Statusdatei und gibt eine Zeile je Zuführung aus", () => {
