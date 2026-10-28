@@ -9,7 +9,7 @@
 <p align="center"><b>The second brain your AI can trust — no contradictions, every fact sourced, near-zero tokens.</b></p>
 
 <p align="center">
-  <a href="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/fbrogno/second-brain-kit/actions/workflows/test.yml/badge.svg"></a>
+  <a href="https://github.com/fabiobrogno/second-brain-kit/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/fabiobrogno/second-brain-kit/actions/workflows/test.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-4F46E5"></a>
   <a href="CHANGELOG.md"><img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-4F46E5"></a>
   <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0E7490">
@@ -41,13 +41,13 @@ stay visible instead of being quietly overwritten, and nothing leaves your machi
 Open your AI app, paste this sentence, and send it:
 
 ```text
-Set up the second brain from github.com/fbrogno/second-brain-kit for me.
+Set up the second brain from github.com/fabiobrogno/second-brain-kit for me.
 ```
 
 Auf Deutsch:
 
 ```text
-Richte mir das Second Brain von github.com/fbrogno/second-brain-kit ein.
+Richte mir das Second Brain von github.com/fabiobrogno/second-brain-kit ein.
 ```
 
 Your AI will ask you at most two things — where the brain should live (suggestion: `Documents/Brain`)
@@ -235,12 +235,12 @@ One line, no admin rights, no git needed (it fetches a private copy of Node.js i
 
 **macOS / Linux**
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fbrogno/second-brain-kit/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fabiobrogno/second-brain-kit/main/bootstrap.sh | bash
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/fbrogno/second-brain-kit/main/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/fabiobrogno/second-brain-kit/main/bootstrap.ps1 | iex
 ```
 
 Defaults: brain in `~/Documents/Brain`, no online backup. To choose, pass `--ziel "<path>" --backup github`
@@ -248,7 +248,7 @@ Defaults: brain in `~/Documents/Brain`, no online backup. To choose, pass `--zie
 
 **From a clone** (Node.js 20 or newer):
 ```sh
-git clone https://github.com/fbrogno/second-brain-kit.git
+git clone https://github.com/fabiobrogno/second-brain-kit.git
 cd second-brain-kit
 node install.mjs ~/Documents/Brain --agent claude-code --profil leicht --backup keins
 node ~/Documents/Brain/.tools/brain.mjs doctor

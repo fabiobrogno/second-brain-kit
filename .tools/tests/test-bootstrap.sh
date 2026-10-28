@@ -5,7 +5,7 @@
 # Baut das Test-Kit-Archiv NICHT über kit/export.mjs: der echte Export läuft gegen die private
 # brain.config.json (Firmennamen-Scrubber kit.sperrNamen), deren Sperrliste einen Firmennamen
 # enthält, der zufällig als Präfix im GitHub-Konto des Maintainers steckt — die vom Controller
-# fest vorgegebene öffentliche Kit-Adresse github.com/fbrogno/second-brain-kit trägt diesen
+# fest vorgegebene öffentliche Kit-Adresse github.com/fabiobrogno/second-brain-kit trägt diesen
 # Präfix und würde den Export ohne Gegenmaßnahme IMMER rot einfärben. Dafür gibt es bereits eine
 # bewusste, eng gefasste Ausnahme des Maintainers in `brain.config.json` (`kit.erlaubt`, exaktes
 # Token `fbrogno/second-brain-kit`) — keine, die dieser Test oder ein Agent selbst einführen darf.

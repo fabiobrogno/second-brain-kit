@@ -50,7 +50,7 @@ try {
   if (-not $Archiv) {
     Melde "Ich lade das Second-Brain-Kit herunter ..."
     $Archiv = Join-Path $Heim "kit-$Version.tar.gz"
-    Invoke-WebRequest "https://github.com/fbrogno/second-brain-kit/archive/refs/tags/$Version.tar.gz" -OutFile $Archiv -UseBasicParsing
+    Invoke-WebRequest "https://github.com/fabiobrogno/second-brain-kit/archive/refs/tags/$Version.tar.gz" -OutFile $Archiv -UseBasicParsing
   }
   $KitDir = Join-Path $Heim "kit\$Version"
   New-Item -ItemType Directory -Force -Path $KitDir | Out-Null
