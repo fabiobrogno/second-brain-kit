@@ -4,11 +4,11 @@
 #
 # Baut das Test-Kit-Archiv NICHT über kit/export.mjs: der echte Export läuft gegen die private
 # brain.config.json (Firmennamen-Scrubber kit.sperrNamen), deren Sperrliste einen Firmennamen
-# enthält, der zufällig als Präfix im GitHub-Konto des Maintainers steckt — die vom Controller
+# enthält, der zufällig im GitHub-Konto des Maintainers steckt — die vom Controller
 # fest vorgegebene öffentliche Kit-Adresse github.com/fabiobrogno/second-brain-kit trägt diesen
-# Präfix und würde den Export ohne Gegenmaßnahme IMMER rot einfärben. Dafür gibt es bereits eine
+# Namen und würde den Export ohne Gegenmaßnahme IMMER rot einfärben. Dafür gibt es bereits eine
 # bewusste, eng gefasste Ausnahme des Maintainers in `brain.config.json` (`kit.erlaubt`, exaktes
-# Token `fbrogno/second-brain-kit`) — keine, die dieser Test oder ein Agent selbst einführen darf.
+# Token `fabiobrogno/second-brain-kit`) — keine, die dieser Test oder ein Agent selbst einführen darf.
 # Der Bootstrap-Test geht dieser Prüfung trotzdem lieber ganz aus dem Weg: er baut sein Test-Kit
 # direkt aus bootstrap.sh/.ps1 + lib/ + einem install.mjs-Stub, ohne über kit/export.mjs und
 # publish-check.mjs zu laufen — siehe task-8b-bootstrap-report.md, Abschnitt "Bekannter Konflikt".

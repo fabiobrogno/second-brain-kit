@@ -8,6 +8,11 @@ All notable changes to this project are documented here.
 - Evidence rules for the harvest (`.tools/beleg.mjs`): find a quote in a transcript (whitespace and typographic characters normalised, case counts) and tell where it came from per role — `tool` > `du` > `web` > `ki`; injected context always counts as `ki`. Includes a test set.
 - `heikel.mjs`: rule-based check (0 tokens) that flags facts about money, legal matters, persons and access as sensitive, reusing the existing secret and PII patterns.
 - **Page fields for time and replacement** (B1): `gilt_seit`, `ersetzt_durch`, `kritisch`, `zweifel` are read by the new `.tools/seitenfelder.mjs`; lint reports `KRITISCH`, `GILT_SEIT`, `ERSETZT` (blocking in the pre-commit) and `ERSETZT-HINWEIS`, `PRÜFBEDÜRFTIG (ZWEIFEL)` (informational). `kritisch` is fail-safe: anything but `false` counts as critical.
+- **Watchdog for feeds** (`.tools/zufuehrungen.mjs`): list your connectors, import folders and collection points in `brain.config.json` as `"zufuehrungen": [{ "name": "…", "pfad": "~/Sync/notes", "maxAlterTage": 7 }]`. `brain pflege` and the maintenance tab then report every source whose path is gone, unreadable or silent for `maxAlterTage` days (default 7); the status file `.logs/zufuehrungen.json` carries the count for the app's warning badge. Local, 0 tokens, never changes the sources. Documented in the README under "Self-maintenance".
+
+### Fixed
+- "no new content for 1 days" is now "1 day" (English and German) in the maintenance tab and in the feed status text; a failed status-file write no longer leaves a `.tmp` file behind.
+- Tests: the monthly-start test of the answer benchmark no longer fails now and then (the fake script wrote the result file non-atomically); invisible characters in the evidence normaliser are written as `\u` escapes so editors cannot silently drop them.
 
 ## [0.5.1] - 2026-10-12
 Bug fixes from the first tester reports (thanks, @freakadelle1997). No data migration; notes, wiki and settings

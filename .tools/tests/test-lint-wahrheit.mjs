@@ -65,4 +65,6 @@ test("Lint Seitenfelder: Kette und Zweifel blockieren nicht; noch verlinkte alte
     "ERSETZT-HINWEIS: garten/thema_alt.md — wird noch verlinkt von garten/thema_leser.md (Link auf garten/thema_mitte.md umstellen)",
   ]);
   assert.deepEqual(mit(n, "PRÜFBEDÜRFTIG (ZWEIFEL):"), ["PRÜFBEDÜRFTIG (ZWEIFEL): garten/thema_neu.md — 2026-10-22: Nutzer sagt, abends gießen"]);
+  const r = n.find((z) => z.startsWith("PRÜFBEDÜRFTIG (ZWEIFEL)")).match(/^PRÜFBEDÜRFTIG[^:]*:\s*(.+?)(?: — |$)/);
+  assert.equal(r[1], "garten/thema_neu.md", "analyse.mjs/ansicht lesen die Seite mit diesem Muster");
 });

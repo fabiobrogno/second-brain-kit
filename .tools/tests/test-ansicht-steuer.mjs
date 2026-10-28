@@ -435,6 +435,8 @@ test("steuer: postenEintrag übersetzt strukturierte Einträge (de/en) und zeigt
     assert.match(pe("abgelaufen", BEISPIEL.abgelaufen).zusatz, de ? /seit 5 Tagen/ : /5 days ago/);
     assert.match(pe("entscheidungen", BEISPIEL.entscheidungen).zusatz, de ? /Widerspruch 1: A gilt/ : /Conflict 1: /);
     assert.match(pe("messlatte", BEISPIEL.messlatte).text, de ? /unter Ziel/ : /below target/);
+    assert.match(pe("zufuehrungen", BEISPIEL.zufuehrungen).text, de ? /seit 9 Tagen kein neuer Inhalt/ : /no new content for 9 days/);
+    assert.match(pe("zufuehrungen", { ...BEISPIEL.zufuehrungen, tage: 1 }).text, de ? /seit 1 Tag kein neuer Inhalt/ : /no new content for 1 day$/);
     assert.match(pe("dubletten", BEISPIEL.dubletten).zusatz, /^↔ d2 · /);
     assert.equal(pe("konflikte", { seite: "09_wiki/a/z.md", anzahl: 1 }).zusatz, "");
     // Final-Review #7: bei verfall kein „prüfen bis“; #3: kaputte Kästen als eigener Posten

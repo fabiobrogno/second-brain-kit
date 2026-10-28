@@ -13,7 +13,7 @@
 //                        "letzterLauf": "2026-10-20T08:00:00Z" | null, "alterTage": 8 | null, "maxAlterTage": 7 }] }
 //   `probleme` = Zahl der Einträge mit status ≠ ok; ⚠ anzeigen, sobald probleme > 0.
 // CLI: node .tools/zufuehrungen.mjs [--json] [vault]   (schreibt die Statusdatei; Exit 1 nur, wenn das Schreiben scheitert)
-import { readdirSync, statSync, lstatSync, openSync, closeSync, writeFileSync, renameSync, mkdirSync, realpathSync } from "node:fs";
+import { readdirSync, statSync, lstatSync, openSync, closeSync, writeFileSync, renameSync, unlinkSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -79,14 +79,19 @@ export function schreibeStatus(vault, status) {
   const ziel = STATUS_DATEI(vault);
   mkdirSync(dirname(ziel), { recursive: true });
   const tmp = `${ziel}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(status, null, 2) + "\n");
-  renameSync(tmp, ziel);
+  try {
+    writeFileSync(tmp, JSON.stringify(status, null, 2) + "\n");
+    renameSync(tmp, ziel);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch {} // keine .tmp-Reste liegen lassen
+    throw e;
+  }
 }
 
 export function statusText(status) {
   if (!status.zufuehrungen.length) return "Zuführungen: keine eingetragen.";
   const z = [`Zuführungen: ${status.probleme ? `${status.probleme} von ${status.zufuehrungen.length} mit Problem` : "alle in Ordnung"}.`];
-  for (const e of status.zufuehrungen) z.push(`- ${e.name}: ${e.status}${e.alterTage != null ? ` (letzter Lauf vor ${e.alterTage} Tagen)` : ""}`);
+  for (const e of status.zufuehrungen) z.push(`- ${e.name}: ${e.status}${e.alterTage != null ? ` (letzter Lauf vor ${e.alterTage} ${e.alterTage === 1 ? "Tag" : "Tagen"})` : ""}`);
   return z.join("\n");
 }
 
