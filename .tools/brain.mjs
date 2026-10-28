@@ -16,6 +16,8 @@ import { qmdBefehl } from "./qmd-befehl.mjs";
 import { parseQmdDateien } from "./qmd-ausgabe.mjs";
 import { oeffnerAufruf } from "./oeffner.mjs";
 import { merkeLuecke } from "./analyse.mjs";
+import { frischePruefen, widerspruchZeilen, vaultLeser, frischeFehler } from "./frische.mjs";
+import { qmdToRel } from "./hint-core.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
@@ -27,6 +29,28 @@ const b = qmdBefehl();
 const node = (skript, ...a) => spawnSync(process.execPath, [join(T, skript), ...a], { stdio: "inherit", windowsHide: true }).status ?? 1;
 const hatQmd = () => { const r = spawnSync(b.cmd, [...b.vorArgs, "--help"], { stdio: "ignore", windowsHide: true }); return !r.error && r.status === 0; };
 
+// Ausgabe „score,pfad“ — bei Widerspruch zwischen Treffern gewinnt der neuere (steht vorn); der Hinweis geht nach
+// stderr, damit stdout für Auswertungen unverändert bleibt. Die QMD-Profile liefern `qmd://brain/…` (slugifiziert):
+// über die Wiki-Karte (.logs/wiki-map.json) auf die Vault-Datei abgebildet, nicht abbildbare Treffer bleiben unberührt
+// an ihrem Platz. Fehler beim Prüfen ändern nichts an der Suche, landen aber in .logs/hooks.log.
+function zeigeTreffer(treffer) {
+  let aus = treffer;
+  try {
+    let karte = null;
+    if (treffer.some(t => /^qmd:\/\//.test(t.pfad))) {
+      try { karte = JSON.parse(readFileSync(join(vault, ".logs", "wiki-map.json"), "utf8")); } catch (e) { frischeFehler(vault, "wiki-map", e); }
+    }
+    const seite = (t) => /^qmd:\/\//.test(t.pfad) ? (karte ? qmdToRel(t.pfad, karte) : null) : t.pfad;
+    const plaetze = [], pruef = [];
+    treffer.forEach((t, i) => { const page = seite(t); if (page) { plaetze.push(i); pruef.push({ ...t, page }); } });
+    const r = frischePruefen(pruef, vaultLeser(vault), { bei: (ort, e) => frischeFehler(vault, ort, e) });
+    aus = [...treffer];
+    plaetze.forEach((platz, k) => { aus[platz] = r.treffer[k]; });
+    widerspruchZeilen(r.widersprueche).forEach(z => console.error(z));
+  } catch (e) { aus = treffer; frischeFehler(vault, "zeigeTreffer", e); }
+  aus.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+}
+
 function suche(frage, n = "5") {
   if (!frage) { console.error("Nutzung: brain search \"<frage>\" [anzahl]"); return 64; }
   let profil = ladeConfig(vault).suche?.profil || "leicht";
@@ -36,7 +60,7 @@ function suche(frage, n = "5") {
   }
   if (profil === "minimal") {
     const treffer = minisuche(vault, frage, Number(n));
-    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    zeigeTreffer(treffer);
     if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
@@ -49,7 +73,7 @@ function suche(frage, n = "5") {
   };
   if (profil === "voll") {
     const treffer = parseQmdDateien(lauf("query")).slice(0, Number(n));
-    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    zeigeTreffer(treffer);
     if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
@@ -61,7 +85,7 @@ function suche(frage, n = "5") {
     });
   }
   const sortiert = [...rang].sort((a, b) => b[1] - a[1]).slice(0, Number(n));
-  sortiert.forEach(([p, s]) => console.log(`${s.toFixed(4)},${p}`));
+  zeigeTreffer(sortiert.map(([pfad, score]) => ({ pfad, score })));
   if (!sortiert.length) merkeLuecke(vault, "search", frage);
   return 0;
 }

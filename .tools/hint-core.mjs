@@ -2,6 +2,7 @@
 // der Kopf (≤ 4 KB) getroffener Seiten für die Gültigkeit. Testbar.
 import { existsSync, openSync, readSync, closeSync } from "node:fs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
+import { frischePruefen, widerspruchZeilen, vaultLeser, frischeFehler } from "./frische.mjs";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 export function qmdToRel(file, map) {
@@ -71,7 +72,17 @@ export function ablaufZusatz(vault, page, { jetzt = Date.now() } = {}) {
   return ` (abgelaufen seit ${g.tageUeber} ${g.tageUeber === 1 ? "Tag" : "Tagen"})`;
 }
 
-export function format(hits, { vault, jetzt = Date.now() } = {}) {
+// Neuere Fakten gewinnen: Treffer mit Widerspruch werden nach Datum geordnet, der Widerspruch bekommt eine Zeile.
+// Nur mit Vault (liest die Treffer-Seiten); jeder Fehler → Treffer unverändert und eine Zeile in .logs/hooks.log.
+export function mitFrische(hits, vault) {
+  if (!vault || hits.length < 2) return { hits, widersprueche: [] };
+  try {
+    const r = frischePruefen(hits.filter(h => !h.import), vaultLeser(vault), { bei: (ort, e) => frischeFehler(vault, ort, e) });
+    return { hits: r.treffer.concat(hits.filter(h => h.import)), widersprueche: r.widersprueche };
+  } catch (e) { frischeFehler(vault, "mitFrische", e); return { hits, widersprueche: [] }; }
+}
+
+export function format(hits, { vault, jetzt = Date.now(), widersprueche = [] } = {}) {
   if (!hits.length) return "";
   let out = "Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n" +
     hits.map(h => `- ${anzeigePfad(vault, h.page)}${h.import ? "" : ablaufZusatz(vault, h.page, { jetzt })} — ${h.description.slice(0, 90)}`).join("\n");
@@ -81,6 +92,7 @@ export function format(hits, { vault, jetzt = Date.now() } = {}) {
     const uebersicht = `${ordner[0]}/_${basename(ordner[0])}.md`;
     if (existsSync(join(vault, uebersicht))) out += `\n- Überblick: ${anzeigePfad(vault, uebersicht)}`;
   }
+  if (widersprueche.length) out += "\n" + widerspruchZeilen(widersprueche, (p) => anzeigePfad(vault, p)).join("\n");
   return out;
 }
 

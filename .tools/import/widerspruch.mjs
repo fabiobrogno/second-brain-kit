@@ -125,6 +125,12 @@ function jaccard(a, b) {
   return s / (a.size + b.size - s);
 }
 
+// Unterscheiden sich zwei Sätze allein im Wert? Dann ist der Satzrahmen (ohne Zahlen/Daten/Versionen/Ja-Nein) identisch
+// (Token-Jaccard 1). Schon ein anderes Wort („Basis“ vs. „Premium“, „Nord“ vs. „Süd“) heißt: andere Sache, kein Widerspruch.
+export function nurWertUnterschied(satzA, satzB) {
+  return jaccard(werteAus(satzA).rahmen, werteAus(satzB).rahmen) === 1;
+}
+
 // Reine Navigationszeile: nach Abzug von Daten, Links, URLs und Trennzeichen bleiben nur Navigationswörter.
 export function istNavigation(satz) {
   const t = String(satz).toLowerCase().replace(R_URL, " ").replace(R_DATUM, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();

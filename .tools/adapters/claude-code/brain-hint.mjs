@@ -13,7 +13,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const { suche } = await import("../../hint-kind.mjs");
 const { frageDienst, istGesperrt, meldeHaenger, starteDienst } = await import("../../dienst-client.mjs");
 const { entscheide } = await import("../../such-kern.mjs");
-const { shouldQuery, istWissensfrage, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel } = await import("../../hint-core.mjs");
+const { mitFrische, shouldQuery, istWissensfrage, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel } = await import("../../hint-core.mjs");
 const { vorigeFrage } = await import("../../transkript.mjs");
 const { vaultPfad, ordner, ladeConfig } = await import("../../pfade.mjs");
 const { leseAutomatik, HINWEIS_SCHWELLEN } = await import("../../einstellungen.mjs");
@@ -144,7 +144,9 @@ try {
     hits = hits.concat(importTreffer(basis, map, seen, { schwelle: wegSchwelle, max, vorhanden: hits, praefix }));
     const top = rerankWeg ? Math.max(0, ...basis.map(x => x.score)) : (results[0]?.score ?? 0);
     const unterdrueckt = countSuppressed(basis, map, seen, { schwelle: wegSchwelle });
-    const text = hits.length ? format(hits, { vault }) + "\n" : "";
+    let widersprueche = [];
+    ({ hits, widersprueche } = mitFrische(hits, vault));
+    const text = hits.length ? format(hits, { vault, widersprueche }) + "\n" : "";
     // hits=: EIN encodeURIComponent-Token über alle Seiten, Tab-getrennt (Review-Fund 2) — ein roher Join
     // mit "," ließ Seitennamen mit Leerzeichen/Komma (Import-Notizen) das k=v-Format bzw. die Trennung
     // zwischen den Treffern sprengen. decodeURIComponent (leseFelder) macht daraus wieder einen einzigen
