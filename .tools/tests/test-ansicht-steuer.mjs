@@ -418,6 +418,7 @@ test("steuer: postenEintrag übersetzt strukturierte Einträge (de/en) und zeigt
     dubletten: { seiten: ["09_wiki/a/d1.md", "09_wiki/a/d2.md"], aehnlichkeit: 0.83, grund: "aehnlich" },
     zuLang: { seite: "09_wiki/a/l.md", zeilen: 167 },
     importe: { quelle: "notizen-x", notizen: 3 },
+    zufuehrungen: { name: "Notizen-Sync", status: "still", tage: 9 },
     messlatte: { datum: "2026-10-01", positiv: "4/5", still: "2/2", ok: false },
   };
   assert.deepEqual(Object.keys(BEISPIEL), BACKEND_POSTEN, "jeder Posten hat ein Beispiel");

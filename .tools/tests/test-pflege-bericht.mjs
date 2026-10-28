@@ -1,4 +1,4 @@
-// .tools/tests/test-pflege-bericht.mjs — pflegebericht(): exakt auf einem erfundenen Fixture-Vault (alle 15
+// .tools/tests/test-pflege-bericht.mjs — pflegebericht(): exakt auf einem erfundenen Fixture-Vault (alle 16
 // Posten, Listen, nächste Schritte, zuTun), Wochen-Zeile, leerer Vault, CLI (Text/JSON). Nur mkdtemp-Ordner;
 // HOME/USERPROFILE auf ein Temp-Verzeichnis (analyse() liest MCP-Configs im Home).
 import { test } from "node:test";
@@ -88,6 +88,7 @@ test("pflegebericht: exakt auf dem Fixture", () => {
     "09_wiki/lager/thema_titel_x.md ↔ 09_wiki/lager/thema_titel_y.md (gleicher Titel)"]);
   assert.deepEqual(txt(p.zuLang), ["09_wiki/geräte/thema_lang.md (167 Zeilen)"]);
   assert.deepEqual(txt(p.importe), ["notizen-x (3 Notizen)"]);
+  assert.deepEqual(p.zufuehrungen.liste, []); // keine Zuführungen eingetragen → ruhig
   assert.deepEqual(txt(p.messlatte), ["2026-10-01: positiv 4/5, still 2/2", "2026-09-20: positiv 5/5, still 2/2"]);
   assert.deepEqual(p.dubletten.liste[1], { seiten: ["09_wiki/lager/thema_titel_x.md", "09_wiki/lager/thema_titel_y.md"], aehnlichkeit: null, grund: "titel" });
   assert.deepEqual(p.messlatte, { schluessel: "messlatte", anzahl: 1,

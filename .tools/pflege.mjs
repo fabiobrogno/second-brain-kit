@@ -32,13 +32,14 @@ import { listeVorschlaege } from "./vorschlaege.mjs";
 import { listeEntscheidungen, konflikteIn, entscheidungFuer } from "./entscheidungen.mjs";
 import { findeGruppen } from "./import/aehnlich.mjs";
 import { fingerabdruck, konfliktKaesten } from "./konflikte.mjs";
+import { pruefeZufuehrungen, schreibeStatus } from "./zufuehrungen.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Gültigkeit aus Task 1 — bis zum Merge (oder wenn das Modul fehlt) gilt der Rückfall gueltigkeitRueckfall.
 const GUELTIGKEIT_MODUL = await import(pathToFileURL(join(HIER, "gueltigkeit.mjs")).href).catch(() => null);
 
 export const POSTEN = ["abgelaufen", "bald", "konflikte", "konflikteKaputt", "entscheidungen", "vorschlaege", "lektionen", "pflegeAuftraege", "verwaist",
-  "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "messlatte"];
+  "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "zufuehrungen", "messlatte"];
 const NUR_HINWEIS = new Set(["bald", "nieGelesen", "luecken"]);
 // Schon von der Person entschieden bzw. beauftragt — wartet nur noch aufs Einarbeiten, braucht kein Zutun mehr.
 export const BEAUFTRAGT = new Set(["pflegeAuftraege", "entscheidungen"]);
@@ -59,6 +60,7 @@ const SCHRITT = {
   dubletten: "Prüfen und zusammenlegen — sag „leg die doppelten Seiten zusammen“.",
   zuLang: "Details in die Rohquelle verschieben oder die Seite aufteilen.",
   importe: "Sag „arbeite den Import ein“.",
+  zufuehrungen: "Pfad, Rechte und Connector der Zuführung prüfen. Die Meldung verschwindet, sobald wieder Inhalt ankommt.",
   messlatte: "Die Suchqualität ist gesunken — beim nächsten Review die verfehlten Fragen ansehen („brain messlatte“).",
 };
 const NICHTS = "Nichts zu tun.";
@@ -69,7 +71,8 @@ const LABEL = {
   entscheidungen: ["Entscheidung wartet", "Entscheidungen warten"], vorschlaege: ["Vorschlag", "Vorschläge"],
   lektionen: ["Lektion wartet", "Lektionen warten"], verwaist: ["verwaist", "verwaist"],
   nieGelesen: ["nie gelesen", "nie gelesen"], luecken: ["Lücke", "Lücken"], dubletten: ["Dublette", "Dubletten"],
-  zuLang: ["zu lang", "zu lang"], importe: ["Import offen", "Importe offen"], messlatte: ["Messlatte gesunken", "Messlatte gesunken"],
+  zuLang: ["zu lang", "zu lang"], importe: ["Import offen", "Importe offen"],
+  zufuehrungen: ["Zuführung steht still", "Zuführungen stehen still"], messlatte: ["Messlatte gesunken", "Messlatte gesunken"],
 };
 
 // --- Gültigkeit: Rückfall, solange gueltigkeit.mjs (Task 1) fehlt — gleiche Regeln (pruefen_bis < heute oder
@@ -148,7 +151,7 @@ const titelNorm = (t) => String(t).normalize("NFKD").replace(/[̀-ͯ]/g, "").toL
 //   konflikte/konflikteKaputt { seite, anzahl } · entscheidungen { seite, konflikt, wahl } · vorschlaege { titel }
 //   lektionen/pflegeAuftraege { name } · verwaist/nieGelesen { seite }
 //   luecken { frage } · dubletten { seiten: [..], aehnlichkeit | null, grund: "aehnlich"|"titel" }
-//   zuLang { seite, zeilen } · importe { quelle, notizen } · messlatte { datum, positiv, still, ok }
+//   zuLang { seite, zeilen } · importe { quelle, notizen } · zufuehrungen { name, status, tage } · messlatte { datum, positiv, still, ok }
 // Deutscher Text (CLI, KI-Eingabe des Pflege-Laufs): eintragText(schluessel, eintrag).
 function posten(schluessel, eintraege, { anzahl = eintraege.length, schritt } = {}) {
   return {
@@ -176,6 +179,11 @@ export function eintragText(schluessel, e) {
     case "dubletten": return `${(e.seiten || []).join(" ↔ ")} (${e.grund === "titel" ? "gleicher Titel" : `Ähnlichkeit ${String(e.aehnlichkeit).replace(".", ",")}`})`;
     case "zuLang": return `${e.seite} (${e.zeilen} Zeilen)`;
     case "importe": return `${e.quelle} (${e.notizen} ${e.notizen === 1 ? "Notiz" : "Notizen"})`;
+    case "zufuehrungen": return e.status === "fehlt" ? `${e.name} — Pfad fehlt`
+      : e.status === "nicht-lesbar" ? `${e.name} — keine Leserechte`
+      : e.status === "statusdatei" ? `${e.name} — .logs/zufuehrungen.json nicht schreibbar`
+      : e.status === "config" ? `${e.name} — Eintrag unvollständig (pfad fehlt)`
+      : `${e.name} — seit ${tageText(e.tage)} kein neuer Inhalt`;
     case "messlatte": return `${e.datum}: positiv ${e.positiv}, still ${e.still}${e.ok ? "" : " (unter Ziel)"}`;
     default: return e.seite ? String(e.seite) : JSON.stringify(e);
   }
@@ -198,6 +206,11 @@ function messlattePosten(verlauf) {
   const gesunken = !letzter.ok || (vorher && quote(letzter.positiv) < quote(vorher.positiv));
   const liste = verlauf.slice(-3).reverse().map(l => ({ datum: String(l.datum), positiv: String(l.positiv), still: String(l.still), ok: !!l.ok }));
   return posten("messlatte", liste, { anzahl: gesunken ? 1 : 0, schritt: gesunken ? SCHRITT.messlatte : "Suchqualität stabil — nichts zu tun." });
+}
+
+function zufuehrungenPosten(status) {
+  const probleme = status.zufuehrungen.filter(z => z.status !== "ok").map(z => ({ name: z.name, status: z.status, tage: z.alterTage ?? 0 }));
+  return posten("zufuehrungen", probleme);
 }
 
 export function pflegebericht(vault, { jetzt = Date.now() } = {}) {
@@ -315,6 +328,7 @@ export function pflegebericht(vault, { jetzt = Date.now() } = {}) {
     posten("dubletten", dubletten),
     posten("zuLang", zuLang),
     posten("importe", importe),
+    zufuehrungenPosten(pruefeZufuehrungen(vault, { jetzt: jetztMs, cfg })),
     messlattePosten(a.messlatte.verlauf || []),
   ];
   const zuTun = liste.filter(p => !NUR_HINWEIS.has(p.schluessel) && !BEAUFTRAGT.has(p.schluessel)).reduce((s, p) => s + p.anzahl, 0);
@@ -367,10 +381,25 @@ export async function aktuellerBericht(vault, { jetzt = Date.now() } = {}) {
   let schluessel = null;
   try { schluessel = await berichtSchluessel(vault); } catch {}
   const c = leseBerichtCache(vault);
-  if (c && schluessel && c.schluessel === schluessel) return c.bericht;
+  if (c && schluessel && c.schluessel === schluessel) return mitFrischenZufuehrungen(vault, c.bericht, jetzt);
   const b = pflegebericht(vault, { jetzt });
   try { schreibeBerichtCache(vault, b, schluessel); } catch { /* nur Cache */ }
-  return b;
+  return mitFrischenZufuehrungen(vault, b, jetzt);
+}
+
+// Zuführungen werden bei jedem Aufruf frisch geprüft (nur stat-Aufrufe, keine Tokens) — ein entzogenes Recht darf nicht
+// bis zum nächsten Cache-Schlüsselwechsel unbemerkt bleiben. Schreibt die Statusdatei .logs/zufuehrungen.json; schlägt
+// das fehl, steht das als Eintrag im Bericht (nie still).
+function mitFrischenZufuehrungen(vault, bericht, jetzt) {
+  const status = pruefeZufuehrungen(vault, { jetzt });
+  let p = zufuehrungenPosten(status);
+  try { schreibeStatus(vault, status); }
+  catch (e) { p = { ...p, anzahl: p.anzahl + 1, liste: [...p.liste, { name: "Statusdatei", status: "statusdatei" }].slice(0, MAX_LISTE) }; }
+  const alt = bericht.posten.find(x => x.schluessel === "zufuehrungen");
+  const posten2 = bericht.posten.filter(x => x.schluessel !== "zufuehrungen");
+  const i = posten2.findIndex(x => x.schluessel === "messlatte");
+  posten2.splice(i < 0 ? posten2.length : i, 0, p);
+  return { ...bericht, posten: posten2, zuTun: Math.max(0, (Number(bericht.zuTun) || 0) - (alt ? alt.anzahl : 0) + p.anzahl) };
 }
 
 // Offene Konflikte für die Ansicht, falls die Ansichtsdaten (daten.mjs, Task 1) keine `konflikte` liefern.
@@ -420,7 +449,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   try {
     // --cache (session-hintergrund): nur den Cache auffrischen, nichts ausgeben
     if (process.argv.includes("--cache")) { await aktuellerBericht(vault); process.exit(0); }
-    const b = pflegebericht(vault);
+    const b = mitFrischenZufuehrungen(vault, pflegebericht(vault), Date.now());
     console.log(process.argv.includes("--json") ? JSON.stringify(b) : textBericht(b));
   } catch {
     console.error(`Pflegebericht nicht möglich — ist ${vault} wirklich ein Brain?`);
