@@ -16,7 +16,8 @@ import { qmdBefehl } from "./qmd-befehl.mjs";
 import { parseQmdDateien } from "./qmd-ausgabe.mjs";
 import { oeffnerAufruf } from "./oeffner.mjs";
 import { merkeLuecke } from "./analyse.mjs";
-import { frischePruefen, widerspruchZeilen, vaultLeser } from "./frische.mjs";
+import { frischePruefen, widerspruchZeilen, vaultLeser, frischeFehler } from "./frische.mjs";
+import { qmdToRel } from "./hint-core.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
@@ -29,14 +30,24 @@ const node = (skript, ...a) => spawnSync(process.execPath, [join(T, skript), ...
 const hatQmd = () => { const r = spawnSync(b.cmd, [...b.vorArgs, "--help"], { stdio: "ignore", windowsHide: true }); return !r.error && r.status === 0; };
 
 // Ausgabe „score,pfad“ — bei Widerspruch zwischen Treffern gewinnt der neuere (steht vorn); der Hinweis geht nach
-// stderr, damit stdout für Auswertungen unverändert bleibt. Fehler beim Prüfen ändern nichts.
+// stderr, damit stdout für Auswertungen unverändert bleibt. Die QMD-Profile liefern `qmd://brain/…` (slugifiziert):
+// über die Wiki-Karte (.logs/wiki-map.json) auf die Vault-Datei abgebildet, nicht abbildbare Treffer bleiben unberührt
+// an ihrem Platz. Fehler beim Prüfen ändern nichts an der Suche, landen aber in .logs/hooks.log.
 function zeigeTreffer(treffer) {
   let aus = treffer;
   try {
-    const r = frischePruefen(treffer.map(t => ({ ...t, page: t.pfad })), vaultLeser(vault));
-    aus = r.treffer;
+    let karte = null;
+    if (treffer.some(t => /^qmd:\/\//.test(t.pfad))) {
+      try { karte = JSON.parse(readFileSync(join(vault, ".logs", "wiki-map.json"), "utf8")); } catch (e) { frischeFehler(vault, "wiki-map", e); }
+    }
+    const seite = (t) => /^qmd:\/\//.test(t.pfad) ? (karte ? qmdToRel(t.pfad, karte) : null) : t.pfad;
+    const plaetze = [], pruef = [];
+    treffer.forEach((t, i) => { const page = seite(t); if (page) { plaetze.push(i); pruef.push({ ...t, page }); } });
+    const r = frischePruefen(pruef, vaultLeser(vault), { bei: (ort, e) => frischeFehler(vault, ort, e) });
+    aus = [...treffer];
+    plaetze.forEach((platz, k) => { aus[platz] = r.treffer[k]; });
     widerspruchZeilen(r.widersprueche).forEach(z => console.error(z));
-  } catch {}
+  } catch (e) { aus = treffer; frischeFehler(vault, "zeigeTreffer", e); }
   aus.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
 }
 
