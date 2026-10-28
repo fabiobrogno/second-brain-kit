@@ -68,13 +68,13 @@ nodejs.org and re-run this step.
 
 macOS/Linux:
 ```
-curl -fsSL https://raw.githubusercontent.com/fbrogno/second-brain-kit/main/bootstrap.sh | bash -s -- --ziel "<vault-path>" --backup <keins|github>
+curl -fsSL https://raw.githubusercontent.com/fabiobrogno/second-brain-kit/main/bootstrap.sh | bash -s -- --ziel "<vault-path>" --backup <keins|github>
 ```
 Windows (PowerShell — `irm | iex` can't forward parameters, so save it first, then run it with
 `-ExecutionPolicy Bypass`; this only affects the one process you're starting, never changes any system
 or user setting, and needs no admin rights):
 ```
-$s = Join-Path $env:TEMP "bootstrap.ps1"; irm https://raw.githubusercontent.com/fbrogno/second-brain-kit/main/bootstrap.ps1 -OutFile $s; powershell -NoProfile -ExecutionPolicy Bypass -File $s -Ziel "<vault-path>" -Backup <keins|github>
+$s = Join-Path $env:TEMP "bootstrap.ps1"; irm https://raw.githubusercontent.com/fabiobrogno/second-brain-kit/main/bootstrap.ps1 -OutFile $s; powershell -NoProfile -ExecutionPolicy Bypass -File $s -Ziel "<vault-path>" -Backup <keins|github>
 ```
 (No GitHub account needed for either — the script downloads the kit as a public release archive, not
 via `git clone`.)

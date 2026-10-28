@@ -16,10 +16,10 @@ Kein Code führt das Update selbst automatisch aus — nur der Agent, über dies
    über das Update aktualisiert." und abbrechen.
 1. **Stand lesen:** `systemVersion` aus `{{VAULT}}/brain.config.json` lesen. Fehlt der Schlüssel: Installation
    ist älter als die erste Kit-Version — dem User melden und abbrechen, nichts raten.
-2. **Neuestes Release holen:** `https://api.github.com/repos/fbrogno/second-brain-kit/releases/latest`
+2. **Neuestes Release holen:** `https://api.github.com/repos/fabiobrogno/second-brain-kit/releases/latest`
    abrufen (kein Konto, kein Login) → `tag_name` (z. B. `v0.2.0`) ist die neueste Version. Ist sie nicht
    neuer als `systemVersion`: „Du hast schon die neueste Version." melden, fertig.
-3. **Kit-Klon besorgen:** Release-Archiv `https://github.com/fbrogno/second-brain-kit/archive/refs/tags/<tag>.tar.gz`
+3. **Kit-Klon besorgen:** Release-Archiv `https://github.com/fabiobrogno/second-brain-kit/archive/refs/tags/<tag>.tar.gz`
    laden und nach `<kit-klon>` entpacken — `<kit-klon>` ist `~/.brain-kit/kit/<version>` (z. B.
    `~/.brain-kit/kit/v0.2.0`); existiert der Ordner schon (frühere Installation/Update), nicht erneut laden.
 4. **Migrationen abarbeiten:** Für jede Zwischenversion zwischen `systemVersion` und der neuesten Version,

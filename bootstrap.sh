@@ -70,7 +70,7 @@ ARCHIV="${BRAIN_KIT_ARCHIV:-}"
 if [ -z "$ARCHIV" ]; then
   melde "Ich lade das Second-Brain-Kit herunter ..."
   ARCHIV="$HEIM/kit-$V.tar.gz"
-  curl -fsSL "https://github.com/fbrogno/second-brain-kit/archive/refs/tags/$V.tar.gz" -o "$ARCHIV" >>"$LOG" 2>&1 || fehler "Kit herunterladen"
+  curl -fsSL "https://github.com/fabiobrogno/second-brain-kit/archive/refs/tags/$V.tar.gz" -o "$ARCHIV" >>"$LOG" 2>&1 || fehler "Kit herunterladen"
 fi
 KITDIR="$HEIM/kit/$V"
 mkdir -p "$KITDIR" >>"$LOG" 2>&1 || fehler "Kit-Ordner anlegen"
