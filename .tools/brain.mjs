@@ -16,6 +16,7 @@ import { qmdBefehl } from "./qmd-befehl.mjs";
 import { parseQmdDateien } from "./qmd-ausgabe.mjs";
 import { oeffnerAufruf } from "./oeffner.mjs";
 import { merkeLuecke } from "./analyse.mjs";
+import { frischePruefen, widerspruchZeilen, vaultLeser } from "./frische.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
@@ -27,6 +28,18 @@ const b = qmdBefehl();
 const node = (skript, ...a) => spawnSync(process.execPath, [join(T, skript), ...a], { stdio: "inherit", windowsHide: true }).status ?? 1;
 const hatQmd = () => { const r = spawnSync(b.cmd, [...b.vorArgs, "--help"], { stdio: "ignore", windowsHide: true }); return !r.error && r.status === 0; };
 
+// Ausgabe „score,pfad“ — bei Widerspruch zwischen Treffern gewinnt der neuere (steht vorn); der Hinweis geht nach
+// stderr, damit stdout für Auswertungen unverändert bleibt. Fehler beim Prüfen ändern nichts.
+function zeigeTreffer(treffer) {
+  let aus = treffer;
+  try {
+    const r = frischePruefen(treffer.map(t => ({ ...t, page: t.pfad })), vaultLeser(vault));
+    aus = r.treffer;
+    widerspruchZeilen(r.widersprueche).forEach(z => console.error(z));
+  } catch {}
+  aus.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+}
+
 function suche(frage, n = "5") {
   if (!frage) { console.error("Nutzung: brain search \"<frage>\" [anzahl]"); return 64; }
   let profil = ladeConfig(vault).suche?.profil || "leicht";
@@ -36,7 +49,7 @@ function suche(frage, n = "5") {
   }
   if (profil === "minimal") {
     const treffer = minisuche(vault, frage, Number(n));
-    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    zeigeTreffer(treffer);
     if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
@@ -49,7 +62,7 @@ function suche(frage, n = "5") {
   };
   if (profil === "voll") {
     const treffer = parseQmdDateien(lauf("query")).slice(0, Number(n));
-    treffer.forEach(t => console.log(`${t.score.toFixed(4)},${t.pfad}`));
+    zeigeTreffer(treffer);
     if (!treffer.length) merkeLuecke(vault, "search", frage);
     return 0;
   }
@@ -61,7 +74,7 @@ function suche(frage, n = "5") {
     });
   }
   const sortiert = [...rang].sort((a, b) => b[1] - a[1]).slice(0, Number(n));
-  sortiert.forEach(([p, s]) => console.log(`${s.toFixed(4)},${p}`));
+  zeigeTreffer(sortiert.map(([pfad, score]) => ({ pfad, score })));
   if (!sortiert.length) merkeLuecke(vault, "search", frage);
   return 0;
 }
