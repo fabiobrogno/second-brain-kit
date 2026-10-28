@@ -13,6 +13,7 @@ import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "./pfad
 import { gitBefehl } from "./werkzeug.mjs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
+import { leseSeitenFelder, pruefeSeitenFelder } from "./seitenfelder.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
@@ -38,6 +39,8 @@ const pages = ids.filter(id => istWikiSeite(id, wikiName)).map(id => id.slice(wi
 // eingehende Kanten zählen nur von echten Seiten/Rohquellen (_log/_schema zählen nicht als Verlinkung)
 const linked = new Set(graph.edges.filter(e => !e.source.split(sep).pop().startsWith("_"))
   .map(e => e.target.split(sep).join("/")).filter(t => t.startsWith(wikiName + "/")).map(t => t.slice(wikiName.length + 1)));
+// B1: ersetzte Seiten (alt → Nachfolger, beide relativ zum Wiki) für Ketten und noch bestehende Links nach der Schleife
+const ersetzt = new Map();
 for (const p of pages) {
   const full = join(wikiDir, p);
   const raw = entferneBom(readFileSync(full, "utf8")).replace(/\r\n/g, "\n"); // BOM weg, CRLF (Windows-Checkout) wie LF behandeln
@@ -89,10 +92,35 @@ for (const p of pages) {
   for (const f of pruefeFragen(fragenRoh(fm)).fehler) findings.push(`FRAGEN: ${p} — ${f}`);
   // auch-Bezüge müssen auf existierende Ordner zeigen
   for (const a of arr("auch")) if (!/^[\p{L}\d_-]+(\/[\p{L}\d_-]+)*$/u.test(a) || !existsSync(join(wikiDir, ...a.split("/")))) findings.push(`AUCH: ${p} → ${a} existiert nicht bzw. ist kein Ordner im Wiki`);
+  // B1 Zeit/Ersetzen/Kritisch/Zweifel (seitenfelder.mjs): Formatfehler blockieren, Zweifel wird PRÜFBEDÜRFTIG
+  for (const b of pruefeSeitenFelder(raw)) findings.push(`${b.klasse}: ${p} — ${b.meldung}`);
+  const sf = leseSeitenFelder(raw);
+  if (sf.ersetztDurch) {
+    const ziel = resolveLink(ids, sf.ersetztDurch, wikiName, idSet);
+    const zielRel = ziel && istWikiSeite(ziel, wikiName) ? ziel.slice(wikiName.length + 1) : null;
+    if (!zielRel) findings.push(`ERSETZT: ${p} — Nachfolger [[${sf.ersetztDurch}]] existiert nicht`);
+    else if (zielRel === p) findings.push(`ERSETZT: ${p} — Nachfolger ist die Seite selbst`);
+    else ersetzt.set(p, zielRel);
+  }
+  if (sf.zweifel) findings.push(`PRÜFBEDÜRFTIG (ZWEIFEL): ${p} — ${sf.zweifel.replace(/\s+/g, " ").slice(0, 120)}`);
+}
+// Ersetzte Seiten: Kette (Nachfolger selbst ersetzt) und — nur im Normalmodus, braucht die Kanten — eingehende Links
+// von anderen Wiki-Seiten als dem Nachfolger. Nicht blockierend: der Tageslauf ersetzt zuerst und stellt Links danach um.
+for (const [alt, neu] of ersetzt) {
+  if (ersetzt.has(neu)) findings.push(`ERSETZT-HINWEIS: ${alt} — Nachfolger ${neu} ist selbst ersetzt (Kette) — direkt auf den letzten Nachfolger zeigen`);
+  if (struktur) continue;
+  const quellen = new Set();
+  for (const e of graph.edges) {
+    const von = e.source.split(sep).join("/"), nach = e.target.split(sep).join("/");
+    if (nach !== `${wikiName}/${alt}` || !istWikiSeite(von, wikiName)) continue;
+    const q = von.slice(wikiName.length + 1);
+    if (q !== neu && q !== alt) quellen.add(q);
+  }
+  for (const q of [...quellen].sort()) findings.push(`ERSETZT-HINWEIS: ${alt} — wird noch verlinkt von ${q} (Link auf ${neu} umstellen)`);
 }
 for (const g of doppelteNamen(ids, (id) => istWikiSeite(id, wikiName))) findings.push(`DOPPELTER NAME: ${g.join(" · ")} — [[Link]] löst mehrdeutig auf, einen umbenennen`);
 // Blockierende Klassen (pre-commit). Struktur-Modus endet hier.
-const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG)\b/;
+const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG|KRITISCH|GILT_SEIT|ERSETZT(?=:))\b/;
 if (struktur) {
   const b = findings.filter(f => BLOCKIEREND.test(f));
   b.forEach(f => console.log("- " + f));
