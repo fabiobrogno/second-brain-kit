@@ -12,6 +12,9 @@ Memory (Skill **lektion** schreibt sie dorthin); diese Datei ist für andere Wer
 1. `{{NODE}} "{{VAULT}}/.tools/brain.mjs" search "<frage>"` → beste Datei lesen. Nie das ganze Brain breit einlesen.
 2. Liefert dein Werkzeug schon einen „Brain-Treffer" (Hook), diese Seite nur lesen, wenn sie zur Aufgabe passt.
 3. Rohquelle nur öffnen, wenn eine Seite PRÜFBEDÜRFTIG ist oder eine Entscheidung an einer Aussage hängt.
+4. Jeder Wiki-Ordner hat eine generierte Übersicht `_<ordnername>.md` (oben: `{{WIKI}}/_index.md`) — erst dort nachsehen, dann gezielt die Seite öffnen.
+
+**Wahrheit vor Zustimmung:** Widerspricht eine Anfrage den Fakten im Brain, sag es klar.
 
 ## Schreiben
 - `{{WIKI}}/` nur über den Skill **ingest** (`{{VAULT}}/.tools/skills/ingest/SKILL.md`), Schema: `{{WIKI}}/_schema.md`.
