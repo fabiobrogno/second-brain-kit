@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- `heikel.mjs`: rule-based check (0 tokens) that flags facts about money, legal matters, persons and access as sensitive, reusing the existing secret and PII patterns.
+
 ## [0.5.1] - 2026-10-12
 Bug fixes from the first tester reports (thanks, @freakadelle1997). No data migration; notes, wiki and settings
 stay as they are.
