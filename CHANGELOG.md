@@ -5,6 +5,7 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- Evidence rules for the harvest (`.tools/beleg.mjs`): find a quote in a transcript (whitespace and typographic characters normalised, case counts) and tell where it came from per role — `tool` > `du` > `web` > `ki`; injected context always counts as `ki`. Includes a test set.
 - `heikel.mjs`: rule-based check (0 tokens) that flags facts about money, legal matters, persons and access as sensitive, reusing the existing secret and PII patterns.
 
 ## [0.5.1] - 2026-10-12
