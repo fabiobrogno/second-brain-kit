@@ -13,11 +13,10 @@
 //                        "letzterLauf": "2026-10-20T08:00:00Z" | null, "alterTage": 8 | null, "maxAlterTage": 7 }] }
 //   `probleme` = Zahl der Einträge mit status ≠ ok; ⚠ anzeigen, sobald probleme > 0.
 // CLI: node .tools/zufuehrungen.mjs [--json] [vault]   (schreibt die Statusdatei; Exit 1 nur, wenn das Schreiben scheitert)
-import { readdirSync, statSync, lstatSync, openSync, closeSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
+import { readdirSync, statSync, lstatSync, openSync, closeSync, writeFileSync, renameSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { realpathSync } from "node:fs";
 import { vaultPfad, ladeConfig } from "./pfade.mjs";
 
 export const STATUS_DATEI = (vault) => join(vault, ".logs", "zufuehrungen.json");
