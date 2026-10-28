@@ -131,6 +131,12 @@ The brain watches its own health, locally and for 0 tokens, so you don't have to
   pages nobody has read in a month, pages that have grown past 150 lines, and imports still waiting to be
   worked in. Once a week, the session start names what's open in one line, only if there's something to do;
   turn that line off with the `wochenbericht` setting.
+- **A watchdog for your feeds.** A connector or sync folder that quietly stops delivering is the worst kind of
+  failure. List your sources in `brain.config.json` as `"zufuehrungen": [{ "name": "Notes sync", "pfad": "~/Sync/notes",
+  "maxAlterTage": 7 }]` (`pfad`: absolute, `~/…` or relative to the vault; `maxAlterTage`: days without new content
+  before a source counts as silent, default 7). `brain pflege` and the maintenance tab then name every source whose
+  path is gone, unreadable or silent, and the status file `.logs/zufuehrungen.json` drives the ⚠ in the menu bar.
+  Local, 0 tokens, never touches the sources.
 - **An optional AI pass, opt-in and off by default.** Turn on *"check my brain weekly"* (`pflegeLauf`) or
   click "check now" in the Maintenance tab, and a lean Haiku run reads the maintenance report plus the usual
   review candidates and writes up to 8 suggestions — merge these two pages, this one looks outdated, these

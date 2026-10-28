@@ -44,7 +44,7 @@ export function ladeTranskript(pfad) {
 export function normalisiere(text) {
   return String(text ?? "")
     .normalize("NFC")
-    .replace(/[​-‍⁠﻿­]/g, "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
     .replace(/[„“”‟«»〝〞＂]/g, '"')
     .replace(/[‚‘’‛′`´]/g, (c) => (c === "`" ? "" : "'"))
     .replace(/[‐‑‒–—―−]/g, "-")

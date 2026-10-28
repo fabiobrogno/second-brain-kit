@@ -876,7 +876,7 @@
       }
       case "zuLang": return { seite: e.seite, zusatz: t("eintragZeilen", { n: n(e.zeilen) }) };
       case "importe": return { text: t(Number(e.notizen) === 1 ? "eintragImport1" : "eintragImport", { quelle: String(e.quelle || ""), n: n(e.notizen) }) };
-      case "zufuehrungen": return { text: t("eintragZufuehrung_" + (e.status === "nicht-lesbar" ? "nichtlesbar" : ["fehlt", "config", "statusdatei"].indexOf(e.status) >= 0 ? e.status : "still"), { name: String(e.name || ""), n: n(e.tage) }) };
+      case "zufuehrungen": return { text: t("eintragZufuehrung_" + (e.status === "nicht-lesbar" ? "nichtlesbar" : ["fehlt", "config", "statusdatei"].indexOf(e.status) >= 0 ? e.status : Number(e.tage) === 1 ? "still1" : "still"), { name: String(e.name || ""), n: n(e.tage) }) };
       case "messlatte": return { text: t(e.ok ? "eintragMesslatte" : "eintragMesslatteUnter", { datum: datum(e.datum), positiv: String(e.positiv || ""), still: String(e.still || "") }) };
       default: return e.seite ? { seite: String(e.seite), zusatz: "" } : { text: "" };
     }
