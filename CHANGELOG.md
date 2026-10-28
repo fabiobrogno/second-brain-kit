@@ -3,6 +3,9 @@
 All notable changes to this project are documented here.
 
 ## [Unreleased]
+
+### Added
+- `heikel.mjs`: rule-based check (0 tokens) that flags facts about money, legal matters, persons and access as sensitive, reusing the existing secret and PII patterns.
 - **Page fields for time and replacement** (B1): `gilt_seit`, `ersetzt_durch`, `kritisch`, `zweifel` are read by the new `.tools/seitenfelder.mjs`; lint reports `KRITISCH`, `GILT_SEIT`, `ERSETZT` (blocking in the pre-commit) and `ERSETZT-HINWEIS`, `PRÜFBEDÜRFTIG (ZWEIFEL)` (informational). `kritisch` is fail-safe: anything but `false` counts as critical.
 
 ## [0.5.1] - 2026-10-12

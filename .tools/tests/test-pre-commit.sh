@@ -40,7 +40,8 @@ if [ "$TEST_WIN" = 1 ]; then
   # Hilfsprogramme in /mingw64/bin + /usr/bin mit; Symlinks wären unter Git Bash nur Kopien ohne DLLs, und env -i
   # nähme Windows-Programmen SYSTEMROOT & Co. — darum nur PATH und HOME ersetzen.
   PRIV="$H/.brain-kit/node/node.exe"; mkdir -p "$(dirname "$PRIV")"; cp "$(node -p process.execPath)" "$PRIV"
-  ohne_node() { env HOME="$H" PATH="/mingw64/bin:/usr/bin" "$@"; }
+  GITDIR="$(dirname "$(command -v git)")"   # Git-Verzeichnis je nach Git-for-Windows-Version unterschiedlich
+  ohne_node() { env HOME="$H" PATH="/mingw64/bin:/usr/bin:$GITDIR" "$@"; }
 else
   PRIV="$H/.brain-kit/node/bin/node"; mkdir -p "$(dirname "$PRIV")"; ln -s "$(command -v node)" "$PRIV"
   # PATH nur mit git + sh (git findet seine Hilfsprogramme über die eigene exec-path)
