@@ -51,7 +51,7 @@
   const MAX_NOTIZ = 300;
   // Posten des Pflegeberichts (pflege.mjs) — Titel „posten_<k>“, nächster Schritt „schritt_<k>“.
   const POSTEN = ["abgelaufen", "bald", "konflikte", "konflikteKaputt", "entscheidungen", "vorschlaege", "lektionen", "pflegeAuftraege", "verwaist",
-    "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "messlatte"];
+    "nieGelesen", "luecken", "dubletten", "zuLang", "importe", "zufuehrungen", "messlatte"];
   const NUR_HINWEIS = ["bald", "nieGelesen", "luecken"];
   const BEFUNDE = ["zusammenlegen", "aufteilen", "veraltet", "widerspruch", "luecke", "frage", "sonstiges"];
   // Schwellen-Prüfung (analyse.mjs#empfehlung): Text „empf_<art>“.
@@ -876,6 +876,7 @@
       }
       case "zuLang": return { seite: e.seite, zusatz: t("eintragZeilen", { n: n(e.zeilen) }) };
       case "importe": return { text: t(Number(e.notizen) === 1 ? "eintragImport1" : "eintragImport", { quelle: String(e.quelle || ""), n: n(e.notizen) }) };
+      case "zufuehrungen": return { text: t("eintragZufuehrung_" + (e.status === "nicht-lesbar" ? "nichtlesbar" : ["fehlt", "config", "statusdatei"].indexOf(e.status) >= 0 ? e.status : "still"), { name: String(e.name || ""), n: n(e.tage) }) };
       case "messlatte": return { text: t(e.ok ? "eintragMesslatte" : "eintragMesslatteUnter", { datum: datum(e.datum), positiv: String(e.positiv || ""), still: String(e.still || "") }) };
       default: return e.seite ? { seite: String(e.seite), zusatz: "" } : { text: "" };
     }
