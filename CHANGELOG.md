@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- Evidence rules for the harvest (`.tools/beleg.mjs`): find a quote in a transcript (whitespace and typographic characters normalised, case counts) and tell where it came from per role — `tool` > `du` > `web` > `ki`; injected context always counts as `ki`. Includes a test set.
+
 ## [0.5.1] - 2026-10-12
 Bug fixes from the first tester reports (thanks, @freakadelle1997). No data migration; notes, wiki and settings
 stay as they are.
