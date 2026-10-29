@@ -11,6 +11,8 @@
 // v0.4: Mit „fakt" (SessionEnd/PreCompact) startet zusätzlich der Session-Auswerter (lektionen.mjs) losgelöst —
 // eigener Schalter `lektionen` (aus|lokal|mit-ki, Standard lokal), unabhängig von ernteSitzungsende.
 // Testhaken: BRAIN_LEKTIONEN_SKRIPT ersetzt den Pfad zu lektionen.mjs.
+// B1: Mit „fakt“ startet zusätzlich das Fehler-Signal W7 (w7.mjs, 0 Tokens) losgelöst — ohne eigenen Schalter, nur bei
+// lesbarer Config; doppelte Läufe (SessionEnd + PreCompact) entdoppelt w7.mjs selbst. Testhaken: BRAIN_W7_SKRIPT.
 import { readFileSync, existsSync, realpathSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +23,7 @@ import { leseAutomatik } from "../../einstellungen.mjs";
 const HIER = dirname(fileURLToPath(import.meta.url));
 const ERNTE = join(HIER, "..", "..", "ernte.mjs");
 const LEKTIONEN = join(HIER, "..", "..", "lektionen.mjs");
+const W7 = join(HIER, "..", "..", "w7.mjs");
 
 // Wie brain-hint.mjs: nur Wortzeichen und "-", höchstens 64 Zeichen.
 export function saubereSid(roh) {
@@ -114,11 +117,8 @@ export function arbeiteOffeneAb(vault, { jetzt = Date.now() } = {}) {
   return "";
 }
 
-// Session-Auswerter losgelöst starten (Schalter prüft der Aufrufer, ernteNichtIn prüft lektionen.mjs selbst).
-export function starteLektionen(vault, { transkript, sid = "", cwd = "" } = {}) {
-  if (process.env.BRAIN_ERNTE === "1") return false;
-  if (typeof transkript !== "string" || !transkript || !existsSync(transkript)) return false;
-  const skript = process.env.BRAIN_LEKTIONEN_SKRIPT || LEKTIONEN;
+// Gemeinsamer Start losgelöster Kindprozesse (Session-Auswerter, W7): still, nie blockierend.
+function starteLosgeloest(vault, skript, { transkript, sid = "", cwd = "" }) {
   const args = [skript, "--transkript", transkript, "--sid", saubereSid(sid), "--cwd", String(cwd || ""), vault];
   try {
     const kind = spawn(process.execPath, args, { cwd: vault, detached: true, stdio: "ignore", windowsHide: true, env: { ...process.env, BRAIN_VAULT: vault } });
@@ -126,6 +126,18 @@ export function starteLektionen(vault, { transkript, sid = "", cwd = "" } = {}) 
     kind.unref();
     return true;
   } catch { return false; }
+}
+const lesbar = (t) => typeof t === "string" && t !== "" && existsSync(t);
+
+// Session-Auswerter losgelöst starten (Schalter prüft der Aufrufer, ernteNichtIn prüft lektionen.mjs selbst).
+export function starteLektionen(vault, job = {}) {
+  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript)) return false;
+  return starteLosgeloest(vault, process.env.BRAIN_LEKTIONEN_SKRIPT || LEKTIONEN, job);
+}
+// Fehler-Signal W7 losgelöst starten (ernteNichtIn und Config prüft w7.mjs selbst).
+export function starteW7(vault, job = {}) {
+  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript)) return false;
+  return starteLosgeloest(vault, process.env.BRAIN_W7_SKRIPT || W7, job);
 }
 
 // Hook-Einstieg: Eingabe (geparstes Hook-JSON) + Art → Schalter prüfen → starten.
@@ -139,6 +151,7 @@ export function loese(vault, art, eingabe) {
     cwd: eingabe?.cwd ? String(eingabe.cwd) : "",
   };
   if (art === "fakt" && !fehler && werte.lektionen !== "aus") starteLektionen(vault, job);
+  if (art === "fakt" && !fehler) starteW7(vault, job);
   if (!schalterAn(werte, art)) return false;
   return starteErnte(vault, { art, ...job });
 }

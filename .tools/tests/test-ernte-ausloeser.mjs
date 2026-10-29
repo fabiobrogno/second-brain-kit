@@ -365,3 +365,55 @@ test("session-start (v0.4): Wochen-Zeile nur aus dem Cache (0 Wartezeit); ohne V
   assert.ok(!/Brain-Woche/.test(r.stdout));
   void t;
 });
+
+// ---------- B1: Fehler-Signal W7 am Sitzungsende ----------
+function fakeW7() {
+  const f = join(FAKE_DIR, "fake-w7.mjs");
+  if (!existsSync(f)) writeFileSync(f, `import { writeFileSync } from "node:fs";\nwriteFileSync(process.env.FAKE_W7_LOG, JSON.stringify({ args: process.argv.slice(2), vault: process.env.BRAIN_VAULT || "" }));\n`);
+  return f;
+}
+const ohneAndere = (tag) => ({ BRAIN_ERNTE_SKRIPT: FAKE_ERNTE, FAKE_ERNTE_LOG: join(FAKE_DIR, `${tag}-e.json`), BRAIN_LEKTIONEN_SKRIPT: FAKE_LEKTIONEN, FAKE_LEKTIONEN_LOG: join(FAKE_DIR, `${tag}-l.json`) });
+
+test("W7: SessionEnd/PreCompact startet w7.mjs losgelöst — ohne eigenen Schalter, still, < 300 ms", async () => {
+  const v = neuerVault({}), tr = transkript(), log = join(FAKE_DIR, "w7-1.json");
+  const r = starte(AUSLOESER, ["--art", "fakt"], hookEingabe(tr), basisEnv({ BRAIN_VAULT: v, BRAIN_W7_SKRIPT: fakeW7(), FAKE_W7_LOG: log, ...ohneAndere("w7-1") }));
+  assert.equal(r.status, 0); assert.equal(r.stdout + r.stderr, "");
+  assert.ok(r.ms < 300, `Auslöser brauchte ${r.ms} ms`);
+  const lauf = await warteAuf(log);
+  assert.ok(lauf, "W7 wurde nicht gestartet");
+  assert.deepEqual(lauf.args, ["--transkript", tr, "--sid", "sitzung-abc123", "--cwd", "/projekte/garten", v]);
+});
+
+test("W7: --art stand, kaputte Config oder fehlendes Transkript → kein W7", async () => {
+  const tr = transkript();
+  const kaputt = mkdtempSync(join(tmpdir(), "ausloeser-w7-kaputt-"));
+  writeFileSync(join(kaputt, "brain.config.json"), "{ kaputt");
+  const faelle = [[neuerVault({}), ["--art", "stand"], hookEingabe(tr)], [kaputt, ["--art", "fakt"], hookEingabe(tr)],
+    [neuerVault({}), ["--art", "fakt"], hookEingabe(join(FAKE_DIR, "gibt-es-nicht.jsonl"))]];
+  for (const [i, [v, args, eingabe]] of faelle.entries()) {
+    const log = join(FAKE_DIR, `w7-2-${i}.json`);
+    starte(AUSLOESER, args, eingabe, basisEnv({ BRAIN_VAULT: v, BRAIN_W7_SKRIPT: fakeW7(), FAKE_W7_LOG: log, ...ohneAndere(`w7-2-${i}`) }));
+    assert.ok(await sicherNichts(log), `Fall ${i}: W7 gestartet`);
+  }
+});
+
+test("W7 Ende-zu-Ende: echte w7.mjs, zweimal ausgelöst (PreCompact + SessionEnd) → genau ein Fund", async () => {
+  const v = neuerVault({}), d = mkdtempSync(join(tmpdir(), "ausloeser-w7-"));
+  const tr = join(d, "sitzung.jsonl");
+  const zeile = (o) => JSON.stringify({ cwd: "/projekte/garten", ...o });
+  writeFileSync(tr, [
+    zeile({ type: "user", uuid: "p1", timestamp: "2026-10-21T08:00:00.000Z", message: { role: "user", content: "Wann gieße ich das Beet?" } }),
+    zeile({ type: "attachment", attachment: { type: "hook_success", hookEvent: "UserPromptSubmit", content: `Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${v}/09_wiki/garten/thema_beet.md — Beet` } }),
+    zeile({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Um 7 Uhr." }] } }),
+    zeile({ type: "user", uuid: "p2", timestamp: "2026-10-21T08:01:00.000Z", message: { role: "user", content: "Nein, das stimmt nicht." } }),
+  ].join("\n") + "\n");
+  const env = basisEnv({ BRAIN_VAULT: v, ...ohneAndere("w7-3") });
+  starte(AUSLOESER, ["--art", "fakt"], hookEingabe(tr), env);
+  starte(AUSLOESER, ["--art", "fakt"], hookEingabe(tr), env);
+  const log = join(v, ".logs", "w7.log");
+  const bis = Date.now() + 10000;
+  while (Date.now() < bis && !(existsSync(log) && readFileSync(log, "utf8").trim().split("\n").length >= 2)) await new Promise((r) => setTimeout(r, 50));
+  const zeilen = readFileSync(join(v, ".logs", "w7.jsonl"), "utf8").trim().split("\n");
+  assert.equal(zeilen.length, 1);
+  assert.equal(JSON.parse(zeilen[0]).seite, "09_wiki/garten/thema_beet.md");
+});
