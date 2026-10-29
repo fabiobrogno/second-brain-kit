@@ -41,7 +41,7 @@ export function pfadFormen(pfad, { home = homedir() } = {}) {
   if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) p = join(home, p.slice(1));
   if (!isAbsolute(p) && !win32.isAbsolute(p)) return [];
   const formen = new Set();
-  const dazu = (x) => { const f = ohneSchluss(fwd(x).normalize("NFC")); if (f) formen.add(f); };
+  const dazu = (x) => { const f = ohneSchluss(fwd(x).normalize("NFC")); if (f && !/^[a-z]:$/i.test(f)) formen.add(f); };   // Wurzel (auch Laufwerk „D:“) nie sperren
   dazu(p);
   try { dazu(realpathSync(p)); } catch {}
   const h = ohneSchluss(fwd(home).normalize("NFC"));
