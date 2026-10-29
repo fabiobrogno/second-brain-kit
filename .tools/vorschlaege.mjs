@@ -13,6 +13,7 @@ import { join, relative } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ordner, entferneBom } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
+import { HERKUNFT_WERTE, FUNDSTELLE_MUSTER, MAX_ZITAT } from "./beleg-ernte.mjs";
 
 // Einzige Quelle für gültige Vorschlags-IDs (auch der Dienst prüft damit, dienst-lib.mjs).
 export const ID_MUSTER = /^[a-z0-9-]{1,80}$/;
@@ -59,7 +60,7 @@ function zeitId(d) {
 }
 
 // Schreibt einen Vorschlag; gibt die id zurück. Secret in irgendeinem Feld → 400, es wird nichts geschrieben.
-export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdner = "", sitzung = "", ziel = "memory", regel = "", warum = "", wie = "", befund = "sonstiges" } = {}, jetzt = new Date()) {
+export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdner = "", sitzung = "", ziel = "memory", regel = "", warum = "", wie = "", befund = "sonstiges", zitat = "", herkunft = "", fundstelle = "", quelleUrl = "" } = {}, jetzt = new Date()) {
   if (!ARTEN.has(art)) throw fehlerMit(400, "Unbekannte Vorschlags-Art.");
   const t = einzeilig(titel).slice(0, MAX_TITEL);
   const inhalt = String(text ?? "").replace(/\r\n?/g, "\n").trim();
@@ -79,7 +80,20 @@ export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdne
     if (!PFLEGE_BEFUNDE.includes(befund)) throw fehlerMit(400, "Unbekannter Pflege-Befund.");
     extra.push(`befund: ${befund}`);
   }
-  if ([t, inhalt, qo, qs, ...extra].some(hatZugangsdaten)) throw fehlerMit(400, "Vorschlag enthält vermutlich Zugangsdaten — nicht gespeichert.");
+  // B1 (§4.1): Beleg je Fakt — nur für fakt/stand; alles oder nichts (zitat + herkunft + fundstelle, quelle_url optional).
+  const beleg = [];
+  if (zitat || herkunft || fundstelle || quelleUrl) {
+    if (art !== "fakt" && art !== "stand") throw fehlerMit(400, "Beleg gibt es nur für Fakten und Stände.");
+    const z = String(zitat ?? "");
+    if (/[\r\n]/.test(z) || !z.trim() || z.trim().length > MAX_ZITAT) throw fehlerMit(400, "Zitat ungültig (eine Zeile, höchstens 300 Zeichen).");
+    if (!HERKUNFT_WERTE.includes(herkunft)) throw fehlerMit(400, "Unbekannte Herkunft.");
+    if (!FUNDSTELLE_MUSTER.test(String(fundstelle ?? ""))) throw fehlerMit(400, "Fundstelle ungültig.");
+    const url = String(quelleUrl ?? "");
+    if (url && (url.length > MAX_ZITAT || !/^https?:\/\/[^\s?#]+$/.test(url))) throw fehlerMit(400, "Quellen-Adresse ungültig.");
+    beleg.push(`zitat: ${JSON.stringify(z.trim())}`, `herkunft: ${herkunft}`, `fundstelle: ${JSON.stringify(fundstelle)}`);
+    if (url) beleg.push(`quelle_url: ${JSON.stringify(url)}`);
+  }
+  if ([t, inhalt, qo, qs, ...extra, ...beleg].some(hatZugangsdaten)) throw fehlerMit(400, "Vorschlag enthält vermutlich Zugangsdaten — nicht gespeichert.");
 
   const dir = vorschlagOrdner(vault);
   mkdirSync(dir, { recursive: true });
@@ -92,6 +106,7 @@ export function schreibeVorschlag(vault, { art, titel, text, ordner: quelleOrdne
     `quelle_ordner: ${JSON.stringify(qo)}`,
     `quelle_sitzung: ${JSON.stringify(qs)}`,
     ...extra,
+    ...beleg,
     `erstellt: ${erstellt}`,
     "---",
     "",
@@ -133,6 +148,11 @@ function leseDatei(inhalt) {
   const v = { art: fm.art, titel, text, quelleOrdner: fm.quelle_ordner || "", quelleSitzung: fm.quelle_sitzung || "", erstellt: fm.erstellt || "" };
   if (fm.art === "lektion") Object.assign(v, { ziel: LEKTION_ZIELE.includes(fm.ziel) ? fm.ziel : "memory", regel: fm.regel || "", warum: fm.warum || "", wie: fm.wie || "" });
   if (fm.art === "pflege") v.befund = PFLEGE_BEFUNDE.includes(fm.befund) ? fm.befund : "sonstiges";
+  // B1: Beleg-Felder nur, wenn vorhanden — alte Vorschläge behalten exakt ihre Form (Dienst/Ansicht vergleichen sie).
+  if (fm.zitat) v.zitat = fm.zitat;
+  if (HERKUNFT_WERTE.includes(fm.herkunft)) v.herkunft = fm.herkunft;
+  if (fm.fundstelle) v.fundstelle = fm.fundstelle;
+  if (fm.quelle_url) v.quelleUrl = fm.quelle_url;
   return v;
 }
 
