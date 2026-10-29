@@ -9,6 +9,10 @@
 // „fakt" je Sitzung (Final-Review #2): .logs/ernte/<sid>.fakt merkt sich erst NACH einem erfolgreichen Lauf, bis
 // zu welchem Byte das Transkript geerntet ist; der nächste Lauf derselben Sitzung erntet nur den neuen Teil.
 // Auftrags-Marke (Final-Review #5): .logs/ernte/offen/<name>.json wird nach Abschluss entfernt (außer „läuft schon").
+// B1 (Beleg je Fakt, §4.1): Haiku liefert je Vorschlag eine Zeile „Zitat: …“. Node sucht das Zitat im ganzen Verlauf
+// (beleg.mjs) und speichert nur belegte Vorschläge mit zitat/herkunft/fundstelle; ohne Treffer → ohneBeleg, nur KI
+// (Assistent, eingespielter Kontext, eigenes Brain) → nurKi. Damit Haiku auch Werkzeug-Ergebnisse zitieren kann,
+// gehen gefilterte Werkzeug-Ausgaben (tool/web, ohne Fehler, ohne eigenes Brain, ohne Zugangs-/Kundendaten) mit.
 import {
   openSync, readSync, fstatSync, closeSync, writeFileSync, unlinkSync, statSync, mkdirSync,
   mkdtempSync, rmSync, realpathSync, readFileSync, accessSync, constants as fsc,
@@ -18,7 +22,12 @@ import { createHash } from "node:crypto";
 import { tmpdir, homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { findeSecrets, ohneSecrets } from "./secrets-muster.mjs";
+import { findeSecrets, ohneSecrets, hatSecretsImKontext } from "./secrets-muster.mjs";
+import { hatPii } from "./pii-muster.mjs";
+import { parseZeile } from "./verlauf.mjs";
+import { istSystemNachricht } from "./hint-core.mjs";
+import { findeZitat, fundstellen, ladeTranskript } from "./beleg.mjs";
+import { sperrPfade, markiereEigenes, webAdresse, baueFundstelle, ohneEingespieltes, ergebnisText, MAX_ZITAT } from "./beleg-ernte.mjs";
 import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { schreibeVorschlag } from "./vorschlaege.mjs";
@@ -26,6 +35,9 @@ import { EIGENER_VAULT, entferneBom } from "./pfade.mjs";
 
 export const MAX_TRANSKRIPT = 24000;
 export const MIN_PROMPTS = 5;
+export const MAX_JE_WERKZEUG = 800;           // je Werkzeug-Ausgabe im Haiku-Input (Anfang)
+export const MAX_WERKZEUGE = 8000;            // alle Werkzeug-Ausgaben zusammen (neueste zuerst), Teil der 24 000
+export const WERKZEUG_KOPF = "\n--- WERKZEUG-AUSGABEN ---\n\n";
 const MAX_LESEN = 8 * 1024 * 1024;            // nur das Ende großer Transkripte lesen
 const LOCK_ALT_MS = 5 * 60 * 1000;
 const ZEITLIMIT_MS = 120000;
@@ -35,9 +47,12 @@ const ZEITLIMIT_MS = 120000;
 export const VERLAUF_KOPF = "--- VERLAUF ---\n\n";
 export function auftrag(art) {
   const gemeinsam = [
-    "Du liest unten den Verlauf einer Arbeitssitzung (Nutzer und Assistent).",
+    "Du liest unten den Verlauf einer Arbeitssitzung (Nutzer und Assistent) und darunter Werkzeug-Ausgaben.",
     "Schreibe NIE Zugangsdaten, Passwörter, Tokens, Schlüssel, Adressen, Telefonnummern oder Kundendaten.",
-    "Ausgabeformat je Vorschlag genau: eine Zeile \"### <Titel>\", darunter der Text. Sonst nichts.",
+    "Belege jeden Vorschlag: letzte Zeile genau \"Zitat: <Auszug>\" — ein wörtlicher Auszug (12 bis 300 Zeichen, eine Zeile)",
+    "aus einer Zeile, die mit \"Nutzer:\" oder \"Werkzeug (…):\" beginnt. Aussagen des Assistenten belegen nichts.",
+    "Findest du keinen solchen Auszug, lass den Vorschlag weg.",
+    "Ausgabeformat je Vorschlag genau: eine Zeile \"### <Titel>\", darunter der Text, zuletzt die Zitat-Zeile. Sonst nichts.",
     "Gibt es nichts Neues, antworte nur: NICHTS",
   ];
   const kern = art === "stand"
@@ -152,24 +167,47 @@ export function leseEnde(pfad, ab = 0) {
   } finally { closeSync(fd); }
 }
 
-// Nur Text von Nutzer und Assistent (keine Tool-Aufrufe/-Ergebnisse, kein Denken, keine Meta-/Befehlszeilen).
-// → { prompts: Anzahl echter Nutzer-Prompts, text: gefilterter, gekürzter Verlauf, bis: gelesen bis Byte }
-export function leseTranskript(pfad, { ab = 0 } = {}) {
-  const teile = [];
+// Verlauf (Nutzer/Assistent) + gefilterte Werkzeug-Ausgaben ab Byte `ab`, höchstens die letzten 8 MB.
+// → { prompts: echte Nutzer-Prompts, text: Verlauf, werkzeuge: Werkzeug-Abschnitt (≤ MAX_WERKZEUGE), bis: gelesen bis Byte }
+// Werkzeug-Ausgaben: nur Zeilen, in denen beleg.mjs eine Fundstelle mit Herkunft tool/web sieht — nach markiereEigenes
+// (Fehler, unbekannte Aufrufe, eigenes Brain `sperr` → ki), also dieselbe Regel wie bei der Zitat-Prüfung. Der Text kommt
+// roh aus der Zeile: ohne eingespielte Blöcke; Zeilen mit Zugangs-/Kundendaten fallen weg, im Zweifel die ganze Ausgabe.
+// Zeilen ohne uuid (keine Fundstelle möglich) gehen nicht mit.
+function werkzeugAusgabe(inhalt) {
+  const zeilen = ohneSecrets(ohneEingespieltes(ergebnisText(inhalt))).split("\n").filter((z) => z.trim() && !hatPii(z));
+  const t = zeilen.join("\n").trim();
+  if (!t || hatSecretsImKontext(t) || hatPii(t)) return "";
+  return t.slice(0, MAX_JE_WERKZEUG);
+}
+export function leseTranskript(pfad, { ab = 0, sperr = [] } = {}) {
+  const teile = [], werkzeugTeile = [];
   let prompts = 0;
   const { zeilen, bis } = leseEnde(pfad, ab);
-  for (const roh of zeilen) {
-    if (!roh.trim()) continue;
-    let m; try { m = JSON.parse(roh); } catch { continue; }
-    if (!m || (m.type !== "user" && m.type !== "assistant") || m.isMeta || m.isCompactSummary) continue;
+  const objekte = zeilen.map(parseZeile).filter(Boolean);
+  const markiert = markiereEigenes(objekte, { sperr });
+  const quelle = new Map();   // uuid → Werkzeugname, wo beleg.mjs tool/web sieht
+  for (const f of fundstellen(markiert)) {
+    if ((f.herkunft === "tool" || f.herkunft === "web") && f.uuid && !quelle.has(f.uuid)) quelle.set(f.uuid, f.werkzeug || "?");
+  }
+  for (const o of markiert) {
+    if (o?.type !== "user" || o.isSidechain || !quelle.has(String(o.uuid ?? "")) || !Array.isArray(o.message?.content)) continue;
+    for (const b of o.message.content) {
+      if (b?.type !== "tool_result") continue;
+      const t = werkzeugAusgabe(b.content);
+      if (t) werkzeugTeile.push(`Werkzeug (${quelle.get(String(o.uuid))}): ${t}`);
+    }
+  }
+  for (const m of objekte) {
     const c = m.message?.content;
+    const intern = m.isMeta || m.isCompactSummary || m.isSidechain;
+    if ((m.type !== "user" && m.type !== "assistant") || intern) continue;
     let texte = [];
     if (typeof c === "string") texte = [c];
     else if (Array.isArray(c)) {
       if (m.type === "user" && c.some(x => x?.type === "tool_result")) continue;
       texte = c.filter(x => x?.type === "text" && typeof x.text === "string").map(x => x.text);
     }
-    texte = texte.map(t => t.trim()).filter(t => t && !t.startsWith("<"));
+    texte = texte.map(t => ohneEingespieltes(t)).filter(t => t && !t.startsWith("<") && !istSystemNachricht(t));
     if (!texte.length) continue;
     if (m.type === "user") {
       if (texte.every(t => t.startsWith("/"))) continue;   // Slash-Befehle zählen nicht
@@ -181,16 +219,40 @@ export function leseTranskript(pfad, { ab = 0 } = {}) {
       if (sauber) teile.push(`${wer}: ${sauber}`);
     }
   }
+  // Werkzeug-Ausgaben: neueste zuerst ins Budget, dann wieder in Zeitfolge.
+  const gewaehlt = [];
+  let laenge = 0;
+  for (let i = werkzeugTeile.length - 1; i >= 0; i--) {
+    const l = werkzeugTeile[i].length + 2;
+    if (laenge + l > MAX_WERKZEUGE) break;
+    gewaehlt.unshift(werkzeugTeile[i]);
+    laenge += l;
+  }
+  const werkzeuge = gewaehlt.join("\n\n");
+  const budget = MAX_TRANSKRIPT - (werkzeuge ? WERKZEUG_KOPF.length + werkzeuge.length + 1 : 0);
   let text = teile.join("\n\n");
-  if (text.length > MAX_TRANSKRIPT) {
-    text = text.slice(-MAX_TRANSKRIPT);
+  if (text.length > budget) {
+    text = text.slice(-budget);
     const nl = text.indexOf("\n");
     if (nl >= 0) text = text.slice(nl + 1);              // halbe erste Zeile weg
   }
-  return { prompts, text, bis };
+  return { prompts, text, werkzeuge, bis };
 }
 
 // ---------- Antwort ----------
+
+const ZITAT_ZEILE = /^[*_>\s-]*zitat[*_]*\s*:[*_]*\s*(.*)$/i;
+const VORSATZ = /^(?:nutzer|werkzeug\s*\([^)]*\))\s*:\s*/i;
+const HUELLEN = [["\"", "\""], ["„", "“"], ["“", "”"], ["«", "»"], ["‚", "‘"], ["'", "'"]];
+// „Zitat: Werkzeug (Bash): „…““ → der reine Auszug (Vorsatz und eine äußere Anführungs-Hülle weg, zweimal).
+export function saubereZitat(roh) {
+  let z = String(roh ?? "").trim();
+  for (let i = 0; i < 2; i++) {
+    z = z.replace(VORSATZ, "").trim();
+    for (const [a, b] of HUELLEN) if (z.length >= 2 && z.startsWith(a) && z.endsWith(b)) { z = z.slice(a.length, -b.length).trim(); break; }
+  }
+  return z;
+}
 
 export function parseAntwort(ausgabe, art) {
   const t = String(ausgabe || "").replace(/\r\n?/g, "\n").trim();
@@ -199,9 +261,16 @@ export function parseAntwort(ausgabe, art) {
   for (const block of t.split(/^###[ \t]+/m).slice(1)) {
     const [kopf, ...rest] = block.split("\n");
     const titel = kopf.trim().slice(0, 60);
-    let text = rest.join("\n").trim();
+    let zitat = "";
+    const zeilen = [];
+    for (const z of rest) {
+      const m = ZITAT_ZEILE.exec(z.trim());
+      if (m) { if (!zitat) zitat = saubereZitat(m[1]); continue; }   // die Zitat-Zeile gehört nicht zum Text
+      zeilen.push(z);
+    }
+    let text = zeilen.join("\n").trim();
     if (art === "stand") text = text.split("\n").slice(0, 12).join("\n");
-    if (titel && text) out.push({ titel, text });
+    if (titel && text) out.push({ titel, text, zitat });
   }
   return out.slice(0, art === "stand" ? 1 : 5);
 }
@@ -343,14 +412,15 @@ async function ernteLauf(vault, { art, transkript, sid = "", cwd = "", claudeBef
       // Sitzung nie denselben Teil doppelt.
       const ab = art === "fakt" ? leseFaktStand(vault, reinSid) : 0;
       let gelesen;
-      try { gelesen = leseTranskript(transkript, { ab }); } catch { return ergebnis("uebersprungen", "Transkript nicht lesbar"); }
+      const sperr = sperrPfade(vault, werte.ernteNichtIn);
+      try { gelesen = leseTranskript(transkript, { ab, sperr }); } catch { return ergebnis("uebersprungen", "Transkript nicht lesbar"); }
       if (ab > 0 && gelesen.bis <= ab) return ergebnis("uebersprungen", "nichts Neues");
       // Folgelauf derselben Sitzung: die Sitzung war schon lang genug, ein neuer Prompt reicht.
       if (gelesen.prompts < (ab > 0 ? 1 : MIN_PROMPTS)) return ergebnis("uebersprungen", "zu kurze Sitzung");
       if (!gelesen.text) return ergebnis("uebersprungen", "kein Text");
       if (!claudeBefehl) { protokoll("fehler", 0, 0, " grund=claude-fehlt"); return ergebnis("fehler", "claude nicht gefunden"); }
 
-      const eingabe = VERLAUF_KOPF + gelesen.text + "\n";
+      const eingabe = VERLAUF_KOPF + gelesen.text + "\n" + (gelesen.werkzeuge ? WERKZEUG_KOPF + gelesen.werkzeuge + "\n" : "");
       const einZeichen = auftrag(art).length + eingabe.length;
       const r = await rufeClaude(claudeBefehl, art, eingabe, vault);
       const antwort = r.fehler ? null : leseClaudeAntwort(r.ausgabe);
@@ -359,14 +429,27 @@ async function ernteLauf(vault, { art, transkript, sid = "", cwd = "", claudeBef
         protokoll("fehler", einZeichen, 0, `${tokFeld(antwort?.tokens)} grund=${encodeURIComponent(fehler)}`);
         return ergebnis("fehler", fehler);
       }
+      // Prüfreihenfolge je Vorschlag (B1): Zugangs-/Kundendaten → verworfen; Zitat fehlt, zu kurz/lang (beleg.mjs: 12–300)
+      // oder nicht im Verlauf → ohneBeleg; nur KI → nurKi; sonst speichern. Gesucht wird im GANZEN Verlauf.
       const ids = [];
-      let verworfen = 0;
+      const n = { verworfen: 0, ohneBeleg: 0, nurKi: 0 };
+      let alle = null;
       for (const v of parseAntwort(antwort.text, art)) {
-        if (findeSecrets(`${v.titel}\n${v.text}`).length) { verworfen++; continue; }
-        try { ids.push(schreibeVorschlag(vault, { art, titel: v.titel, text: v.text, ordner: cwd, sitzung: sid }, new Date(jetzt))); }
-        catch { verworfen++; }
+        if (findeSecrets(`${v.titel}\n${v.text}\n${v.zitat}`).length || hatSecretsImKontext(v.zitat) || hatPii(v.zitat)) { n.verworfen++; continue; }
+        alle ??= markiereEigenes(ladeTranskript(transkript), { sperr });
+        const fund = v.zitat ? findeZitat(alle, v.zitat) : null;
+        if (!fund) { n.ohneBeleg++; continue; }
+        if (fund.herkunft === "ki") { n.nurKi++; continue; }
+        try {
+          ids.push(schreibeVorschlag(vault, {
+            art, titel: v.titel, text: v.text, ordner: cwd, sitzung: sid,
+            zitat: v.zitat.replace(/\s+/g, " ").trim().slice(0, MAX_ZITAT), herkunft: fund.herkunft,
+            fundstelle: baueFundstelle({ sitzung: reinSid, uuid: fund.uuid, zeit: fund.zeit }),
+            quelleUrl: fund.herkunft === "web" ? webAdresse(alle, fund.uuid) : "",
+          }, new Date(jetzt)));
+        } catch { n.verworfen++; }
       }
-      protokoll("ok", einZeichen, antwort.text.length, `${tokFeld(antwort.tokens)} vorschlaege=${ids.length} verworfen=${verworfen}`);
+      protokoll("ok", einZeichen, antwort.text.length, `${tokFeld(antwort.tokens)} vorschlaege=${ids.length} verworfen=${n.verworfen} ohneBeleg=${n.ohneBeleg} nurKi=${n.nurKi}`);
       if (art === "fakt") schreibeFaktStand(vault, reinSid, gelesen.bis);
       return ergebnis("ok", null, ids);
     } finally { try { unlinkSync(lock); } catch {} }

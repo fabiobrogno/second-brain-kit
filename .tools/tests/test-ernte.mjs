@@ -115,7 +115,7 @@ test("leseTranskript: nur Nutzer-/Assistenten-Text, keine Tool-Ergebnisse, keine
 
 test("ernte: gesendeter Text ohne Secret/Tool-Ergebnis, ≤ 24 000 + Auftrag; 2 Vorschläge, einer mit Token-Köder → genau 1 geschrieben", async () => {
   const v = neuerVault();
-  const fake = fakeUmgebung({ ausgabe: `### Testbrett-Port\nDas Testbrett läuft auf Port 4711.\n\n### Zugang\nDer Zugang ist ${KOEDER_SCHLUESSEL}.\n` });
+  const fake = fakeUmgebung({ ausgabe: `### Testbrett-Port\nDas Testbrett läuft auf Port 4711.\nZitat: das Testbrett läuft auf Port 4711\n\n### Zugang\nDer Zugang ist ${KOEDER_SCHLUESSEL}.\n` });
   const r = await ernte(v, { art: "fakt", transkript: transkript({ langerText: "x".repeat(9000) }), sid: "sid-42", cwd: "/projekte/beispiel", claudeBefehl: FAKE_BEFEHL, jetzt: Date.UTC(2026, 9, 2, 9, 0, 0) });
   assert.equal(r.status, "ok");
   assert.equal(r.vorschlaege.length, 1);
@@ -134,17 +134,18 @@ test("ernte: gesendeter Text ohne Secret/Tool-Ergebnis, ≤ 24 000 + Auftrag; 2 
   assert.match(datei, /art: fakt/);
   assert.match(datei, /quelle_ordner: "\/projekte\/beispiel"/);
   assert.match(datei, /quelle_sitzung: "sid-42"/);
+  assert.match(datei, /\nzitat: "das Testbrett läuft auf Port 4711"\nherkunft: du\nfundstelle: "sid-42#\? \?"\n/);
   assert.ok(!datei.includes("xyz"));
   const log = readFileSync(join(v, ".logs", "ernte.log"), "utf8").trim().split("\n");
   assert.equal(log.length, 1);
-  assert.match(log[0], /^2026-10-02T09:00:00 art=fakt status=ok ein=\d+ aus=\d+ tokEin=\d+ tokAus=\d+ vorschlaege=1 verworfen=1$/);
+  assert.match(log[0], /^2026-10-02T09:00:00 art=fakt status=ok ein=\d+ aus=\d+ tokEin=\d+ tokAus=\d+ vorschlaege=1 verworfen=1 ohneBeleg=0 nurKi=0$/);
   assert.ok(!existsSync(join(v, ".logs", "ernte", "lauf.lock")), "Lock wieder frei");
 });
 
 test("ernte stand: höchstens ein Vorschlag, höchstens 12 Zeilen; NICHTS → keiner", async () => {
   const v = neuerVault();
   const zeilen = Array.from({ length: 20 }, (_, i) => `- Punkt ${i + 1}`).join("\n");
-  fakeUmgebung({ ausgabe: `### Stand Testbrett\n${zeilen}\n\n### Zweiter\nwird ignoriert\n` });
+  fakeUmgebung({ ausgabe: `### Stand Testbrett\n${zeilen}\nZitat: Frage 1 zum Testbrett\n\n### Zweiter\nwird ignoriert\n` });
   const r = await ernte(v, { art: "stand", transkript: transkript(), sid: "s", cwd: "/p", claudeBefehl: FAKE_BEFEHL });
   assert.equal(r.status, "ok");
   assert.equal(r.vorschlaege.length, 1);
@@ -244,7 +245,7 @@ test("parseAntwort: höchstens 5 Fakten, Titel ≤ 60 Zeichen, NICHTS → leer",
 
 test("CLI: --art/--transkript/--sid/--cwd + Vault-Pfad mit Leerzeichen; BRAIN_CLAUDE-Haken, keine Ausgabe", () => {
   const v = neuerVault();
-  const fake = fakeUmgebung({ ausgabe: "### CLI-Fakt\nKommt über die Kommandozeile.\n" });
+  const fake = fakeUmgebung({ ausgabe: "### CLI-Fakt\nKommt über die Kommandozeile.\nZitat: Frage 3 zum Testbrett\n" });
   const env = { ...process.env, BRAIN_CLAUDE: FAKE, PATH: LEER_PATH, HOME: TEMP_HOME, USERPROFILE: TEMP_HOME };
   delete env.BRAIN_ERNTE;
   const r = spawnSync(process.execPath, [ERNTE_CLI, "--art", "fakt", "--transkript", transkript(), "--sid", "sid-cli", "--cwd", "/projekte/cli", v], { env, encoding: "utf8", windowsHide: true });
@@ -286,7 +287,7 @@ function koederTranskript() {
 
 test("ernte: Passwort/Kennwort/sk-ant/AKIA/ghp_/ganzer Private-Key-Block → nie gesendet, nie im Vorschlag", async () => {
   const v = neuerVault();
-  const fake = fakeUmgebung({ ausgabe: `### Zugang\n${KOEDER.pw}\n\n### Schlüssel\nNimm ${KOEDER.skAnt}.\n\n### Mondstein\nDer Server heißt Mondstein.\n` });
+  const fake = fakeUmgebung({ ausgabe: `### Zugang\n${KOEDER.pw}\n\n### Schlüssel\nNimm ${KOEDER.skAnt}.\n\n### Mondstein\nDer Server heißt Mondstein.\nZitat: Der Server heißt Mondstein.\n` });
   const r = await ernte(v, { art: "fakt", transkript: koederTranskript(), sid: "s", cwd: "/p", claudeBefehl: FAKE_BEFEHL });
   assert.equal(r.status, "ok");
   const gesendet = readFileSync(fake.log, "utf8");
@@ -347,7 +348,7 @@ test("leseClaudeAntwort: JSON mit result/usage → Text + Token (inkl. Cache); o
 test("ernte: Ausgabe ohne JSON oder ohne usage → trotzdem Vorschläge, Log nur mit Zeichen (kein tokEin)", async () => {
   for (const art of [{ roh: true }, { ohneUsage: true }]) {
     const v = neuerVault();
-    fakeUmgebung({ ausgabe: "### Fakt\nText.\n", ...art });
+    fakeUmgebung({ ausgabe: "### Fakt\nText.\nZitat: Frage 1 zum Testbrett\n", ...art });
     const r = await ernte(v, { art: "fakt", transkript: transkript(), sid: "s", cwd: "/p", claudeBefehl: FAKE_BEFEHL });
     assert.equal(r.status, "ok"); assert.equal(r.vorschlaege.length, 1);
     const log = readFileSync(join(v, ".logs", "ernte.log"), "utf8");
@@ -368,11 +369,11 @@ test("fakt je Sitzung: Marke erst nach Erfolg, mit Transkript-Stand; Folgelauf e
   fakeUmgebung({ ausgabe: "### A\nB\n", exit: 1 });
   assert.equal((await ernte(v, { art: "fakt", transkript: tr, sid: "sid-x", cwd: "/p", claudeBefehl: FAKE_BEFEHL })).status, "fehler");
   assert.ok(!existsSync(marke), "keine Marke nach Fehler");
-  let fake = fakeUmgebung({ ausgabe: "### Erster\nTeil.\n" });
+  let fake = fakeUmgebung({ ausgabe: "### Erster\nTeil.\nZitat: Frage 1 zum Testbrett\n" });
   assert.equal((await ernte(v, { art: "fakt", transkript: tr, sid: "sid-x", cwd: "/p", claudeBefehl: FAKE_BEFEHL })).status, "ok");
   assert.ok(existsSync(marke));
   assert.equal(JSON.parse(readFileSync(marke, "utf8")).bis, readFileSync(tr).length);
-  fake = fakeUmgebung({ ausgabe: "### Zweiter\nTeil.\n" });
+  fake = fakeUmgebung({ ausgabe: "### Zweiter\nTeil.\nZitat: Spaeter Frage 2\n" });
   assert.deepEqual(await ernte(v, { art: "fakt", transkript: tr, sid: "sid-x", cwd: "/p", claudeBefehl: FAKE_BEFEHL }), { status: "uebersprungen", grund: "nichts Neues", vorschlaege: [] });
   assert.ok(!existsSync(fake.log), "ohne neuen Teil kein Aufruf");
   anhaengen(tr, 2, "Spaeter");
