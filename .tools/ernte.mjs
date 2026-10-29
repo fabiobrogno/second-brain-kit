@@ -244,11 +244,12 @@ export function leseTranskript(pfad, { ab = 0, sperr = [] } = {}) {
 const ZITAT_ZEILE = /^[*_>\s-]*zitat[*_]*\s*:[*_]*\s*(.*)$/i;
 const VORSATZ = /^(?:nutzer|werkzeug\s*\([^)]*\))\s*:\s*/i;
 const HUELLEN = [["\"", "\""], ["„", "“"], ["“", "”"], ["«", "»"], ["‚", "‘"], ["'", "'"]];
-// „Zitat: Werkzeug (Bash): „…““ → der reine Auszug (Vorsatz und eine äußere Anführungs-Hülle weg, zweimal).
+// „Zitat: Werkzeug (Bash): „…““ → der reine Auszug (Vorsatz, Fett/Code und äußere Anführungs-Hülle weg).
 export function saubereZitat(roh) {
   let z = String(roh ?? "").trim();
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     z = z.replace(VORSATZ, "").trim();
+    z = z.replace(/^(\*\*|__|`)(.+)\1$/s, "$2").trim();   // fett/Code um das ganze Zitat
     for (const [a, b] of HUELLEN) if (z.length >= 2 && z.startsWith(a) && z.endsWith(b)) { z = z.slice(a.length, -b.length).trim(); break; }
   }
   return z;

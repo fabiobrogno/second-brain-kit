@@ -133,3 +133,9 @@ test("leseTranskript/ernte: Werkzeug-Ausgaben gehen gefiltert mit — tool/web j
   assert.ok(gesendet.includes(WERKZEUG_KOPF + "Werkzeug ("), "Werkzeug-Abschnitt nach dem Verlauf");
   assert.ok(!gesendet.includes("Koeder123") && !gesendet.includes("Schneckenkragen"));
 });
+
+test("saubereZitat: fettes oder in Backticks gesetztes Zitat verliert die Auszeichnung", () => {
+  assert.equal(saubereZitat("**„die Reihe 3 liegt links“**"), "die Reihe 3 liegt links");
+  assert.equal(saubereZitat("`Nutzer: \"Reihe 3 liegt links\"`"), "Reihe 3 liegt links");
+  assert.equal(saubereZitat("__Reihe 3 liegt links__"), "Reihe 3 liegt links");
+});
