@@ -84,7 +84,7 @@ test("SessionEnd mit ernteSitzungsende an: startet die Ernte losgelöst (--art f
 test("fakt: PreCompact „zu kurz“ → SessionEnd erntet trotzdem; danach ohne Neues kein zweiter Aufruf", async () => {
   const v = neuerVault({ ernteSitzungsende: true }), tr = transkript(3);
   const d = mkdtempSync(join(tmpdir(), "ausloeser-kurz-"));
-  writeFileSync(join(d, "ausgabe.txt"), "### Beet\nErst Kompost.\n");
+  writeFileSync(join(d, "ausgabe.txt"), "### Beet\nErst Kompost.\nZitat: Wie plane ich das Gemüsebeet Nummer 0 im Frühling?\n");
   const env = basisEnv({ BRAIN_VAULT: v, BRAIN_CLAUDE: FAKE_CLAUDE, FAKE_CLAUDE_LOG: join(d, "eingabe.txt"), FAKE_CLAUDE_AUSGABE: join(d, "ausgabe.txt") });
   const offen = join(v, ".logs", "ernte", "offen", "sitzung-abc123.json");
   const weg = async (f, ms = 15000) => { const ende = Date.now() + ms; while (Date.now() < ende && existsSync(f)) await new Promise(r => setTimeout(r, 50)); return !existsSync(f); };
