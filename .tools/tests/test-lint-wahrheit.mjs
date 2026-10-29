@@ -2,13 +2,14 @@
 // Temp-Vaults mit Leerzeichen/Umlaut/Apostroph, HOME auf Temp; --struktur = pre-commit-Modus (nur Blockierendes, Exit 2).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const LINT = join(fileURLToPath(new URL("..", import.meta.url)), "brain-lint.mjs");
+const KIT = fileURLToPath(new URL("..", import.meta.url));
+const LINT = join(KIT, "brain-lint.mjs");
 const TEMP_HOME = mkdtempSync(join(tmpdir(), "brain lint wahrheit home "));
 const OHNE_GIT = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && !k.startsWith("BRAIN_")));
 
@@ -79,4 +80,32 @@ test("Lint FAKT-BELEG (--struktur): fehlender Beleg blockiert; vorhandener ok; H
   const r2 = lint(vaultMit({ "09_wiki/garten/thema_beet.md": seite("thema_beet", { body: `${hand}\n${ok}\n- Kompost · Stand 21.10.2026` }), ...beleg }, { cfg }), true);
   assert.equal(r2.status, 2);
   assert.deepEqual(mit(r2.zeilen, "FAKT-BELEG:"), ["FAKT-BELEG: garten/thema_beet.md — „Kompost“ ohne Beleg-Link — Format: - <Aussage> · Stand TT.MM.JJJJ · [[<cluster>/belege/<JJJJ-MM>/<id>]]"]);
+});
+
+test("brain-index: .logs/aliasse.json und Kartenzeile „Auch genannt“; Seite ohne Feld behält ihre Karte", () => {
+  const v = vaultMit({
+    "09_wiki/technik/entitaet_nucleus.md": seite("nucleus", { fm: "auch_genannt: [\"Nucleus Base\", \"nucleus-core\"]\n" }),
+    "09_wiki/technik/thema_beet.md": seite("thema_beet"),
+  });
+  const r = spawnSync(process.execPath, [join(KIT, "brain-index.mjs"), v], { encoding: "utf8", env: { ...OHNE_GIT, HOME: TEMP_HOME, USERPROFILE: TEMP_HOME }, windowsHide: true });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(v, ".logs", "aliasse.json"), "utf8")), { version: 1,
+    seiten: { "09_wiki/technik/entitaet_nucleus.md": ["nucleus-base", "nucleus-core"] },
+    namen: { beet: ["09_wiki/technik/thema_beet.md"], nucleus: ["09_wiki/technik/entitaet_nucleus.md"],
+      "nucleus-base": ["09_wiki/technik/entitaet_nucleus.md"], "nucleus-core": ["09_wiki/technik/entitaet_nucleus.md"] } });
+  assert.match(readFileSync(join(v, ".logs", "hint-karten", "entitaet_nucleus.md"), "utf8"), /\n\nAuch genannt: Nucleus Base · nucleus-core\n\nAbschnitte: /);
+  assert.ok(!readFileSync(join(v, ".logs", "hint-karten", "thema_beet.md"), "utf8").includes("Auch genannt"));
+});
+
+test("Lint ALIAS (--struktur) blockiert Formatfehler; Alias-Dublette nur im Normalmodus als DOPPELTER NAME, nie blockierend", () => {
+  const k = lint(vaultMit({ "09_wiki/technik/entitaet_nucleus.md": seite("nucleus", { fm: "auch_genannt: nucleus-base\n" }) }), true);
+  assert.equal(k.status, 2);
+  assert.deepEqual(mit(k.zeilen, "ALIAS:"), ["ALIAS: technik/entitaet_nucleus.md — kein gültiges JSON — Format: auch_genannt: [\"…\", \"…\"]"]);
+  const doppelt = vaultMit({
+    "09_wiki/technik/entitaet_nucleus.md": seite("nucleus", { fm: "auch_genannt: [\"Kern\"]\n" }),
+    "09_wiki/technik/entitaet_kern.md": seite("kern"),
+  });
+  assert.equal(lint(doppelt, true).status, 0);
+  assert.deepEqual(mit(lint(doppelt).zeilen, "DOPPELTER NAME:"),
+    ["DOPPELTER NAME: technik/entitaet_kern.md · technik/entitaet_nucleus.md — Name „kern“ (auch_genannt) zeigt auf mehrere Seiten — Alias eindeutig machen"]);
 });

@@ -5,6 +5,7 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Entity aliases** (B1, `.tools/aliasse.mjs`): front matter `auch_genannt: ["nucleus", "nucleus-base"]` (JSON list, at most 10 names of 60 characters). The indexer writes `.logs/aliasse.json` (name → pages) and adds an "Auch genannt: …" line to the search card, so a hint also finds an entity under its alias; pages without the field keep their card byte for byte. Lint reports `ALIAS` (bad format, blocking in the pre-commit) and, in normal mode only, `DOPPELTER NAME` when an alias points at several pages (extends the existing finding, never blocking).
 - Evidence rules for the harvest (`.tools/beleg.mjs`): find a quote in a transcript (whitespace and typographic characters normalised, case counts) and tell where it came from per role — `tool` > `du` > `web` > `ki`; injected context always counts as `ki`. Includes a test set.
 - `heikel.mjs`: rule-based check (0 tokens) that flags facts about money, legal matters, persons and access as sensitive, reusing the existing secret and PII patterns.
 - **Page fields for time and replacement** (B1): `gilt_seit`, `ersetzt_durch`, `kritisch`, `zweifel` are read by the new `.tools/seitenfelder.mjs`; lint reports `KRITISCH`, `GILT_SEIT`, `ERSETZT` (blocking in the pre-commit) and `ERSETZT-HINWEIS`, `PRÜFBEDÜRFTIG (ZWEIFEL)` (informational). `kritisch` is fail-safe: anything but `false` counts as critical.
