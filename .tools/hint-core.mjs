@@ -2,6 +2,7 @@
 // der Kopf (≤ 4 KB) getroffener Seiten für die Gültigkeit. Testbar.
 import { existsSync, openSync, readSync, closeSync } from "node:fs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
+import { leseSeitenFelder } from "./seitenfelder.mjs";
 import { frischePruefen, widerspruchZeilen, vaultLeser, frischeFehler } from "./frische.mjs";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
@@ -57,19 +58,28 @@ export function anzeigePfad(vault, rel) {
 // Spec A: Treffer auf eine abgelaufene Seite tragen „(abgelaufen seit N Tagen)“ (~5 Tokens). Gelesen wird nur der
 // Kopf der Seite und nur ausgewertet, wenn dort pruefen_bis steht. `verfall` braucht die Commit-Zeit (git) — die
 // fragt der Hinweis-Hook bewusst nicht ab (Antwortzeit); solche Seiten bleiben hier ohne Zusatz (Lint/Gehirn zeigen es).
-export function ablaufZusatz(vault, page, { jetzt = Date.now() } = {}) {
+function seitenKopf(vault, page) {
   if (!vault || typeof page !== "string" || !page.endsWith(".md")) return "";
-  let kopf = "";
   try {
     const fd = openSync(join(vault, ...page.split("/")), "r");
-    try { const b = Buffer.alloc(4096); kopf = b.subarray(0, readSync(fd, b, 0, 4096, 0)).toString("utf8"); }
+    try { const b = Buffer.alloc(4096); return b.subarray(0, readSync(fd, b, 0, 4096, 0)).toString("utf8"); }
     finally { closeSync(fd); }
   } catch { return ""; }
+}
+export function ablaufZusatz(vault, page, { jetzt = Date.now(), kopf = seitenKopf(vault, page) } = {}) {
   // nur echtes Frontmatter — ein „pruefen_bis:“ im Seitentext zählt nicht (wie in der Ansicht)
   if (!/^\uFEFF?---\r?\n/.test(kopf) || !/^pruefen_bis:/m.test(kopf)) return "";
   const g = gueltigkeit(kopf, { jetzt });
   if (g.status !== "abgelaufen") return "";
   return ` (abgelaufen seit ${g.tageUeber} ${g.tageUeber === 1 ? "Tag" : "Tagen"})`;
+}
+// B1 W6: Seite mit `ersetzt_durch` nie als aktuell zeigen (Nachfolger nennen), Seite mit `zweifel` als PRÜFBEDÜRFTIG.
+export function wahrheitZusatz(kopf) {
+  const f = leseSeitenFelder(kopf);
+  let z = "";
+  if (f.ersetztDurch) z += ` (ERSETZT durch [[${f.ersetztDurch}]] — nicht als aktuell verwenden)`;
+  if (f.zweifel) z += ` (PRÜFBEDÜRFTIG: ${f.zweifel.replace(/\s+/g, " ").slice(0, 60)})`;
+  return z;
 }
 
 // Neuere Fakten gewinnen: Treffer mit Widerspruch werden nach Datum geordnet, der Widerspruch bekommt eine Zeile.
@@ -85,7 +95,10 @@ export function mitFrische(hits, vault) {
 export function format(hits, { vault, jetzt = Date.now(), widersprueche = [] } = {}) {
   if (!hits.length) return "";
   let out = "Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n" +
-    hits.map(h => `- ${anzeigePfad(vault, h.page)}${h.import ? "" : ablaufZusatz(vault, h.page, { jetzt })} — ${h.description.slice(0, 90)}`).join("\n");
+    hits.map(h => {
+      const kopf = h.import ? "" : seitenKopf(vault, h.page);
+      return `- ${anzeigePfad(vault, h.page)}${h.import ? "" : ablaufZusatz(vault, h.page, { jetzt, kopf }) + wahrheitZusatz(kopf)} — ${h.description.slice(0, 90)}`;
+    }).join("\n");
   // Beide Treffer im selben Themenordner → dessen generierte Übersicht anbieten (nur wenn sie existiert)
   const ordner = [...new Set(hits.map(h => dirname(h.page)))];
   if (vault && hits.length >= 2 && ordner.length === 1 && ordner[0].split("/").length >= 3) {

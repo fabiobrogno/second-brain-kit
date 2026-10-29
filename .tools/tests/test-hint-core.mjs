@@ -132,3 +132,24 @@ test("Systemnachrichten werden nie durchsucht; Lücken nur bei echten Wissensfra
   assert.equal(istWissensfrage("ich sag dir ehrlich ich find das richtig krass"), false);
   assert.equal(shouldQuery("mach das bitte schnell fertig und sichere alles"), true);
 });
+
+test("format (W6): ersetzte Seite nennt den Nachfolger, Zweifel → PRÜFBEDÜRFTIG, normale Seite bleibt unverändert", () => {
+  const v = mkdtempSync(join(tmpdir(), "hint-w6-"));
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  const seite = (fm) => `---\nname: x\ndescription: d\n${fm}---\n\n# X\n`;
+  writeFileSync(join(v, "wiki", "alt.md"), seite('ersetzt_durch: "[[neu]]"\n'));
+  writeFileSync(join(v, "wiki", "zw.md"), seite('zweifel: "2026-10-22: Nutzer sagt, abends gießen"\n'));
+  writeFileSync(join(v, "wiki", "ok.md"), seite(""));
+  const h = (p) => ({ page: `wiki/${p}.md`, score: 0.9, description: "d" });
+  const out = format([h("alt"), h("zw"), h("ok")], { vault: v });
+  assert.match(out, /alt\.md \(ERSETZT durch \[\[neu\]\] — nicht als aktuell verwenden\) — d/);
+  assert.match(out, /zw\.md \(PRÜFBEDÜRFTIG: 2026-10-22: Nutzer sagt, abends gießen\) — d/);
+  assert.match(out, /ok\.md — d$/m);
+});
+test("format (W6): ungültiges ersetzt_durch und Seiten ohne Vault erzeugen keinen Zusatz", () => {
+  const v = mkdtempSync(join(tmpdir(), "hint-w6b-"));
+  mkdirSync(join(v, "wiki"), { recursive: true });
+  writeFileSync(join(v, "wiki", "kaputt.md"), "---\nname: x\ndescription: d\nersetzt_durch: neu\n---\n\n# X\n");
+  assert.doesNotMatch(format([{ page: "wiki/kaputt.md", score: 0.9, description: "d" }], { vault: v }), /ERSETZT/);
+  assert.doesNotMatch(format([{ page: "wiki/kaputt.md", score: 0.9, description: "d" }]), /ERSETZT/);
+});
