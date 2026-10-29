@@ -68,3 +68,15 @@ test("Lint Seitenfelder: Kette und Zweifel blockieren nicht; noch verlinkte alte
   const r = n.find((z) => z.startsWith("PRÜFBEDÜRFTIG (ZWEIFEL)")).match(/^PRÜFBEDÜRFTIG[^:]*:\s*(.+?)(?: — |$)/);
   assert.equal(r[1], "garten/thema_neu.md", "analyse.mjs/ansicht lesen die Seite mit diesem Muster");
 });
+
+test("Lint FAKT-BELEG (--struktur): fehlender Beleg blockiert; vorhandener ok; Hand-Stichpunkte wie auf der Live-Seite nie", () => {
+  const cfg = { clusters: [{ id: "20_garten", name: "Garten" }] };
+  const ok = "- Möhren ab April · Stand 21.10.2026 · [[20_garten/belege/2026-10/b-1]]";
+  const hand = "## Fakten\n- Umsatz läuft gut (Stand 19.10.)\n- Stand: Markenbuch v1 fertig\n- Shop live, Stand 21.10.2026";
+  const beleg = { "20_garten/belege/2026-10/b-1.md": "# Beleg b-1\n" };
+  const r1 = lint(vaultMit({ "09_wiki/garten/thema_beet.md": seite("thema_beet", { body: `${hand}\n${ok}` }), ...beleg }, { cfg }), true);
+  assert.equal(r1.status, 0, r1.zeilen.join("\n"));
+  const r2 = lint(vaultMit({ "09_wiki/garten/thema_beet.md": seite("thema_beet", { body: `${hand}\n${ok}\n- Kompost · Stand 21.10.2026` }), ...beleg }, { cfg }), true);
+  assert.equal(r2.status, 2);
+  assert.deepEqual(mit(r2.zeilen, "FAKT-BELEG:"), ["FAKT-BELEG: garten/thema_beet.md — „Kompost“ ohne Beleg-Link — Format: - <Aussage> · Stand TT.MM.JJJJ · [[<cluster>/belege/<JJJJ-MM>/<id>]]"]);
+});

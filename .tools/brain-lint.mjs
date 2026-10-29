@@ -14,6 +14,7 @@ import { gitBefehl } from "./werkzeug.mjs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
 import { leseSeitenFelder, pruefeSeitenFelder } from "./seitenfelder.mjs";
+import { pruefeFaktBelege } from "./fakten.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
@@ -41,6 +42,7 @@ const linked = new Set(graph.edges.filter(e => !e.source.split(sep).pop().starts
   .map(e => e.target.split(sep).join("/")).filter(t => t.startsWith(wikiName + "/")).map(t => t.slice(wikiName.length + 1)));
 // B1: ersetzte Seiten (alt → Nachfolger, beide relativ zum Wiki) für Ketten und noch bestehende Links nach der Schleife
 const ersetzt = new Map();
+const clusterIds = (cfg.clusters || []).map((c) => c?.id).filter(Boolean);
 for (const p of pages) {
   const full = join(wikiDir, p);
   const raw = entferneBom(readFileSync(full, "utf8")).replace(/\r\n/g, "\n"); // BOM weg, CRLF (Windows-Checkout) wie LF behandeln
@@ -103,6 +105,8 @@ for (const p of pages) {
     else ersetzt.set(p, zielRel);
   }
   if (sf.zweifel) findings.push(`PRÜFBEDÜRFTIG (ZWEIFEL): ${p} — ${sf.zweifel.replace(/\s+/g, " ").slice(0, 120)}`);
+  // B1 Fakt-Zeilen (fakten.mjs): jede „ · Stand TT.MM.JJJJ“-Listenzeile braucht einen existierenden Beleg-Link
+  for (const b of pruefeFaktBelege(raw, { existiert: (z) => idSet.has(`${z}.md`), cluster: clusterIds })) findings.push(`FAKT-BELEG: ${p} — ${b.meldung}`);
 }
 // Ersetzte Seiten: Kette (Nachfolger selbst ersetzt) und — nur im Normalmodus, braucht die Kanten — eingehende Links
 // von anderen Wiki-Seiten als dem Nachfolger. Nicht blockierend: der Tageslauf ersetzt zuerst und stellt Links danach um.
@@ -120,7 +124,7 @@ for (const [alt, neu] of ersetzt) {
 }
 for (const g of doppelteNamen(ids, (id) => istWikiSeite(id, wikiName))) findings.push(`DOPPELTER NAME: ${g.join(" · ")} — [[Link]] löst mehrdeutig auf, einen umbenennen`);
 // Blockierende Klassen (pre-commit). Struktur-Modus endet hier.
-const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG|KRITISCH|GILT_SEIT|ERSETZT(?=:))\b/;
+const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG|KRITISCH|GILT_SEIT|ERSETZT(?=:)|FAKT-BELEG)\b/;
 if (struktur) {
   const b = findings.filter(f => BLOCKIEREND.test(f));
   b.forEach(f => console.log("- " + f));
