@@ -17,11 +17,17 @@ Bindet den Brain-Vault in Claude Code ein: Hooks, Statusline und Slash-Commands.
   Sicherung (Schalter `sicherungTaeglich`), Memory-Sync, Update-Check (Schalter `updateHinweis`).
 - `brain-hint.mjs` (UserPromptSubmit) — lokaler Brain-Hinweis über QMD-Vektorsuche (0 API-Tokens). Stufe
   `hinweise` (aus/niedrig/mittel/hoch), Import-Treffer mit „(Import, ungeprüft)“, Lücken (Schalter `luecken`),
-  startet beim Stand-Intervall (`staendeIntervallStunden`) die Ernte `--art stand` losgelöst.
+  startet beim Stand-Intervall (`staendeIntervallStunden`) die Ernte `--art stand` losgelöst. Treffer auf eine Seite
+  mit `ersetzt_durch` tragen den Zusatz „(ERSETZT durch [[neu]] — nicht als aktuell verwenden)“, Seiten mit `zweifel`
+  „(PRÜFBEDÜRFTIG: <Zweifel-Text, höchstens 60 Zeichen>)“; bei zwei Treffern zum selben Thema mit verschiedenen Werten rückt der neuere vor.
 - `ernte-ausloeser.mjs` (SessionEnd, PreCompact) — startet `.tools/ernte.mjs --art fakt` losgelöst, wenn
   `ernteSitzungsende` an ist; gibt nie etwas aus. Vorher legt er eine Auftrags-Marke `.logs/ernte/offen/<sid>.json`
   an, die `ernte.mjs` nach Abschluss entfernt. Bleibt sie liegen (Lauf mit Claude Code beendet, z. B. Windows),
   startet `session-start.mjs` sie beim nächsten Start neu; Marken älter als 7 Tage werden dort aufgeräumt.
+  Mit `fakt` startet er zusätzlich das Fehler-Signal W7 (`.tools/w7.mjs`, 0 Tokens): Folgt auf eine Antwort nach
+  einem Brain-Hinweis eine Korrektur, landet {Seite, Sitzung, Zitat der Korrektur} in `.logs/w7.jsonl` (jeder Fund
+  genau einmal). Die Ernte speichert nur Vorschläge mit wörtlichem Zitat aus Nutzer- oder Werkzeug-Text (`zitat`,
+  `herkunft`, `fundstelle`); `ernte.log` zählt `ohneBeleg` und `nurKi`.
 - `werkzeug-protokoll.mjs` (PreToolUse: `Read|mcp__.*`, eigener Eintrag) — Werkzeug-Protokoll für das
   Aufleuchten und die MCP-Nutzung; gibt nie etwas aus.
 - `wiki-guard.mjs` (PreToolUse: Edit/Write/MultiEdit/NotebookEdit) — Riegel: `09_wiki/` nur über `/ingest`
@@ -66,4 +72,5 @@ bash .tools/tests/test-session-hintergrund.sh
 bash .tools/tests/test-config-kaputt.sh
 bash .tools/tests/test-pflege.sh
 node --test .tools/tests/test-ernte-ausloeser.mjs
+node --test .tools/tests/test-w7.mjs .tools/tests/test-ernte-beleg.mjs .tools/tests/test-hint-core.mjs
 ```

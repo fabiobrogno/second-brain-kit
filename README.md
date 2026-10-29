@@ -172,6 +172,10 @@ transcript (at most 24,000 characters) — outside your session, so it uses none
 context. It returns at most five short facts or one status note, which land as **suggestions** in the
 control center.
 
+- **Every fact needs proof:** Haiku must add a verbatim quote from your own words or from a tool result (a file it
+  read, a command it ran, a web page). A script checks that the quote really is in the transcript. Facts without a
+  quote, or backed only by the AI's own words or by text injected from your brain, are dropped and counted in
+  `.logs/ernte.log`.
 - **Never secrets:** lines that look like passwords, keys or connection strings are dropped before Haiku
   sees the text, and the result is checked again before it is saved.
 - **Excluded folders:** list folders where it must never run (for example a client or company folder) under
@@ -372,8 +376,9 @@ automatically at the start of each session (currently only there).
   - **The backup you chose** (your own private GitHub repo) — nothing if you picked no backup or a folder.
   - **A version check** against the public release list, at most once a day, without an account. Turn it
     off with `"update": { "pruefen": false }` in `brain.config.json`.
-  - **The background harvest, only if you switch it on:** a short excerpt of the session (secrets removed)
-    goes to Claude Haiku through your own Claude Code — the same provider your conversation already uses.
+  - **The background harvest, only if you switch it on:** a short excerpt of the session and of its tool
+    output (secrets and customer data removed) goes to Claude Haiku through your own Claude Code — the same
+    provider your conversation already uses.
   Offline is fine — everything stays silent and the brain keeps working. The 3D view and the control center
   need no internet at all: three.js, fonts and the brain model ship with the kit, and the view's service
   listens only on `127.0.0.1`.
