@@ -15,6 +15,7 @@ import { gueltigkeit } from "./gueltigkeit.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
 import { leseSeitenFelder, pruefeSeitenFelder } from "./seitenfelder.mjs";
 import { pruefeFaktBelege } from "./fakten.mjs";
+import { auchGenanntRoh, pruefeAuchGenannt, eigenerName, aliasIndex, aliasDubletten } from "./aliasse.mjs";
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
@@ -42,6 +43,7 @@ const linked = new Set(graph.edges.filter(e => !e.source.split(sep).pop().starts
   .map(e => e.target.split(sep).join("/")).filter(t => t.startsWith(wikiName + "/")).map(t => t.slice(wikiName.length + 1)));
 // B1: ersetzte Seiten (alt → Nachfolger, beide relativ zum Wiki) für Ketten und noch bestehende Links nach der Schleife
 const ersetzt = new Map();
+const aliasSeiten = [];
 const clusterIds = (cfg.clusters || []).map((c) => c?.id).filter(Boolean);
 for (const p of pages) {
   const full = join(wikiDir, p);
@@ -107,6 +109,11 @@ for (const p of pages) {
   if (sf.zweifel) findings.push(`PRÜFBEDÜRFTIG (ZWEIFEL): ${p} — ${sf.zweifel.replace(/\s+/g, " ").slice(0, 120)}`);
   // B1 Fakt-Zeilen (fakten.mjs): jede „ · Stand TT.MM.JJJJ“-Listenzeile braucht einen existierenden Beleg-Link
   for (const b of pruefeFaktBelege(raw, { existiert: (z) => idSet.has(`${z}.md`), cluster: clusterIds })) findings.push(`FAKT-BELEG: ${p} — ${b.meldung}`);
+  // B1 Aliasse (aliasse.mjs): Formatfehler blockieren wie FRAGEN; Dubletten nach der Schleife (nur Normalmodus)
+  const auchGenannt = pruefeAuchGenannt(auchGenanntRoh(fm));
+  for (const f of auchGenannt.fehler) findings.push(`ALIAS: ${p} — ${f}`);
+  const fmName = (fm.match(/^name:[ \t]*(.*)$/m) || [, ""])[1].trim().replace(/^["']|["']$/g, "");
+  aliasSeiten.push({ id: p, name: eigenerName(p, fmName), aliase: auchGenannt.aliase });
 }
 // Ersetzte Seiten: Kette (Nachfolger selbst ersetzt) und — nur im Normalmodus, braucht die Kanten — eingehende Links
 // von anderen Wiki-Seiten als dem Nachfolger. Nicht blockierend: der Tageslauf ersetzt zuerst und stellt Links danach um.
@@ -123,8 +130,11 @@ for (const [alt, neu] of ersetzt) {
   for (const q of [...quellen].sort()) findings.push(`ERSETZT-HINWEIS: ${alt} — wird noch verlinkt von ${q} (Link auf ${neu} umstellen)`);
 }
 for (const g of doppelteNamen(ids, (id) => istWikiSeite(id, wikiName))) findings.push(`DOPPELTER NAME: ${g.join(" · ")} — [[Link]] löst mehrdeutig auf, einen umbenennen`);
+if (!struktur) for (const d of aliasDubletten(aliasIndex(aliasSeiten))) {
+  findings.push(`DOPPELTER NAME: ${d.ids.join(" · ")} — Name „${d.name}“ (auch_genannt) zeigt auf mehrere Seiten — Alias eindeutig machen`);
+}
 // Blockierende Klassen (pre-commit). Struktur-Modus endet hier.
-const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG|KRITISCH|GILT_SEIT|ERSETZT(?=:)|FAKT-BELEG)\b/;
+const BLOCKIEREND = /^(FRONTMATTER|TOTER LINK|DOPPELTER NAME|AUCH|FRAGEN|ORDNER|TOTE QUELLE|CONFIG|KRITISCH|GILT_SEIT|ERSETZT(?=:)|FAKT-BELEG|ALIAS)\b/;
 if (struktur) {
   const b = findings.filter(f => BLOCKIEREND.test(f));
   b.forEach(f => console.log("- " + f));

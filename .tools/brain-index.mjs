@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { qmdPath } from "./qmd-pfad.mjs";
 import { saubereBegriffe, saubereAbschnitte, inhaltsBegriffe } from "./karten.mjs";
 import { fragenRoh, fragenZeile } from "./fragen.mjs";
+import { auchGenanntRoh, pruefeAuchGenannt, eigenerName, aliasIndex, aliasZeile } from "./aliasse.mjs";
 import { istGeneriert, istWikiSeite, resolveLink as loese } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
@@ -123,6 +124,13 @@ for (const p of wikiPages) {
 }
 for (const k of Object.keys(wikiMap.bySource)) wikiMap.bySource[k].sort();
 mkdirSync(join(vault, ".logs"), { recursive: true });
+// .logs/aliasse.json — Entitäts-Aliasse (aliasse.mjs): Name → Seiten, fürs Einordnen im Tageslauf (B2). Ungültige
+// auch_genannt-Werte fehlen hier still (der Lint meldet sie als ALIAS).
+atomic(join(vault, ".logs", "aliasse.json"), JSON.stringify(aliasIndex(wikiPages.map((p) => {
+  const roh = entferneBom(readFileSync(join(vault, p.id), "utf8")).replace(/\r\n/g, "\n");
+  const fmText = (roh.match(/^---\n([\s\S]*?)\n---\n?/) || [, ""])[1];
+  return { id: toSlash(p.id), name: eigenerName(toSlash(p.id), p.fm.name), aliase: pruefeAuchGenannt(auchGenanntRoh(fmText)).aliase };
+})), null, 2) + "\n");
 
 // .logs/hint-karten/ — eine kompakte Karteikarte je Wiki-Seite (Titel, Beschreibung, Fragen, Abschnitte, Fettbegriffe).
 // Eigene QMD-Sammlung „brainkarten": kurze, dichte Vektoren statt verwässerter Langseiten-Abschnitte.
@@ -137,11 +145,13 @@ for (const p of wikiPages) {
   const body = roh.replace(/^---\n[\s\S]*?\n---\n?/, "");
   // Feld `fragen:` (fragen.mjs): typische Fragen in den Worten der Person — nur gültige Einträge, ohne Feld keine Zeile
   const fragen = fragenZeile(fragenRoh(fmText));
+  // B1 Aliasse: andere Namen der Entität, damit der Hinweis sie auch unter dem Alias findet (ohne Feld byte-gleich)
+  const auchZeile = aliasZeile(auchGenanntRoh(fmText));
   const heads = saubereAbschnitte([...body.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()));
   let bold = saubereBegriffe([...body.matchAll(/\*\*([^*]{2,60})\*\*/g)].map(m => m[1].trim())).slice(0, 40);
   // Dünne Karte (< 8 Begriffe, typ. Tabellen-/Listenseite) → Inhalte aus Tabellen und Listen ergänzen
   if (bold.length < 8) bold = [...new Set([...bold, ...inhaltsBegriffe(body)])].slice(0, 40);
-  const karte = `# ${p.title}\n\n${p.fm.description || ""}\n\n${fragen ? fragen + "\n\n" : ""}Abschnitte: ${heads.join(" · ")}\n\nBegriffe: ${bold.join(" · ")}\n`;
+  const karte = `# ${p.title}\n\n${p.fm.description || ""}\n\n${fragen ? fragen + "\n\n" : ""}${auchZeile ? auchZeile + "\n\n" : ""}Abschnitte: ${heads.join(" · ")}\n\nBegriffe: ${bold.join(" · ")}\n`;
   const ziel = join(kartenDir, name);
   atomic(ziel, karte);
   karten.add(name);
