@@ -5,7 +5,7 @@
 // Rein (liest nur realpath für Pfadformen), wirft nie. Nur Node-Standardbibliothek.
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, isAbsolute, win32 } from "node:path";
+import { join, isAbsolute, win32, posix } from "node:path";
 
 export const HERKUNFT_WERTE = ["du", "tool", "web", "ki"];
 export const MAX_ZITAT = 300;
@@ -31,6 +31,7 @@ const faltet = (plattform) => plattform === "darwin" || plattform === "win32";
 const vergleich = (p, plattform) => { const f = fwd(p).normalize("NFC"); return faltet(plattform) ? f.toLowerCase() : f; };
 const VOR_GRENZE = /[\p{L}\p{N}_.~\/-]/u;   // davor kein Pfadzeichen
 const NACH_GRENZE = /[\p{L}\p{N}_.~-]/u;    // danach kein Namenszeichen („/“, Ende, Anführung, Leerraum sind ok)
+const NAME_OHNE_PUNKT = /[\p{L}\p{N}_~-]/u;  // ein „.“ direkt hinter dem Pfad ist nur dann Satzende, wenn kein Namenszeichen folgt
 
 // Schreibweisen eines absoluten Ordners: wie angegeben, echt (realpath), mit ~ fürs Home — immer mit „/“.
 // Relative oder leere Angaben und die Wurzel liefern nichts (nicht sicher prüfbar).
@@ -57,7 +58,8 @@ export function nenntPfad(text, formen, { plattform = process.platform } = {}) {
     if (!f) continue;
     for (let i = s.indexOf(f); i !== -1; i = s.indexOf(f, i + 1)) {
       const vor = i > 0 ? s[i - 1] : "", nach = s[i + f.length] ?? "";
-      if ((!vor || !VOR_GRENZE.test(vor)) && (!nach || !NACH_GRENZE.test(nach))) return true;
+      const satzende = nach === "." && !NAME_OHNE_PUNKT.test(s[i + f.length + 1] ?? "") && s[i + f.length + 1] !== ".";
+      if ((!vor || !VOR_GRENZE.test(vor)) && (!nach || satzende || !NACH_GRENZE.test(nach))) return true;
     }
   }
   return false;
@@ -74,16 +76,19 @@ function liegtUnter(pfad, formen, plattform) {
   const p = ohneSchluss(vergleich(pfad, plattform));
   return formen.some((f0) => { const f = vergleich(f0, plattform); return f && !f.startsWith("~") && (p === f || p.startsWith(f + "/")); });
 }
-// Liegt ein gesperrter Ordner unter dem cwd, kann ein Befehl ihn relativ nennen („cat brain/09_wiki/a.md“ in ~).
+// Wie ein Befehl im cwd den gesperrten Ordner relativ nennen kann: „brain/…“, „./brain/…“ (darunter) oder „../brain/…“ (daneben).
 function relativeFormen(formen, cwd, plattform) {
   if (typeof cwd !== "string" || !cwd) return [];
   const c = ohneSchluss(vergleich(cwd, plattform));
+  if (!c.startsWith("/")) return [];
   const out = [];
   for (const f0 of formen) {
-    const f = ohneSchluss(fwd(f0).normalize("NFC"));
-    if (f.startsWith("~") || !vergleich(f, plattform).startsWith(c + "/")) continue;
-    const rel = f.slice(c.length + 1);
-    if (rel) out.push(rel, "./" + rel);
+    const f = ohneSchluss(vergleich(f0, plattform));
+    if (!f.startsWith("/")) continue;
+    const rel = posix.relative(c, f);
+    if (!rel) continue;
+    out.push(rel);
+    if (!rel.startsWith("..")) out.push("./" + rel);
   }
   return out;
 }
@@ -93,18 +98,30 @@ function werteText(x, tiefe = 0) {
   return Object.values(x).flatMap((w) => werteText(w, tiefe + 1));
 }
 
-// Werkzeug-Aufruf liest aus dem eigenen Brain: ein cwd liegt darin oder ein Eingabewert nennt einen gesperrten Pfad.
+// Werkzeug-Aufruf liest aus dem eigenen Brain: ein cwd liegt darin, ein Eingabewert nennt einen gesperrten Pfad
+// (auch relativ zum cwd) oder ruft brain/qmd auf.
 export function aufrufGesperrt(input, cwds, sperr, { plattform = process.platform } = {}) {
   if (!Array.isArray(sperr) || !sperr.length) return false;
   const orte = (Array.isArray(cwds) ? cwds : [cwds]).filter((c) => typeof c === "string" && c);
   if (orte.some((c) => liegtUnter(c, sperr, plattform))) return true;
   const formen = [...sperr, ...orte.flatMap((c) => relativeFormen(sperr, c, plattform))];
-  return werteText(input).some((t) => nenntPfad(t, formen, { plattform }));
+  const texte = werteText(input);
+  return texte.some((t) => QMD.test(t) || BRAIN_BEFEHL.test(t) || nenntPfad(t, formen, { plattform }));
 }
+
+// Suchtreffer aus qmd und Aufrufe der brain-/qmd-Befehle lesen immer aus dem eigenen Brain, auch ohne Pfad.
+const QMD = /\bqmd:\/\//i;
+const BRAIN_BEFEHL = /(?:^|[\s;&|(])(?:brain|qmd)\s+(?:search|query|get|read|ls|list|show|find|grep|cat)\b/i;
 
 // ---------- Verlauf für beleg.mjs vorbereiten ----------
 
-// Werkzeug-Ergebnisse aus dem eigenen Brain, Fehler-Ergebnisse und Ergebnisse ohne bekannten Aufruf → Assistenten-Zeile
+function ergebnisGesperrt(inhalt, sperr, plattform) {
+  const t = ergebnisText(inhalt);
+  return sperr.length > 0 && (QMD.test(t) || nenntPfad(t, sperr, { plattform }));
+}
+
+// Werkzeug-Ergebnisse aus dem eigenen Brain (Aufruf ODER Ergebnistext nennt einen gesperrten Pfad/qmd://), Fehler-Ergebnisse
+// und Ergebnisse ohne bekannten Aufruf → Assistenten-Zeile
 // (gleiche uuid/timestamp): beleg.mjs zählt sie dann als „ki“. Alles andere bleibt unverändert (gleiche Objekte).
 export function markiereEigenes(zeilen, { sperr = [], plattform = process.platform } = {}) {
   const aufrufe = new Map();   // tool_use id → gesperrt?
@@ -118,7 +135,7 @@ export function markiereEigenes(zeilen, { sperr = [], plattform = process.platfo
     const cwdGesperrt = aufrufGesperrt({}, [o.cwd], sperr, { plattform });
     const bleibt = [], alsKi = [];
     for (const b of c) {
-      const eigen = b?.type === "tool_result" && (b.is_error === true || aufrufe.get(String(b.tool_use_id ?? "")) !== false || cwdGesperrt);
+      const eigen = b?.type === "tool_result" && (b.is_error === true || aufrufe.get(String(b.tool_use_id ?? "")) !== false || cwdGesperrt || ergebnisGesperrt(b.content, sperr, plattform));
       (eigen ? alsKi : bleibt).push(b);
     }
     if (!alsKi.length) { out.push(o); continue; }

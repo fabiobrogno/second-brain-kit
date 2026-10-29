@@ -2,17 +2,17 @@
 // Herkunft je Rolle laut Spec über beleg.mjs + markiereEigenes, Web-Adresse, Fundstelle.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, realpathSync } from "node:fs";
+import { mkdirSync, symlinkSync, realpathSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-const tempOrdner = (n) => mkdtempSync(join(tmpdir(), n + "-"));
 import { findeZitat } from "../beleg.mjs";
 import {
   pfadFormen, nenntPfad, sperrPfade, aufrufGesperrt, markiereEigenes, webAdresse, ohneEingespieltes, ergebnisText,
   baueFundstelle, leseFundstelle, FUNDSTELLE_MUSTER, HERKUNFT_WERTE, MAX_ZITAT,
 } from "../beleg-ernte.mjs";
 import { gartenEintraege, GARTEN_VAULT } from "./fixture-garten.mjs";
+
+const tempOrdner = (n) => mkdtempSync(join(tmpdir(), n + "-"));
 
 const HOME = "/heim/jo";
 
@@ -39,6 +39,7 @@ test("pfadFormen: der echte Pfad hinter einem Symlink zählt mit", { skip: proce
   const formen = pfadFormen(verweis, { home: HOME });
   assert.ok(nenntPfad(`cat ${realpathSync(echt)}/09_wiki/a.md`, formen));
   assert.ok(nenntPfad(`cat ${verweis}/09_wiki/a.md`, formen));
+  rmSync(basis, { recursive: true, force: true });
 });
 
 test("sperrPfade + aufrufGesperrt: Vault/ernteNichtIn, cwd darin, verschachtelte Eingabe, relativ vom Eltern-cwd; Relatives/Wurzel zählt nicht", () => {
@@ -49,6 +50,12 @@ test("sperrPfade + aufrufGesperrt: Vault/ernteNichtIn, cwd darin, verschachtelte
   assert.ok(aufrufGesperrt({ args: ["-n", "~/brain/09_wiki/a.md"] }, "/projekte/garten", sperr));
   assert.ok(aufrufGesperrt({ command: "cat brain/09_wiki/a.md" }, "/heim/jo", sperr), "relativ vom Home aus");
   assert.ok(aufrufGesperrt({ command: "cat ./brain/09_wiki/a.md" }, "/heim/jo", sperr));
+  assert.ok(aufrufGesperrt({ command: "cat ../brain/09_wiki/a.md" }, "/heim/jo/projekt", sperr), "relativ vom Nachbarordner aus");
+  assert.ok(aufrufGesperrt({ command: "brain search tomaten" }, "/projekte/garten", sperr), "brain-Befehl ohne Pfad");
+  assert.ok(aufrufGesperrt({ query: "qmd://wiki/a.md" }, "/projekte/garten", sperr));
+  assert.ok(!aufrufGesperrt({ command: "cat ../brain-app/a.md" }, "/heim/jo/projekt", sperr), "Nachbar mit ähnlichem Namen");
+  assert.ok(nenntPfad("danach cd /heim/jo/brain.", sperr, { plattform: "linux" }), "Punkt am Satzende");
+  assert.ok(!nenntPfad("/heim/jo/brain.bak/x", sperr, { plattform: "linux" }));
   assert.ok(!aufrufGesperrt({ command: "cat brain-app/README.md" }, "/heim/jo", sperr), "Nachbarordner");
   assert.ok(!aufrufGesperrt({ command: "cat brain/x" }, "/projekte/garten", sperr));
   assert.ok(!aufrufGesperrt({ file_path: "/heim/jo/brain/a.md" }, "/heim/jo", []), "ohne Sperrliste nie gesperrt");
@@ -141,4 +148,19 @@ test("Fundstelle: <sitzung>#<uuid> <Zeit>, Unbekanntes als ?, Rundweg; Konstante
   assert.equal(leseFundstelle("kaputt"), null);
   assert.deepEqual(HERKUNFT_WERTE, ["du", "tool", "web", "ki"]);
   assert.equal(MAX_ZITAT, 300);
+});
+
+test("markiereEigenes: Suchtreffer mit Brain-Pfad im Ergebnis sind nie Beleg, auch wenn der Aufruf den Vault nicht nennt", () => {
+  const sperr = sperrPfade("/heim/jo/brain", [], { home: HOME });
+  const zeilen = [
+    { type: "assistant", uuid: "a1", cwd: "/projekte/garten", message: { role: "assistant", content: [
+      { type: "tool_use", id: "t1", name: "Grep", input: { pattern: "Tomaten", path: "/heim/jo" } },
+      { type: "tool_use", id: "t2", name: "Grep", input: { pattern: "Zaun", path: "/projekte/garten" } }] } },
+    { type: "user", uuid: "r1", cwd: "/projekte/garten", message: { role: "user", content: [
+      { type: "tool_result", tool_use_id: "t1", content: "~/brain/09_wiki/x.md: Tomaten brauchen Sonne." },
+      { type: "tool_result", tool_use_id: "t2", content: "zaun.md: Der Zaun ist grün." }] } },
+  ];
+  const aus = markiereEigenes(zeilen, { sperr, plattform: "linux" });
+  assert.equal(findeZitat(aus, "Tomaten brauchen Sonne.").herkunft, "ki");
+  assert.equal(findeZitat(aus, "Der Zaun ist grün.").herkunft, "tool");
 });
