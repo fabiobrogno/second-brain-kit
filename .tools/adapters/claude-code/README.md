@@ -18,8 +18,8 @@ Bindet den Brain-Vault in Claude Code ein: Hooks, Statusline und Slash-Commands.
 - `brain-hint.mjs` (UserPromptSubmit) — lokaler Brain-Hinweis über QMD-Vektorsuche (0 API-Tokens). Stufe
   `hinweise` (aus/niedrig/mittel/hoch), Import-Treffer mit „(Import, ungeprüft)“, Lücken (Schalter `luecken`),
   startet beim Stand-Intervall (`staendeIntervallStunden`) die Ernte `--art stand` losgelöst. Treffer auf eine Seite
-  mit `ersetzt_durch` erscheinen nur als „ersetzt → [[neu]], nicht mehr aktuell“, Seiten mit `zweifel` tragen
-  „(PRÜFBEDÜRFTIG: Zweifel)“; bei zwei Treffern zum selben Thema mit verschiedenen Werten rückt der neuere vor.
+  mit `ersetzt_durch` tragen den Zusatz „(ERSETZT durch [[neu]] — nicht als aktuell verwenden)“, Seiten mit `zweifel`
+  „(PRÜFBEDÜRFTIG: <Zweifel-Text, höchstens 60 Zeichen>)“; bei zwei Treffern zum selben Thema mit verschiedenen Werten rückt der neuere vor.
 - `ernte-ausloeser.mjs` (SessionEnd, PreCompact) — startet `.tools/ernte.mjs --art fakt` losgelöst, wenn
   `ernteSitzungsende` an ist; gibt nie etwas aus. Vorher legt er eine Auftrags-Marke `.logs/ernte/offen/<sid>.json`
   an, die `ernte.mjs` nach Abschluss entfernt. Bleibt sie liegen (Lauf mit Claude Code beendet, z. B. Windows),

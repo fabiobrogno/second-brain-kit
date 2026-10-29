@@ -50,15 +50,15 @@ rev: 1
 
 ## Zeit, Gültigkeit und Ersetzen (optional, Frontmatter)
 - `gilt_seit: YYYY-MM-DD` — ab wann die Aussage der Seite gilt. Falsches Datum → Lint `GILT_SEIT` (blockiert).
-- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Brain-Hinweis zeigt sie nur noch als
-  „ersetzt → [[nachfolger]]“, nie als aktuell. Lint `ERSETZT` (blockiert): kein Wikilink, Nachfolger fehlt oder ist die
+- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Brain-Hinweis hängt an die Seite
+  „(ERSETZT durch [[nachfolger]] — nicht als aktuell verwenden)“. Lint `ERSETZT` (blockiert): kein Wikilink, Nachfolger fehlt oder ist die
   Seite selbst. `ERSETZT-HINWEIS` (blockiert nicht): Kette (Nachfolger selbst ersetzt) oder die alte Seite wird noch
   verlinkt — Links auf den Nachfolger umstellen.
 - `kritisch: true|false` — `true`: der automatische Tageslauf ändert die Seite nie, neue Fakten dazu werden zur Rückfrage.
   Nur `true` oder `false` ohne Anführungszeichen; alles andere meldet Lint `KRITISCH` (blockiert) und gilt bis zur
   Korrektur als kritisch.
 - `zweifel: "<JJJJ-MM-TT>: <grund>"` — setzt der Tageslauf, wenn nach einem Brain-Hinweis auf diese Seite eine Korrektur
-  kam (W7). Lint zeigt die Seite als `PRÜFBEDÜRFTIG (ZWEIFEL)`, der Hinweis mit „(PRÜFBEDÜRFTIG: Zweifel)“. Nach dem
+  kam (W7). Lint zeigt die Seite als `PRÜFBEDÜRFTIG (ZWEIFEL)`, der Hinweis mit „(PRÜFBEDÜRFTIG: <Zweifel-Text>)“ (gekürzt auf 60 Zeichen). Nach dem
   Prüfen entfernen.
 - `auch_genannt: ["<alias>", …]` — andere Namen einer Entität (eine Zeile, JSON, höchstens 10, je ≤ 60 Zeichen; Lint
   `ALIAS` blockiert bei Formatfehlern). `brain-index` baut daraus `.logs/aliasse.json` und die Suchkarte („Auch genannt“);
@@ -72,7 +72,7 @@ rev: 1
   Hand-Stichpunkte wie „(Stand 19.10.)“ sind keine Fakt-Zeilen.
 - Ersetzte Fakt-Zeile: `- ~~<Aussage>~~ · ersetzt am 23.10.2026 durch die Zeile darunter` — bleibt sichtbar, bis die
   Konsolidierung sie entfernt; die Historie liegt in Git.
-- Projektseiten: `## Stand` (wird ersetzt) und `## Verlauf` (eine Zeile je früherem Stand, neueste oben, höchstens 10).
+- Projektseiten (Konvention des Tageslaufs, B2; noch kein Lint): `## Stand` (wird ersetzt) und `## Verlauf` (eine Zeile je früherem Stand, neueste oben, höchstens 10).
 
 ## Beweisbindung
 quellen_sha bindet die Seite an den eingearbeiteten Quellenstand. Ändert sich die Quelle
