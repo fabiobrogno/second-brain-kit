@@ -45,7 +45,34 @@ rev: 1
 - `fragen: ["<Frage>", ...]` — 2–6 typische Fragen in den eigenen Worten (eine Zeile, JSON, je ≤ 160 Zeichen,
   höchstens 6; Lint meldet `FRAGEN`). Sie fließen in die Suchkarte der Seite, damit der Brain-Hinweis genau bei
   diesen Fragen trifft. Beim Anlegen/Überarbeiten 2–4 eintragen; Änderungen brauchen kein rev+1.
+- Weitere Felder für Zeit und Ersetzen: siehe „Zeit, Gültigkeit und Ersetzen“ unten.
 - Alle optionalen Felder sind rein additiv — ohne sie funktioniert die Seite wie bisher.
+
+## Zeit, Gültigkeit und Ersetzen (optional, Frontmatter)
+- `gilt_seit: YYYY-MM-DD` — ab wann die Aussage der Seite gilt. Falsches Datum → Lint `GILT_SEIT` (blockiert).
+- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Brain-Hinweis zeigt sie nur noch als
+  „ersetzt → [[nachfolger]]“, nie als aktuell. Lint `ERSETZT` (blockiert): kein Wikilink, Nachfolger fehlt oder ist die
+  Seite selbst. `ERSETZT-HINWEIS` (blockiert nicht): Kette (Nachfolger selbst ersetzt) oder die alte Seite wird noch
+  verlinkt — Links auf den Nachfolger umstellen.
+- `kritisch: true|false` — `true`: der automatische Tageslauf ändert die Seite nie, neue Fakten dazu werden zur Rückfrage.
+  Nur `true` oder `false` ohne Anführungszeichen; alles andere meldet Lint `KRITISCH` (blockiert) und gilt bis zur
+  Korrektur als kritisch.
+- `zweifel: "<JJJJ-MM-TT>: <grund>"` — setzt der Tageslauf, wenn nach einem Brain-Hinweis auf diese Seite eine Korrektur
+  kam (W7). Lint zeigt die Seite als `PRÜFBEDÜRFTIG (ZWEIFEL)`, der Hinweis mit „(PRÜFBEDÜRFTIG: Zweifel)“. Nach dem
+  Prüfen entfernen.
+- `auch_genannt: ["<alias>", …]` — andere Namen einer Entität (eine Zeile, JSON, höchstens 10, je ≤ 60 Zeichen; Lint
+  `ALIAS` blockiert bei Formatfehlern). `brain-index` baut daraus `.logs/aliasse.json` und die Suchkarte („Auch genannt“);
+  zeigt ein Alias auf mehrere Seiten, meldet der Lint `DOPPELTER NAME`.
+- Diese Felder brauchen kein rev+1.
+
+## Fakt-Zeilen und Stand-Abschnitt (Format des Tageslaufs)
+- Belegte Fakt-Zeile: `- <Aussage> · Stand 21.10.2026 · [[<cluster>/belege/<JJJJ-MM>/<id>]]` — der Link zeigt auf die
+  Beleg-Datei (Rohquelle mit wörtlichem Zitat, Herkunft und Fundstelle). Das Muster „ · Stand TT.MM.JJJJ“ (Mittelpunkt)
+  ist dafür reserviert: Steht es in einer Listenzeile ohne existierenden Beleg-Link, meldet Lint `FAKT-BELEG` (blockiert).
+  Hand-Stichpunkte wie „(Stand 19.10.)“ sind keine Fakt-Zeilen.
+- Ersetzte Fakt-Zeile: `- ~~<Aussage>~~ · ersetzt am 23.10.2026 durch die Zeile darunter` — bleibt sichtbar, bis die
+  Konsolidierung sie entfernt; die Historie liegt in Git.
+- Projektseiten: `## Stand` (wird ersetzt) und `## Verlauf` (eine Zeile je früherem Stand, neueste oben, höchstens 10).
 
 ## Beweisbindung
 quellen_sha bindet die Seite an den eingearbeiteten Quellenstand. Ändert sich die Quelle
