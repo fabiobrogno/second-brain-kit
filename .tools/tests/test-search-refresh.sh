@@ -5,6 +5,7 @@
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; R="$T/../search-refresh.mjs"
 V=$(mktemp -d); mkdir -p "$V/.logs/hint-karten" "$V/20_firma"; echo "# a" > "$V/20_firma/a.md"
 CALLS=$(mktemp)
+echo '{"hinweis":{"suche":"vektor"}}' > "$V/brain.config.json"   # Standard ist BM25 (ohne Karten-Embeddings) — hier die Vektor-Einstellung
 # Fake-QMD als .mjs: search-refresh.mjs startet .mjs-QMD_BIN-Werte über process.execPath (node) — läuft so
 # auf allen drei Plattformen ohne shell:true (Windows kann .cmd/.bat ohne shell:true nicht direkt spawnen).
 QMD_BIN="$T/fake-qmd-cli.mjs"
@@ -22,4 +23,9 @@ export BRAIN_HINT_SEARCH_MODULE="$(pwd)/fake-search.mjs" FAKE_JSON="$FJ" FAKE_AR
 : > "$WA"; node "$R"; grep -q '"collection":"brainkarten"' "$WA" || { echo "FAIL: ohne Änderung kein Aufwärmen"; exit 1; }
 : > "$WA"; sleep 1; echo "# d" > "$V/20_firma/d.md"; node "$R"; [ ! -s "$WA" ] || { echo "FAIL: Aufwärmen während Indexierung"; exit 1; }
 unset BRAIN_HINT_SEARCH_MODULE FAKE_JSON FAKE_ARGS; rm -f "$WA" "$FJ"
+# Standard (BM25): keine Karten-Sammlung, keine Karten-Embeddings, kein Aufwärmen der Vektorsuche
+unset FAKE_QMD_MARKE_FILE; echo '{}' > "$V/brain.config.json"; : > "$CALLS"; sleep 1; echo "# e" > "$V/20_firma/e.md"; node "$R"
+grep -q '^update' "$CALLS" && ! grep -q 'brainkarten' "$CALLS" || { echo "FAIL: BM25-Standard fasst brainkarten an ($(cat "$CALLS"))"; exit 1; }
+WA=$(mktemp); : > "$WA"; export BRAIN_HINT_SEARCH_MODULE=; FAKE_ARGS="$WA" node ../hint-warm.mjs; [ ! -s "$WA" ] || { echo "FAIL: BM25-Standard wärmt die Vektorsuche auf"; exit 1; }
+rm -f "$WA"
 rm -rf "$V" "$CALLS"; echo "PASS"

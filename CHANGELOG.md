@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **Hint search is BM25 by default** (FBL-168): the hint before a prompt now searches the index cards with BM25 (`.tools/bm25-karten.mjs`, no model, no embeddings, no search service). Measured on the benchmark corpus (FBL-91): same number of hits (25/78 vs 26/78), 15–20× faster, no hangs. Vector search stays available with `"hinweis": { "suche": "vektor" }` in `brain.config.json`. Without it, `search-refresh` no longer creates or embeds the `brainkarten` collection, nothing warms up the vector search, and the optional rerank service (`hinweis.rerankSchwelle`) is not started; `hint.log` shows `weg=bm25`. `brain search` and its profiles (`suche.profil`) are unchanged. `brain messlatte` follows the vault setting; `--suche=bm25|vektor` forces one side for comparisons.
+
 ### Added
 - **B1 summary (truth and proof):** every harvested fact carries a checked quote, pages can say since when they hold and what replaces them, search shows newer facts first and replaced pages never as current, and corrections after a brain hint are recorded. Details in the entries below; the new front-matter fields and the fact-line format are documented in `vorlage/wiki/_schema.md` ("Zeit, Gültigkeit und Ersetzen", "Fakt-Zeilen und Stand-Abschnitt"), the adapter README and the README ("Background harvest").
 - **Error signal W7** (B1, `.tools/w7.mjs`): detects "brain hint → answer → correction" in the transcript (0 tokens, rules only) and appends one line per finding to `.logs/w7.jsonl` (`leseW7(vault)`); started detached by `ernte-ausloeser.mjs` on SessionEnd/PreCompact, each finding is written exactly once even if both run at the same time.

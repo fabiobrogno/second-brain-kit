@@ -8,7 +8,8 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { vaultPfad } from "./pfade.mjs";
+import { vaultPfad, ladeConfig } from "./pfade.mjs";
+import { hinweisSuche } from "./hinweis-suche.mjs";
 import { neuerAls } from "./neuer-als.mjs";
 import { qmdBefehl } from "./qmd-befehl.mjs";
 
@@ -22,6 +23,9 @@ const b = process.env.QMD_BIN
   ? (/\.(mjs|js)$/.test(process.env.QMD_BIN) ? { cmd: process.execPath, vorArgs: [process.env.QMD_BIN] } : { cmd: process.env.QMD_BIN, vorArgs: [] })
   : qmdBefehl();
 const stamp = join(vault, ".logs", "search-refreshed");
+// Die Karteikarten-Sammlung (+ Embeddings) braucht nur die Vektor-Hinweissuche; Standard ist BM25 ohne Index.
+const kartenSammlung = hinweisSuche(ladeConfig(vault).hinweis) === "vektor";
+const sammlungenNoetig = kartenSammlung ? ["brain", "brainkarten"] : ["brain"];
 
 if (!neuerAls(vault, stamp)) {
   // nichts zu tun → Suche aufwärmen (Kaltstart-Timeouts)
@@ -38,13 +42,13 @@ try {
   if (ok) {
     // Fehlende Sammlung anlegen; scheitert das (z. B. Pfad schon unter anderem Namen registriert), die übrigen
     // trotzdem auffrischen — nur der Erfolgsstempel bleibt aus, damit der nächste Lauf es erneut versucht.
-    for (const [name, ordner] of [["brain", vault], ["brainkarten", join(vault, ".logs", "hint-karten")]]) {
+    for (const [name, ordner] of [["brain", vault], ["brainkarten", join(vault, ".logs", "hint-karten")]].filter(([n]) => sammlungenNoetig.includes(n))) {
       if (sammlungen.has(name)) continue;
       mkdirSync(ordner, { recursive: true });
       const r = spawnSync(b.cmd, [...b.vorArgs, "collection", "add", ordner, "--name", name], { stdio: "ignore", windowsHide: true });
       if (r.error || r.status !== 0) ok = false; else sammlungen.add(name);
     }
-    const schritte = [["update"], ...["brain", "brainkarten"].filter(n => sammlungen.has(n)).map(n => ["embed", "-c", n])];
+    const schritte = [["update"], ...sammlungenNoetig.filter(n => sammlungen.has(n)).map(n => ["embed", "-c", n])];
     for (const args of schritte) {
       const r = spawnSync(b.cmd, [...b.vorArgs, ...args], { stdio: "ignore", windowsHide: true });
       if (r.error || r.status !== 0) { ok = false; break; } // Schritt schlägt fehl → still beenden

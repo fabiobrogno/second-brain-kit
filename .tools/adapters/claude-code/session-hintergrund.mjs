@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 const { vaultPfad, ladeConfig } = await import("../../pfade.mjs");
+const { hinweisSuche } = await import("../../hinweis-suche.mjs");
 const { gitBefehl } = await import("../../werkzeug.mjs");
 const { pruefeUpdate, schreibeBereitMarke } = await import("../../update-check.mjs");
 const { leseAutomatik } = await import("../../einstellungen.mjs");
@@ -44,7 +45,7 @@ node("search-refresh.mjs", [V]);
 // Suchdienst (Reranker) nur, wenn eingeschaltet (hinweis.rerankSchwelle) — er verhindert Doppelstarts selbst
 try {
   const cfg = ladeConfig(V);
-  if (cfg.hinweis?.rerankSchwelle != null) {
+  if (cfg.hinweis?.rerankSchwelle != null && hinweisSuche(cfg.hinweis) === "vektor") {
     const haengtMarke = join(V, ".logs", "dienst-haengt");
     const frischHaengt = existsSync(haengtMarke) && (Date.now() - statSync(haengtMarke).mtimeMs) / 60000 < 10;
     if (!frischHaengt) {

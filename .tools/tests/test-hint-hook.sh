@@ -24,12 +24,24 @@ grep -q geheimestoken "$BRAIN_VAULT/.logs/hint.log" && { echo "FAIL: Prompt-Text
 # Review Focus 2: Suche hängt / QMD fehlt / Suche wirft → still, Exit 0, Fehler geloggt
 S=$(date +%s); OUT=$(FAKE_DELAY=10000 run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"s6"}'); RC=$?; D=$(( $(date +%s) - S ))
 [ $RC -eq 0 ] && [ -z "$OUT" ] && [ $D -le 6 ] || { echo "FAIL: hängende Suche (rc=$RC, ${D}s)"; exit 1; }
+# Standard-Suche ist BM25 (FBL-168); die QMD-Fälle unten schalten die Vektorsuche ausdrücklich ein.
+CFG0=$(mktemp); cp "$BRAIN_VAULT/brain.config.json" "$CFG0"
+trap 'cp "$CFG0" "$BRAIN_VAULT/brain.config.json"' EXIT
+suche(){ node -e "const f='$BRAIN_VAULT/brain.config.json',c=JSON.parse(require('fs').readFileSync('$CFG0','utf8'));if(process.argv[1]!=='-')c.hinweis={...c.hinweis,suche:process.argv[1],...JSON.parse(process.argv[2]||'{}')};require('fs').writeFileSync(f,JSON.stringify(c))" "$1" "${2:-}"; }
+suche vektor
 OUT=$(BRAIN_HINT_SEARCH_MODULE= QMD_MODULE=/gibt/es/nicht.js run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"s7"}'); [ $? -eq 0 ] && [ -z "$OUT" ] || { echo "FAIL: fehlendes QMD"; exit 1; }
+suche bm25 '{"schwelle":0.15}'
+# BM25 (Standard): ohne Suchmodul-Override sucht der Hook über die Karteikarten, ohne QMD, und nennt es im Log
+OUT=$(BRAIN_HINT_SEARCH_MODULE= QMD_MODULE=/gibt/es/nicht.js run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"b1"}'); [ $? -eq 0 ] || { echo "FAIL: BM25-Standard endet nicht mit 0"; exit 1; }
+echo "$OUT" | grep -q thema_alpha || { echo "FAIL: BM25-Standard findet thema alpha nicht über die Karteikarten: [$OUT]"; exit 1; }
+tail -1 "$BRAIN_VAULT/.logs/hint.log" | grep -q 'weg=bm25 ' || { echo "FAIL: Log ohne weg=bm25: $(tail -1 "$BRAIN_VAULT/.logs/hint.log")"; exit 1; }
+suche vektor
 OUT=$(FAKE_THROW=SQLITE_BUSY run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"s8"}'); [ $? -eq 0 ] && [ -z "$OUT" ] || { echo "FAIL: werfende Suche"; exit 1; }
 [ -z "$(printf 'kaputt' | node "$HOOK")" ] || { echo "FAIL: kaputtes stdin"; exit 1; }
 grep -q 'fehler=ETIMEDOUT' "$BRAIN_VAULT/.logs/hint.log" && grep -q 'fehler=SQLITE_BUSY' "$BRAIN_VAULT/.logs/hint.log" || { echo "FAIL: Fehler nicht geloggt"; exit 1; }
 # Echter Adapter (falls QMD installiert): Exit-Code MUSS 0 sein — Claude Code übernimmt stdout nur bei Exit 0
 if command -v qmd >/dev/null; then
+  suche vektor
   printf '%s' '{"prompt":"wie funktioniert das thema alpha genau","session_id":"s9"}' | BRAIN_HINT_SEARCH_MODULE= node "$HOOK" >/dev/null 2>&1
   RC=$?; [ $RC -eq 0 ] || { echo "FAIL: echter QMD-Adapter endet mit Exit $RC"; exit 1; }
 fi
@@ -96,13 +108,13 @@ else
   # Windows (Git Bash) hat i. d. R. kein pkill/pgrep (procps fehlt) — Aufräumen dort ohne Prozesskill (best effort).
   DS="$BRAIN_VAULT/.logs/suchdienst.sock"; dstop(){ [ "${OS:-}" = "Windows_NT" ] || pkill -f "suchdienst.mjs $BRAIN_VAULT" 2>/dev/null; sleep 0.3; rm -f "$DS" "$BRAIN_VAULT/.logs/dienst-haengt" "$BRAIN_VAULT/.logs/dienst-start" "$BRAIN_VAULT/.logs/dienst-timeouts"; }
   dwarte(){ for i in $(seq 1 40); do [ -S "$DS" ] && return 0; sleep 0.1; done; return 1; }
-  trap 'dstop' EXIT
+  trap 'dstop; cp "$CFG0" "$BRAIN_VAULT/brain.config.json"' EXIT
   CB=$(mktemp); cp "$BRAIN_VAULT/brain.config.json" "$CB"
   cfg(){ node -e "const f='$BRAIN_VAULT/brain.config.json',c=JSON.parse(require('fs').readFileSync('$CB','utf8'));c.hinweis={...c.hinweis,...JSON.parse(process.argv[1])};require('fs').writeFileSync(f,JSON.stringify(c))" "$1"; }
   zurueck(){ cp "$CB" "$BRAIN_VAULT/brain.config.json"; }
   F=$(mktemp); echo '[{"filepath":"qmd://brainkarten/thema-alpha.md","score":0.33}]' > "$F"; export FAKE_DIENST_JSON="$F"
   echo '[{"file":"qmd://brain/09-wiki/thema-alpha.md","score":0.6}]' > "$J"
-  cfg '{"rerankSchwelle":0.55,"dienstMs":2500}'
+  cfg '{"suche":"vektor","rerankSchwelle":0.55,"dienstMs":2500}'
   # (a) Dienst läuft → Treffer über Reranker, obwohl Vektor-Score 0.33 unter Schwelle
   dstop; node ../suchdienst.mjs "$BRAIN_VAULT" & dwarte || { zurueck; echo "FAIL: Fake-Dienst startet nicht"; exit 1; }
   run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"d1"}' | grep -q thema_alpha || { zurueck; echo "FAIL: kein Treffer über Dienst"; exit 1; }
@@ -116,7 +128,7 @@ else
   tail -1 "$BRAIN_VAULT/.logs/hint.log" | grep -q 'weg=vektor' || { zurueck; echo "FAIL: Rückfall nicht geloggt"; exit 1; }
   dwarte || { zurueck; echo "FAIL: Hook startet Dienst nicht"; exit 1; }
   # (c) Dienst hängt → Rückfall in Frist, Sperre gesetzt, nächste Frage fragt den Dienst nicht
-  dstop; cfg '{"rerankSchwelle":0.55,"dienstMs":800}'; FAKE_DIENST_HAENGT=1 node ../suchdienst.mjs "$BRAIN_VAULT" & dwarte
+  dstop; cfg '{"suche":"vektor","rerankSchwelle":0.55,"dienstMs":800}'; FAKE_DIENST_HAENGT=1 node ../suchdienst.mjs "$BRAIN_VAULT" & dwarte
   rm -f "$BRAIN_VAULT/.logs/dienst-timeouts"
   S0=$(date +%s); OUT=$(run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"d3"}'); D0=$(( $(date +%s) - S0 ))
   echo "$OUT" | grep -q thema_alpha && [ $D0 -le 4 ] && [ ! -f "$BRAIN_VAULT/.logs/dienst-haengt" ] || { zurueck; echo "FAIL: erster Hänger (${D0}s) — Rückfall ja, Sperre noch nein"; exit 1; }
@@ -134,7 +146,7 @@ else
   fi
   [ ! -e "$DS" ] || { zurueck; echo "FAIL: Socket-Leiche nach Hänger bleibt"; exit 1; }
   # (f) Kein Dienst (oder noch am Aufwärmen) → Rückfall rerankt selbst: auch der erste Prompt ist sauber
-  dstop; cfg '{"rerankSchwelle":0.55,"dienstMs":2500}'; touch "$BRAIN_VAULT/.logs/dienst-start"   # Start gedrosselt → kein Dienst
+  dstop; cfg '{"suche":"vektor","rerankSchwelle":0.55,"dienstMs":2500}'; touch "$BRAIN_VAULT/.logs/dienst-start"   # Start gedrosselt → kein Dienst
   echo '[{"file":"qmd://brainkarten/thema-alpha.md","score":0.33}]' > "$J"
   FAKE_RR=0.73 run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"k1"}' | grep -q thema_alpha && tail -1 "$BRAIN_VAULT/.logs/hint.log" | grep -q 'weg=kalt-rerank' || { zurueck; echo "FAIL: kein Kaltstart-Rerank: $(tail -1 "$BRAIN_VAULT/.logs/hint.log")"; exit 1; }
   FAKE_RR=0.50 run '{"prompt":"wie funktioniert das thema alpha genau","session_id":"k2"}' | grep -q thema_alpha && { zurueck; echo "FAIL: Kaltstart-Rerank lässt Fremdfrage durch"; exit 1; }
