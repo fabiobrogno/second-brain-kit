@@ -35,6 +35,7 @@ test("search-refresh.mjs: fehlende Sammlungen „brain“/„brainkarten“ werd
   writeFileSync(join(vault, "20_firma", "a.md"), "# a\n");
   const calls = join(vault, "calls.txt");
   const sammlungen = join(vault, "sammlungen.txt");
+  writeFileSync(join(vault, "brain.config.json"), JSON.stringify({ hinweis: { suche: "vektor" } })); // Karten-Sammlung gibt es nur bei Vektorsuche
   writeFileSync(sammlungen, "brain\n"); // Zustand nach der alten Installation: nur „brain“
   const env = { ...process.env, BRAIN_VAULT: vault, QMD_BIN: FAKE, FAKE_QMD_CALLS: calls, FAKE_QMD_SAMMLUNGEN: sammlungen };
   assert.equal(spawnSync(process.execPath, [R], { env, encoding: "utf8" }).status, 0);
@@ -56,6 +57,7 @@ test("search-refresh.mjs: scheitert collection add, laufen update/embed der vorh
   const vault = mkdtempSync(join(tmpdir(), "sr-addfehler-"));
   const calls = join(vault, "calls.txt");
   const sammlungen = join(vault, "sammlungen.txt");
+  writeFileSync(join(vault, "brain.config.json"), JSON.stringify({ hinweis: { suche: "vektor" } })); // Karten-Sammlung gibt es nur bei Vektorsuche
   writeFileSync(sammlungen, "brain\n");
   const env = { ...process.env, BRAIN_VAULT: vault, QMD_BIN: FAKE, FAKE_QMD_CALLS: calls, FAKE_QMD_SAMMLUNGEN: sammlungen, FAKE_QMD_ADD_FEHLER: "1" };
   assert.equal(spawnSync(process.execPath, [R], { env, encoding: "utf8" }).status, 0);
