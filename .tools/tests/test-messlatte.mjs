@@ -98,3 +98,68 @@ test("messlatte: Hook stürzt ab → zählt als still/verfehlt, kein Absturz", (
   assert.equal(e.positiv, "0/2");
   assert.equal(e.still, "2/2");
 });
+
+// FBL-91: --suche=bm25 setzt BRAIN_HINT_SEARCH_MODULE auf das BM25-Modul; Fehler/Ø-Zeit werden mitgezählt.
+test("messlatte: suche=bm25 reicht das BM25-Modul an den Hook, vektor das QMD-Modul, ohne Angabe gilt die Vault-Einstellung", () => {
+  const spion = join(ORT, "spion-hook.mjs");
+  writeFileSync(spion, `
+let roh = ""; process.stdin.on("data", d => roh += d); process.stdin.on("end", () => {
+  const m = process.env.BRAIN_HINT_SEARCH_MODULE || "";
+  if (JSON.parse(roh).prompt.includes("fehler")) process.exit(1);
+  if (m.endsWith("bm25-karten.mjs")) console.log("Brain:\\n- 09_wiki/thema_alpha.md — Alpha");
+});`);
+  const v = neuerVault();
+  const bm = lauf(v, { hook: spion, suche: "bm25" });
+  assert.equal(bm.positiv, "1/2"); assert.equal(bm.suche, "bm25"); assert.equal(bm.fehler, 0);
+  assert.match(bm.zeile, / suche=bm25$/);
+  const ve = lauf(v, { hook: spion, suche: "vektor" });
+  assert.equal(ve.positiv, "0/2"); assert.equal(ve.suche, "vektor");
+  assert.match(ve.zeile, / suche=vektor$/);
+  const st = lauf(v, { hook: spion });
+  assert.equal(st.positiv, "0/2"); assert.equal(st.suche, "standard");
+  assert.doesNotMatch(st.zeile, /suche=/);
+  assert.ok(Number.isFinite(st.mittelMs));
+  assert.throws(() => lauf(v, { suche: "quatsch" }), { code: 400 });
+});
+
+test("messlatte: abgestürzter Hook zählt als Fehler", () => {
+  const spion = join(ORT, "spion-hook.mjs");
+  const v = neuerVault({ negativ: ["bitte fehler provozieren"] });
+  assert.equal(lauf(v, { hook: spion }).fehler, 1);
+});
+
+test("messlatte: Feld „art“ je Frage → Trefferquote je Art", () => {
+  const v = neuerVault({ positiv: [{ prompt: "alpha eins", erwartet: ["thema_alpha.md"], art: "wort" }, { prompt: "irgendwas", erwartet: ["thema_alpha.md"], art: "sinn" }] });
+  const e = lauf(v);
+  assert.deepEqual(e.arten, { wort: "1/1", sinn: "0/1" });
+});
+
+test("messlatte: stille Hook-Fehler (Zeile „fehler=…“ im Eval-Log) zählen als Fehler", () => {
+  const still = join(ORT, "still-fehler-hook.mjs");
+  writeFileSync(still, `
+import { appendFileSync, mkdirSync } from "node:fs"; import { join } from "node:path";
+process.stdin.resume(); process.stdin.on("end", () => {
+  mkdirSync(join(process.env.BRAIN_VAULT, ".logs"), { recursive: true });
+  appendFileSync(join(process.env.BRAIN_VAULT, ".logs", "hint-eval-runs.log"), "2026-10-28T10:00:00 sid=eval-1 fehler=ETIMEDOUT kalt=1 ms=4000\\n");
+});`);
+  const v = neuerVault();
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "hint-eval-runs.log"), "2026-10-27T10:00:00 sid=eval-0 fehler=ALT kalt=1 ms=1\n");
+  const e = lauf(v, { hook: still });
+  assert.equal(e.fehler, 7); // 2 positiv + 2 negativ + 1 Kontrolle + 2 Holdout; die alte Zeile zählt nicht
+});
+
+test("messlatte: Umlaute im alten Log verschieben die Schnittstelle nicht (Byte- statt Zeichen-Offset)", () => {
+  const still = join(ORT, "still-fehler-hook-umlaut.mjs");
+  writeFileSync(still, `
+import { appendFileSync, mkdirSync } from "node:fs"; import { join } from "node:path";
+process.stdin.resume(); process.stdin.on("end", () => {
+  mkdirSync(join(process.env.BRAIN_VAULT, ".logs"), { recursive: true });
+  appendFileSync(join(process.env.BRAIN_VAULT, ".logs", "hint-eval-runs.log"), "2026-10-28T10:00:00 sid=eval-1 fehler=ETIMEDOUT kalt=1 ms=4000\\n");
+});`);
+  const v = neuerVault();
+  mkdirSync(join(v, ".logs"), { recursive: true });
+  writeFileSync(join(v, ".logs", "hint-eval-runs.log"), "ÄÖÜäöüß".repeat(40) + " fehler=ALT\n");
+  const e = lauf(v, { hook: still });
+  assert.equal(e.fehler, 7);
+});

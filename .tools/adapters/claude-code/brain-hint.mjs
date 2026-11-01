@@ -11,6 +11,7 @@ import { readFileSync, appendFileSync, writeFileSync, renameSync, mkdirSync, exi
 import { join, basename } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 const { suche } = await import("../../hint-kind.mjs");
+const { hinweisSuche, hinweisModul } = await import("../../hinweis-suche.mjs");
 const { frageDienst, istGesperrt, meldeHaenger, starteDienst } = await import("../../dienst-client.mjs");
 const { entscheide } = await import("../../such-kern.mjs");
 const { mitFrische, shouldQuery, istWissensfrage, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel } = await import("../../hint-core.mjs");
@@ -99,6 +100,9 @@ try {
     // nie als absoluter Ersatzwert — sonst könnte „niedrig" je nach Config MEHR statt weniger Hinweise zeigen
     // als „mittel". mittel lässt die Config-Werte unverändert. Der Reranker bleibt aus, wenn er in der Config
     // aus ist (eine Stufe soll keinen Suchdienst einschalten).
+    // Der Reranker gehört zur Vektorsuche (QMD) — bei der Standard-Suche BM25 gibt es ihn nicht.
+    const suchart = hinweisSuche(cfg);
+    if (suchart === "bm25") delete cfg.rerankSchwelle;
     const stufe = HINWEIS_SCHWELLEN[automatik.hinweise];
     if (stufe) {
       cfg.schwelle = (cfg.schwelle ?? 0.45) + stufe.schwelle;
@@ -113,7 +117,7 @@ try {
     kalt = existsSync(seenFile) ? 0 : 1;
     if (!existsSync(seenFile)) writeFileSync(seenFile, "");
     const frage = suchtext(vorige ? `${vorige} ${prompt}` : prompt), max = cfg.max ?? 2, schwelle = cfg.schwelle ?? 0.45, gesamt = cfg.timeoutMs || 4000;
-    let results = null, hits = null, weg = "vektor", basis = null, dienstFehler = "";
+    let results = null, hits = null, weg = suchart, basis = null, dienstFehler = "";
     // 1) Suchdienst (Reranker, warm) — nur mit Schalter rerankSchwelle und ohne frische Hänger-Sperre
     if (cfg.rerankSchwelle != null && !istGesperrt(vault)) {
       try {
@@ -129,7 +133,7 @@ try {
     }
     // 2) Rückfall: bisheriger Kindprozess-Weg (nur Vektor) mit der verbleibenden Zeit
     if (!hits) {
-      const modul = process.env.BRAIN_HINT_SEARCH_MODULE || fileURLToPath(new URL("../../qmd-vector.mjs", import.meta.url));
+      const modul = hinweisModul(cfg);
       const rest = gesamt - (Date.now() - t0);
       // Schalter an und genug Zeit → einmalig selbst reranken (erster Prompt nach Pause ist so genauso sauber)
       const kaltRerank = cfg.rerankSchwelle != null && rest >= 3000;
