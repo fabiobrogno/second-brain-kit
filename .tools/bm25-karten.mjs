@@ -1,6 +1,6 @@
-// Suche-Adapter „nur BM25“ (Probe FBL-91): gleiche Schnittstelle wie qmd-vector.mjs (sucheKarten), aber ohne
+// Suche-Adapter „nur BM25“ (Standard der Hinweissuche, FBL-91/FBL-168): gleiche Schnittstelle wie qmd-vector.mjs (sucheKarten), aber ohne
 // QMD, ohne Modell, ohne Index — BM25 (k1=1.2, b=0.75) direkt über die Karteikarten in .logs/hint-karten.
-// Einschalten: BRAIN_HINT_SEARCH_MODULE=<dieses Modul> (die Messlatte macht das mit --suche=bm25).
+// Der Hinweis lädt dieses Modul von selbst, solange hinweis.suche nicht "vektor" ist (hinweis-suche.mjs).
 // Der rohe BM25-Wert wird auf 0..1 abgebildet (s / (s + SAETTIGUNG)), damit die Schwelle des Hinweises
 // (hinweis.schwelle, Standard 0.45) weiter greift: Wert 0.45 entspricht rohem BM25 von ca. 5.
 import { readdirSync, readFileSync } from "node:fs";
@@ -28,7 +28,9 @@ export async function sucheKarten(query, { collection = "brainkarten", limit = 2
   const dir = join(vault || vaultPfad(["node", "s"]), ".logs", "hint-karten");
   const begriffe = [...new Set(tokens(query))].filter(b => !FUELL.has(b));
   if (!begriffe.length) return [];
-  const docs = readdirSync(dir).filter(f => f.endsWith(".md")).map(f => ({ f, t: tokens(readFileSync(join(dir, f), "utf8")) }));
+  let namen;
+  try { namen = readdirSync(dir); } catch (e) { if (e.code === "ENOENT") return []; throw e; } // frischer Vault: noch keine Karten
+  const docs = namen.filter(f => f.endsWith(".md")).map(f => ({ f, t: tokens(readFileSync(join(dir, f), "utf8")) }));
   const N = docs.length;
   if (!N) return [];
   const avg = docs.reduce((a, d) => a + d.t.length, 0) / N || 1;

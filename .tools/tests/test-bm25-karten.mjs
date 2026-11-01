@@ -37,3 +37,8 @@ test("sucheKarten: limit begrenzt, seltenes Wort schlägt häufiges", async () =
   assert.equal(r.length, 1);
   assert.equal(r[0].file, "qmd://brainkarten/thema-reise.md");
 });
+
+test("sucheKarten: fehlender Kartenordner (frischer Vault) → [] statt Fehler", async () => {
+  const frisch = join(mkdtempSync(join(tmpdir(), "bm25 frisch ")), "x");
+  assert.deepEqual(await sucheKarten("Fähre", { vault: frisch }), []);
+});
